@@ -28,19 +28,20 @@
         h1 { color: #e84393; margin-bottom: 8px; text-align: center; }
         .subtitle { color: #b0b0b0; text-align: center; margin-bottom: 24px; font-size: 0.9em; }
 
-        /* Dictionary preview image stub */
+        /* Dictionary preview image */
         .dict-preview {
             margin-bottom: 28px;
-            border: 3px dashed #f8a5c2;
             border-radius: 12px;
-            padding: 40px 20px;
+            overflow: hidden;
             text-align: center;
             background: #fff5f7;
-            color: #e84393;
         }
-        .dict-preview .icon { font-size: 2.5em; margin-bottom: 8px; }
-        .dict-preview .label { font-weight: 600; font-size: 1em; }
-        .dict-preview .hint { color: #ccc; font-size: 0.85em; margin-top: 4px; }
+        .dict-preview img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 12px;
+        }
 
         .tabs {
             display: flex;
@@ -232,11 +233,9 @@
         <h1>( Yomitan Dictionary Builder</h1>
         <p class="subtitle">Generate character name dictionaries for Yomitan</p>
 
-        <!-- Dictionary Preview Image Stub -->
+        <!-- Dictionary Preview Image -->
         <div class="dict-preview">
-            <div class="icon"></div>
-            <div class="label">Dictionary Preview</div>
-            <div class="hint">Screenshot coming soon!</div>
+            <img src="dict-preview.png" alt="Dictionary preview showing Yomitan character name lookup">
         </div>
 
         <div class="tabs">
