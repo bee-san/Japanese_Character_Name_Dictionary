@@ -1,0 +1,6 @@
+services:
+  yomitan-dict-builder:
+    build: .
+    ports:
+      - "9721:3000"
+    restart: unless-stopped

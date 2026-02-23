@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Yomitan Dictionary Builder</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 30%, #ff9a9e 60%, #fecfef 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            gap: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(255, 105, 135, 0.2);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 { color: #e84393; margin-bottom: 8px; text-align: center; }
+        .subtitle { color: #b0b0b0; text-align: center; margin-bottom: 24px; font-size: 0.9em; }
+
+        /* Dictionary preview image stub */
+        .dict-preview {
+            margin-bottom: 28px;
+            border: 3px dashed #f8a5c2;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            background: #fff5f7;
+            color: #e84393;
+        }
+        .dict-preview .icon { font-size: 2.5em; margin-bottom: 8px; }
+        .dict-preview .label { font-weight: 600; font-size: 1em; }
+        .dict-preview .hint { color: #ccc; font-size: 0.85em; margin-top: 4px; }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 24px;
+        }
+        .tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            color: #bbb;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab.active {
+            color: #e84393;
+            border-bottom-color: #e84393;
+        }
+        .tab:hover:not(.active) { color: #777; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .form-group { margin-bottom: 20px; }
+        .form-group.inline { display: flex; gap: 12px; }
+        .form-group.inline > div { flex: 1; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 500; font-size: 0.95em; }
+        .label-hint { color: #ccc; font-weight: 400; font-size: 0.85em; }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #eee;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus { outline: none; border-color: #f78fb3; }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        button:hover { transform: translateY(-2px); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .status { margin-top: 20px; padding: 12px; border-radius: 8px; display: none; font-size: 0.95em; }
+        .status.show { display: block; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.loading { background: #fce4ec; color: #880e4f; }
+        .progress-bar-container {
+            margin-top: 12px;
+            display: none;
+            background: #fce4ec;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 24px;
+        }
+        .progress-bar-container.show { display: block; }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8em;
+            font-weight: 600;
+            min-width: 40px;
+        }
+        .media-preview {
+            margin-top: 16px;
+            display: none;
+            max-height: 250px;
+            overflow-y: auto;
+            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+        }
+        .media-preview.show { display: block; }
+        .media-preview-header {
+            padding: 10px 14px;
+            background: #fff5f7;
+            font-weight: 600;
+            color: #e84393;
+            font-size: 0.9em;
+            border-bottom: 1px solid #f0f0f0;
+            position: sticky;
+            top: 0;
+        }
+        .media-item {
+            padding: 8px 14px;
+            border-bottom: 1px solid #fafafa;
+            font-size: 0.9em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .media-item:last-child { border-bottom: none; }
+        .media-item .title { color: #333; flex: 1; }
+        .media-item .romaji { color: #aaa; font-size: 0.85em; margin-left: 8px; }
+        .media-item .badge {
+            font-size: 0.75em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .badge.vndb { background: #4a90d9; }
+        .badge.anime { background: #e74c3c; }
+        .badge.manga { background: #2ecc71; }
+        #mediaTypeGroup { display: none; }
+        .or-divider {
+            text-align: center;
+            color: #ccc;
+            margin: 4px 0;
+            font-size: 0.85em;
+        }
+
+        /* Info cards */
+        .info-cards {
+            max-width: 700px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .info-card {
+            background: white;
+            border-radius: 14px;
+            padding: 24px 28px;
+            box-shadow: 0 8px 30px rgba(255, 105, 135, 0.12);
+        }
+        .info-card h3 {
+            color: #e84393;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+        .info-card p {
+            color: #666;
+            font-size: 0.92em;
+            line-height: 1.6;
+        }
+        .info-card a {
+            color: #e84393;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .info-card a:hover {
+            text-decoration: underline;
+        }
+        .footer-links {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+        .footer-links a {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 18px;
+            background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+            color: white;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9em;
+            text-decoration: none;
+            transition: transform 0.2s;
+        }
+        .footer-links a:hover {
+            transform: translateY(-2px);
+            text-decoration: none;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>( Yomitan Dictionary Builder</h1>
+        <p class="subtitle">Generate character name dictionaries for Yomitan</p>
+
+        <!-- Dictionary Preview Image Stub -->
+        <div class="dict-preview">
+            <div class="icon"></div>
+            <div class="label">Dictionary Preview</div>
+            <div class="hint">Screenshot coming soon!</div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="username">From Username</div>
+            <div class="tab" data-tab="manual">From Media ID</div>
+        </div>
+
+        <!-- Tab 1: Username-based (Primary) -->
+        <div class="tab-content active" id="tab-username">
+            <div class="form-group inline">
+                <div>
+                    <label for="vndbUser">VNDB Username <span class="label-hint">(optional)</span></label>
+                    <input type="text" id="vndbUser" placeholder="e.g., Yorhel">
+                </div>
+                <div>
+                    <label for="anilistUser">AniList Username <span class="label-hint">(optional)</span></label>
+                    <input type="text" id="anilistUser" placeholder="e.g., Josh">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="spoilerUsername">Spoiler Level:</label>
+                <select id="spoilerUsername">
+                    <option value="0">No Spoilers (name, image, role only)</option>
+                    <option value="1">Minor Spoilers (+ description, stats)</option>
+                    <option value="2">Full Spoilers (+ all traits, full description)</option>
+                </select>
+            </div>
+
+            <button id="fetchListsBtn" onclick="fetchLists()">Fetch Lists & Preview</button>
+
+            <div class="media-preview" id="mediaPreview">
+                <div class="media-preview-header" id="mediaPreviewHeader">In-Progress Media (0)</div>
+                <div id="mediaPreviewList"></div>
+            </div>
+
+            <button id="generateFromUsernameBtn" style="display:none; margin-top: 12px;" onclick="generateFromUsername()">Generate Dictionary</button>
+
+            <div class="progress-bar-container" id="progressContainer">
+                <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+            </div>
+
+            <div class="status" id="statusUsername"></div>
+        </div>
+
+        <!-- Tab 2: Manual Media ID (Secondary) -->
+        <div class="tab-content" id="tab-manual">
+            <form id="dictForm">
+                <div class="form-group">
+                    <label for="source">Source:</label>
+                    <select id="source" name="source" required>
+                        <option value="vndb">VNDB (Visual Novel Database)</option>
+                        <option value="anilist">AniList (Anime/Manga)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="mediaTypeGroup">
+                    <label for="mediaType">Media Type:</label>
+                    <select id="mediaType" name="mediaType">
+                        <option value="ANIME">Anime</option>
+                        <option value="MANGA">Manga</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="id">Media ID:</label>
+                    <input type="text" id="id" name="id" placeholder="e.g., v17 or 9253" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="spoiler">Spoiler Level:</label>
+                    <select id="spoiler" name="spoiler">
+                        <option value="0">No Spoilers (name, image, role only)</option>
+                        <option value="1">Minor Spoilers (+ description, stats)</option>
+                        <option value="2">Full Spoilers (+ all traits, full description)</option>
+                    </select>
+                </div>
+
+                <button type="submit" id="submitBtn">Generate Dictionary</button>
+            </form>
+
+            <div class="status" id="statusManual"></div>
+        </div>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="info-cards">
+        <div class="info-card">
+            <h3>= Auto-Updating Dictionary</h3>
+            <p>
+                This dictionary is auto-updating! Every time you regenerate it from your user lists,
+                it pulls the latest character data from VNDB and AniList. As new characters are added
+                to your visual novels, anime, or manga  or existing character data is updated upstream 
+                your dictionary stays fresh. Just re-run the generator periodically to keep it current.
+            </p>
+        </div>
+
+        <div class="info-card">
+            <h3>Yomitan Auto-Update Support</h3>
+            <p>
+                Yomitan doesn't currently support automatically updating dictionaries within the extension itself.
+                You'll need to manually regenerate and re-import the dictionary to get updates.
+                If you'd like Yomitan to support auto-updating, please upvote and comment on the feature request:
+                <a href="https://github.com/yomidevs/yomitan/issues/2277" target="_blank" rel="noopener">
+                    yomitan#2277  Auto-update dictionaries
+                </a>
+            </p>
+        </div>
+
+        <div class="info-card">
+            <h3> Links & Support</h3>
+            <p style="margin-bottom: 12px;">
+                This project is open source! Check out the code, report issues, or contribute on GitHub.
+                If you find it useful, consider sponsoring to support development 
+            </p>
+            <div class="footer-links">
+                <a href="https://github.com/bee-san/Japanese_Character_Name_Dictionary" target="_blank" rel="noopener">
+                    P GitHub Repository
+                </a>
+                <a href="https://github.com/sponsors/bee-san" target="_blank" rel="noopener">
+                     Sponsor
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === Tab switching ===
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // === Manual tab: show/hide media type ===
+        document.getElementById('source').addEventListener('change', function() {
+            document.getElementById('mediaTypeGroup').style.display =
+                this.value === 'anilist' ? 'block' : 'none';
+        });
+
+        // === Username tab: Fetch lists ===
+        async function fetchLists() {
+            const vndbUser = document.getElementById('vndbUser').value.trim();
+            const anilistUser = document.getElementById('anilistUser').value.trim();
+            const status = document.getElementById('statusUsername');
+            const fetchBtn = document.getElementById('fetchListsBtn');
+            const genBtn = document.getElementById('generateFromUsernameBtn');
+            const preview = document.getElementById('mediaPreview');
+
+            if (!vndbUser && !anilistUser) {
+                status.textContent = 'Please enter at least one username.';
+                status.className = 'status show error';
+                return;
+            }
+
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
+            status.textContent = 'Fetching user lists...';
+            status.className = 'status show loading';
+            genBtn.style.display = 'none';
+            preview.classList.remove('show');
+
+            try {
+                let url = '/api/user-lists?';
+                const params = [];
+                if (vndbUser) params.push('vndb_user=' + encodeURIComponent(vndbUser));
+                if (anilistUser) params.push('anilist_user=' + encodeURIComponent(anilistUser));
+                url += params.join('&');
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                const entries = data.entries || [];
+
+                if (entries.length === 0) {
+                    status.textContent = 'No in-progress media found. Make sure you have titles marked as "Playing" (VNDB) or "Watching/Reading" (AniList).';
+                    status.className = 'status show error';
+                    return;
+                }
+
+                // Show preview
+                const header = document.getElementById('mediaPreviewHeader');
+                header.textContent = `In-Progress Media (${entries.length})`;
+
+                const list = document.getElementById('mediaPreviewList');
+                list.innerHTML = '';
+
+                entries.forEach(entry => {
+                    const item = document.createElement('div');
+                    item.className = 'media-item';
+
+                    const badgeClass = entry.source === 'vndb' ? 'vndb' : entry.media_type;
+                    const badgeText = entry.source === 'vndb' ? 'VN' :
+                        entry.media_type === 'anime' ? 'Anime' : 'Manga';
+
+                    item.innerHTML = `
+                        <span class="title">${escapeHtml(entry.title)}</span>
+                        ${entry.title_romaji && entry.title_romaji !== entry.title
+                            ? `<span class="romaji">${escapeHtml(entry.title_romaji)}</span>`
+                            : ''}
+                        <span class="badge ${badgeClass}">${badgeText}</span>
+                    `;
+                    list.appendChild(item);
+                });
+
+                preview.classList.add('show');
+                genBtn.style.display = 'block';
+
+                let msg = `Found ${entries.length} in-progress title${entries.length !== 1 ? 's' : ''}.`;
+                if (data.errors && data.errors.length > 0) {
+                    msg += ` (Warnings: ${data.errors.join('; ')})`;
+                }
+                status.textContent = msg;
+                status.className = 'status show success';
+
+            } catch (err) {
+                status.textContent = `Error: ${err.message}`;
+                status.className = 'status show error';
+            } finally {
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Fetch Lists & Preview';
+            }
+        }
+
+        // === Username tab: Generate dictionary with SSE progress ===
+        function generateFromUsername() {
+            const vndbUser = document.getElementById('vndbUser').value.trim();
+            const anilistUser = document.getElementById('anilistUser').value.trim();
+            const spoiler = document.getElementById('spoilerUsername').value;
+            const status = document.getElementById('statusUsername');
+            const genBtn = document.getElementById('generateFromUsernameBtn');
+            const fetchBtn = document.getElementById('fetchListsBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+
+            genBtn.disabled = true;
+            genBtn.textContent = 'Generating...';
+            fetchBtn.disabled = true;
+            progressContainer.classList.add('show');
+            progressBar.style.width = '0%';
+            progressBar.textContent = '';
+            status.textContent = 'Starting dictionary generation...';
+            status.className = 'status show loading';
+
+            let url = '/api/generate-stream?spoiler_level=' + spoiler;
+            if (vndbUser) url += '&vndb_user=' + encodeURIComponent(vndbUser);
+            if (anilistUser) url += '&anilist_user=' + encodeURIComponent(anilistUser);
+
+            const eventSource = new EventSource(url);
+
+            eventSource.addEventListener('progress', (e) => {
+                const data = JSON.parse(e.data);
+                const pct = Math.round((data.current / data.total) * 100);
+                progressBar.style.width = pct + '%';
+                progressBar.textContent = `${data.current}/${data.total}`;
+                status.textContent = `Processing ${data.current}/${data.total}: ${data.title}`;
+                status.className = 'status show loading';
+            });
+
+            eventSource.addEventListener('complete', async (e) => {
+                eventSource.close();
+                const data = JSON.parse(e.data);
+                progressBar.style.width = '100%';
+                progressBar.textContent = 'Done!';
+                status.textContent = 'Downloading dictionary...';
+
+                try {
+                    const response = await fetch('/api/download?token=' + encodeURIComponent(data.token));
+                    if (!response.ok) throw new Error('Download failed');
+
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = 'gsm_characters.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(downloadUrl);
+
+                    status.textContent = 'Dictionary downloaded! Import the ZIP into Yomitan.';
+                    status.className = 'status show success';
+                } catch (err) {
+                    status.textContent = `Download error: ${err.message}`;
+                    status.className = 'status show error';
+                } finally {
+                    genBtn.disabled = false;
+                    genBtn.textContent = 'Generate Dictionary';
+                    fetchBtn.disabled = false;
+                }
+            });
+
+            eventSource.addEventListener('error', (e) => {
+                // Check if it's a custom error event or connection error
+                if (e.data) {
+                    const data = JSON.parse(e.data);
+                    status.textContent = `Error: ${data.error}`;
+                } else {
+                    status.textContent = 'Connection error. Please try again.';
+                }
+                status.className = 'status show error';
+                eventSource.close();
+                genBtn.disabled = false;
+                genBtn.textContent = 'Generate Dictionary';
+                fetchBtn.disabled = false;
+                progressContainer.classList.remove('show');
+            });
+
+            eventSource.onerror = () => {
+                // This fires on connection close too, ignore if already handled
+                if (genBtn.disabled) {
+                    // Still running, this is a real error
+                    eventSource.close();
+                    status.textContent = 'Connection lost. Please try again.';
+                    status.className = 'status show error';
+                    genBtn.disabled = false;
+                    genBtn.textContent = 'Generate Dictionary';
+                    fetchBtn.disabled = false;
+                    progressContainer.classList.remove('show');
+                }
+            };
+        }
+
+        // === Manual tab: Single media generation ===
+        document.getElementById('dictForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const source = document.getElementById('source').value;
+            const id = document.getElementById('id').value.trim();
+            const spoiler = document.getElementById('spoiler').value;
+            const mediaType = document.getElementById('mediaType').value;
+            const submitBtn = document.getElementById('submitBtn');
+            const status = document.getElementById('statusManual');
+
+            if (!id) {
+                status.textContent = 'Please enter a media ID';
+                status.className = 'status show error';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Generating...';
+            status.textContent = 'Fetching characters and building dictionary... This may take a minute.';
+            status.className = 'status show loading';
+
+            try {
+                let url = `/api/yomitan-dict?source=${source}&id=${encodeURIComponent(id)}&spoiler_level=${spoiler}`;
+                if (source === 'anilist') {
+                    url += `&media_type=${mediaType}`;
+                }
+
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `HTTP ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `yomitan_${source}_${id}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+
+                status.textContent = 'Dictionary downloaded! Import the ZIP into Yomitan.';
+                status.className = 'status show success';
+            } catch (err) {
+                status.textContent = `Error: ${err.message}`;
+                status.className = 'status show error';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Generate Dictionary';
+            }
+        });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

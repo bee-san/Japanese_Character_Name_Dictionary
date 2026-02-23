@@ -1,0 +1,10 @@
+# Rust build artifacts
+yomitan-dict-builder/target/
+
+# macOS
+.DS_Store
+
+# Editor temp files
+*.swp
+*.swo
+*~
