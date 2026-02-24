@@ -2,6 +2,43 @@ use reqwest::Client;
 
 use crate::models::*;
 
+/// Maximum number of retries on HTTP 429 (rate limited).
+const MAX_RETRIES: u32 = 3;
+
+/// Send a request with automatic retry on HTTP 429 (Too Many Requests).
+/// Uses exponential backoff: 1s, 2s, 4s.
+async fn send_with_retry(
+    request_builder: reqwest::RequestBuilder,
+    client: &Client,
+) -> Result<reqwest::Response, reqwest::Error> {
+    // We need to clone the request for retries, so build it first
+    let request = request_builder.build()?;
+    let mut delay_ms = 1000u64;
+
+    for attempt in 0..=MAX_RETRIES {
+        let req_clone = request.try_clone().expect("Request body must be cloneable");
+        let response = client.execute(req_clone).await?;
+
+        if response.status() == 429 && attempt < MAX_RETRIES {
+            // Check for Retry-After header
+            if let Some(retry_after) = response.headers().get("retry-after") {
+                if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs.min(10))).await;
+                    continue;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            delay_ms *= 2;
+            continue;
+        }
+
+        return Ok(response);
+    }
+
+    // Shouldn't reach here, but just in case
+    client.execute(request).await
+}
+
 /// Parsed result from user input: either a direct user ID or a username to resolve.
 enum ParsedUserInput {
     UserId(String),
@@ -74,13 +111,14 @@ impl VndbClient {
 
     /// Internal: resolve a plain username string via the VNDB API.
     async fn resolve_username(&self, username: &str) -> Result<String, String> {
-        let response = self
-            .client
-            .get("https://api.vndb.org/kana/user")
-            .query(&[("q", username)])
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let response = send_with_retry(
+            self.client
+                .get("https://api.vndb.org/kana/user")
+                .query(&[("q", username)]),
+            &self.client,
+        )
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
 
         if response.status() != 200 {
             return Err(format!("VNDB user API returned status {}", response.status()));
@@ -135,13 +173,14 @@ impl VndbClient {
                 "page": page
             });
 
-            let response = self
-                .client
-                .post("https://api.vndb.org/kana/ulist")
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
+            let response = send_with_retry(
+                self.client
+                    .post("https://api.vndb.org/kana/ulist")
+                    .json(&payload),
+                &self.client,
+            )
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
 
             if response.status() != 200 {
                 return Err(format!("VNDB ulist API returned status {}", response.status()));
@@ -216,13 +255,14 @@ impl VndbClient {
             "fields": "title, alttitle"
         });
 
-        let response = self
-            .client
-            .post("https://api.vndb.org/kana/vn")
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let response = send_with_retry(
+            self.client
+                .post("https://api.vndb.org/kana/vn")
+                .json(&payload),
+            &self.client,
+        )
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
 
         if response.status() != 200 {
             return Err(format!("VNDB VN API returned status {}", response.status()));
@@ -258,13 +298,14 @@ impl VndbClient {
                 "page": page
             });
 
-            let response = self
-                .client
-                .post("https://api.vndb.org/kana/character")
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
+            let response = send_with_retry(
+                self.client
+                    .post("https://api.vndb.org/kana/character")
+                    .json(&payload),
+                &self.client,
+            )
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
 
             if response.status() != 200 {
                 return Err(format!("VNDB API returned status {}", response.status()));

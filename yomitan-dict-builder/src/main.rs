@@ -17,10 +17,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::services::ServeDir;
+use tracing::{info, warn};
 
 mod anilist_client;
 mod content_builder;
 mod dict_builder;
+mod disk_cache;
 mod image_handler;
 mod models;
 mod name_parser;
@@ -28,6 +30,7 @@ mod vndb_client;
 
 use anilist_client::AnilistClient;
 use dict_builder::DictBuilder;
+use disk_cache::DiskImageCache;
 use image_handler::ImageHandler;
 use models::UserMediaEntry;
 use vndb_client::VndbClient;
@@ -62,22 +65,48 @@ struct AppState {
     downloads: DownloadStore,
     /// Shared HTTP client for connection pooling across all API calls.
     http_client: reqwest::Client,
-    /// Image cache: URL → (resized_bytes, extension). Disk-backed via moka with 500MB max.
+    /// In-memory image cache: URL → (resized_bytes, extension).
+    /// Weighted by byte size with 500MB cap, 24h TTL.
+    /// Backed by disk cache for persistence across restarts.
     image_cache: Cache<String, ImageCacheEntry>,
+    /// Disk-backed image cache with 30-day TTL. Survives process restarts.
+    disk_image_cache: DiskImageCache,
     /// ZIP cache: query_key → zip_bytes. Short TTL for username-based, longer for single-media.
     zip_cache: Cache<String, ZipCacheEntry>,
 }
 
 impl AppState {
-    fn new() -> Self {
+    async fn new() -> Self {
+        let cache_dir = std::env::var("CACHE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                // Default: ./cache in debug, /var/cache/yomitan in release
+                if cfg!(debug_assertions) {
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("cache")
+                } else {
+                    std::path::PathBuf::from("/var/cache/yomitan")
+                }
+            });
+
+        let disk_image_cache = DiskImageCache::new(cache_dir.join("images")).await;
+        disk_image_cache.spawn_cleanup_task();
+
         Self {
             downloads: Arc::new(Mutex::new(HashMap::new())),
-            http_client: reqwest::Client::new(),
-            // Image cache: max 500MB, 24h TTL (portraits rarely change)
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("Failed to build HTTP client"),
+            // Image cache: weighted by byte size, 500MB cap, 24h TTL
             image_cache: Cache::builder()
-                .max_capacity(10_000)
+                .weigher(|_key: &String, value: &ImageCacheEntry| -> u32 {
+                    // Weight = image bytes + extension string + overhead estimate
+                    (value.0.len() + value.1.len() + 64).min(u32::MAX as usize) as u32
+                })
+                .max_capacity(500 * 1024 * 1024) // 500MB actual byte budget
                 .time_to_live(std::time::Duration::from_secs(86400))
                 .build(),
+            disk_image_cache,
             // ZIP cache: max 200 entries, 15min TTL
             zip_cache: Cache::builder()
                 .max_capacity(200)
@@ -153,9 +182,23 @@ fn zip_cache_key(
     format!("{:x}", hasher.finalize())
 }
 
+/// Get the base URL for auto-update URLs.
+/// Reads from BASE_URL env var, defaults to http://127.0.0.1:3000.
+fn base_url() -> String {
+    std::env::var("BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".to_string())
+}
+
 #[tokio::main]
 async fn main() {
-    let state = AppState::new();
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
+    let state = AppState::new().await;
 
     let app = Router::new()
         .route("/", get(serve_index))
@@ -168,7 +211,7 @@ async fn main() {
         .with_state(state);
 
     let addr = "0.0.0.0:3000";
-    println!("Server running on http://{}", addr);
+    info!("Server running on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -325,28 +368,59 @@ async fn download_zip(
 
 /// Download, resize, and cache a single character image.
 /// Returns (resized_bytes, extension) or None on failure.
+///
+/// Lookup order: moka (memory) → disk → HTTP.
+/// On HTTP fetch, writes to both moka and disk.
+/// On disk hit, promotes to moka for fast subsequent access.
 async fn fetch_and_cache_image(
     url: &str,
     http_client: &reqwest::Client,
     image_cache: &Cache<String, ImageCacheEntry>,
+    disk_cache: &DiskImageCache,
 ) -> Option<ImageCacheEntry> {
-    // Check cache first
+    // Tier 1: in-memory cache
     if let Some(cached) = image_cache.get(url).await {
         return Some(cached);
     }
 
-    // Download
-    let response = http_client.get(url).send().await.ok()?;
-    if response.status() != 200 {
-        return None;
+    // Tier 2: disk cache (promotes to memory on hit)
+    if let Some((bytes, ext)) = disk_cache.get(url).await {
+        let entry: ImageCacheEntry = (bytes, ext);
+        image_cache.insert(url.to_string(), entry.clone()).await;
+        return Some(entry);
     }
-    let raw_bytes = response.bytes().await.ok()?;
+
+    // Tier 3: HTTP download with per-image timeout
+    let download_future = async {
+        let response = http_client.get(url).send().await.ok()?;
+        if response.status() != 200 {
+            warn!(url = url, status = %response.status(), "Image download returned non-200");
+            return None;
+        }
+        response.bytes().await.ok()
+    };
+
+    let raw_bytes = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        download_future,
+    ).await {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return None,
+        Err(_) => {
+            warn!(url = url, "Image download timed out after 10s");
+            return None;
+        }
+    };
 
     // Resize to thumbnail + convert to WebP
     let (resized, ext) = ImageHandler::resize_image(&raw_bytes);
 
     let entry: ImageCacheEntry = (resized, ext.to_string());
+
+    // Write to both cache tiers
     image_cache.insert(url.to_string(), entry.clone()).await;
+    disk_cache.put(url, &entry.0, &entry.1).await;
+
     Some(entry)
 }
 
@@ -356,6 +430,7 @@ async fn download_images_concurrent(
     char_data: &mut models::CharacterData,
     http_client: &reqwest::Client,
     image_cache: &Cache<String, ImageCacheEntry>,
+    disk_cache: &DiskImageCache,
     concurrency: usize,
 ) {
     // Collect (index_in_flat_list, url) pairs
@@ -370,8 +445,9 @@ async fn download_images_concurrent(
         .map(|(idx, url)| {
             let client = http_client.clone();
             let cache = image_cache.clone();
+            let disk = disk_cache.clone();
             async move {
-                let result = fetch_and_cache_image(&url, &client, &cache).await;
+                let result = fetch_and_cache_image(&url, &client, &cache, &disk).await;
                 (idx, result)
             }
         })
@@ -401,6 +477,8 @@ async fn generate_dict_from_usernames(
     progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
+    let spoiler_level = spoiler_level.min(2);
+
     // Check ZIP cache (skip for SSE streaming — user expects fresh progress)
     if progress_tx.is_none() {
         let cache_key = zip_cache_key(None, None, vndb_user, anilist_user, spoiler_level, honorifics, "");
@@ -420,7 +498,7 @@ async fn generate_dict_from_usernames(
                 if anilist_user.is_empty() {
                     return Err(format!("VNDB error: {}", e));
                 }
-                eprintln!("VNDB list fetch error (continuing): {}", e);
+                warn!(user = vndb_user, error = %e, "VNDB list fetch error (continuing)");
             }
         }
     }
@@ -433,7 +511,7 @@ async fn generate_dict_from_usernames(
                 if vndb_user.is_empty() || media_entries.is_empty() {
                     return Err(format!("AniList error: {}", e));
                 }
-                eprintln!("AniList list fetch error (continuing): {}", e);
+                warn!(user = anilist_user, error = %e, "AniList list fetch error (continuing)");
             }
         }
     }
@@ -444,20 +522,22 @@ async fn generate_dict_from_usernames(
 
     let total = media_entries.len();
 
-    // Build download URL with usernames for auto-update
+    // Build download URL with usernames for auto-update (percent-encoded)
+    let base = base_url();
     let mut url_parts = Vec::new();
     if !vndb_user.is_empty() {
-        url_parts.push(format!("vndb_user={}", vndb_user));
+        url_parts.push(format!("vndb_user={}", urlencoding::encode(vndb_user)));
     }
     if !anilist_user.is_empty() {
-        url_parts.push(format!("anilist_user={}", anilist_user));
+        url_parts.push(format!("anilist_user={}", urlencoding::encode(anilist_user)));
     }
     url_parts.push(format!("spoiler_level={}", spoiler_level));
     if !honorifics {
         url_parts.push("honorifics=false".to_string());
     }
     let download_url = format!(
-        "http://127.0.0.1:3000/api/yomitan-dict?{}",
+        "{}/api/yomitan-dict?{}",
+        base,
         url_parts.join("&")
     );
 
@@ -511,6 +591,7 @@ async fn generate_dict_from_usernames(
                             &mut char_data,
                             &state.http_client,
                             &state.image_cache,
+                            &state.disk_image_cache,
                             8,
                         ).await;
 
@@ -519,7 +600,7 @@ async fn generate_dict_from_usernames(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to fetch characters for VNDB {}: {}", entry.id, e);
+                        warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
                     }
                 }
 
@@ -530,7 +611,7 @@ async fn generate_dict_from_usernames(
                 let media_id: i32 = match entry.id.parse() {
                     Ok(id) => id,
                     Err(_) => {
-                        eprintln!("Invalid AniList media ID: {}", entry.id);
+                        warn!(id = %entry.id, "Invalid AniList media ID");
                         continue;
                     }
                 };
@@ -553,6 +634,7 @@ async fn generate_dict_from_usernames(
                             &mut char_data,
                             &state.http_client,
                             &state.image_cache,
+                            &state.disk_image_cache,
                             6,
                         ).await;
 
@@ -561,14 +643,14 @@ async fn generate_dict_from_usernames(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to fetch characters for AniList {}: {}", entry.id, e);
+                        warn!(media_id = %entry.id, error = %e, "Failed to fetch AniList characters");
                     }
                 }
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             }
             _ => {
-                eprintln!("Unknown source: {}", entry.source);
+                warn!(source = %entry.source, "Unknown source");
             }
         }
     }
@@ -577,7 +659,7 @@ async fn generate_dict_from_usernames(
         return Err("No character entries generated from any media".to_string());
     }
 
-    let zip_bytes = builder.export_bytes();
+    let zip_bytes = builder.export_bytes()?;
 
     // Cache the result
     let cache_key = zip_cache_key(None, None, vndb_user, anilist_user, spoiler_level, honorifics, "");
@@ -644,11 +726,18 @@ async fn generate_dict(
             .into_response();
     }
 
-    let download_url = format!(
-        "http://127.0.0.1:3000/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
-        source, id, spoiler_level, params.media_type,
-        if !params.honorifics { "&honorifics=false" } else { "" }
-    );
+    let download_url = {
+        let base = base_url();
+        format!(
+            "{}/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
+            base,
+            urlencoding::encode(source),
+            urlencoding::encode(id),
+            spoiler_level,
+            urlencoding::encode(&params.media_type),
+            if !params.honorifics { "&honorifics=false" } else { "" }
+        )
+    };
 
     let result = match source.to_lowercase().as_str() {
         "vndb" => generate_vndb_dict(id, spoiler_level, params.honorifics, &download_url, &state).await,
@@ -695,27 +784,34 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
     let anilist_user = params.anilist_user.as_deref().unwrap_or("").trim().to_string();
 
     let download_url = if !vndb_user.is_empty() || !anilist_user.is_empty() {
+        let base = base_url();
         let mut url_parts = Vec::new();
         if !vndb_user.is_empty() {
-            url_parts.push(format!("vndb_user={}", vndb_user));
+            url_parts.push(format!("vndb_user={}", urlencoding::encode(&vndb_user)));
         }
         if !anilist_user.is_empty() {
-            url_parts.push(format!("anilist_user={}", anilist_user));
+            url_parts.push(format!("anilist_user={}", urlencoding::encode(&anilist_user)));
         }
         url_parts.push(format!("spoiler_level={}", spoiler_level));
         if !params.honorifics {
             url_parts.push("honorifics=false".to_string());
         }
         format!(
-            "http://127.0.0.1:3000/api/yomitan-dict?{}",
+            "{}/api/yomitan-dict?{}",
+            base,
             url_parts.join("&")
         )
     } else {
+        let base = base_url();
         let source = params.source.as_deref().unwrap_or("");
         let id = params.id.as_deref().unwrap_or("");
         format!(
-            "http://127.0.0.1:3000/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
-            source, id, spoiler_level, params.media_type,
+            "{}/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
+            base,
+            urlencoding::encode(source),
+            urlencoding::encode(id),
+            spoiler_level,
+            urlencoding::encode(&params.media_type),
             if !params.honorifics { "&honorifics=false" } else { "" }
         )
     };
@@ -762,6 +858,7 @@ async fn generate_vndb_dict(
         &mut char_data,
         &state.http_client,
         &state.image_cache,
+        &state.disk_image_cache,
         8,
     ).await;
 
@@ -780,7 +877,7 @@ async fn generate_vndb_dict(
         return Err("No character entries generated".to_string());
     }
 
-    Ok(builder.export_bytes())
+    builder.export_bytes()
 }
 
 async fn generate_anilist_dict(
@@ -806,6 +903,7 @@ async fn generate_anilist_dict(
         &mut char_data,
         &state.http_client,
         &state.image_cache,
+        &state.disk_image_cache,
         6,
     ).await;
 
@@ -824,5 +922,5 @@ async fn generate_anilist_dict(
         return Err("No character entries generated".to_string());
     }
 
-    Ok(builder.export_bytes())
+    builder.export_bytes()
 }

@@ -394,7 +394,7 @@ impl DictBuilder {
     }
 
     /// Export the dictionary as in-memory ZIP bytes.
-    pub fn export_bytes(&self) -> Vec<u8> {
+    pub fn export_bytes(&self) -> Result<Vec<u8>, String> {
         let buffer = Vec::new();
         let cursor = Cursor::new(buffer);
         let mut zip = ZipWriter::new(cursor);
@@ -406,33 +406,44 @@ impl DictBuilder {
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // 1. index.json
-        zip.start_file("index.json", json_options).unwrap();
-        let index_json = serde_json::to_string_pretty(&self.create_index()).unwrap();
-        zip.write_all(index_json.as_bytes()).unwrap();
+        zip.start_file("index.json", json_options)
+            .map_err(|e| format!("Failed to create index.json in ZIP: {}", e))?;
+        let index_json = serde_json::to_string_pretty(&self.create_index())
+            .map_err(|e| format!("Failed to serialize index.json: {}", e))?;
+        zip.write_all(index_json.as_bytes())
+            .map_err(|e| format!("Failed to write index.json: {}", e))?;
 
         // 2. tag_bank_1.json
-        zip.start_file("tag_bank_1.json", json_options).unwrap();
-        let tags_json = serde_json::to_string(&self.create_tags()).unwrap();
-        zip.write_all(tags_json.as_bytes()).unwrap();
+        zip.start_file("tag_bank_1.json", json_options)
+            .map_err(|e| format!("Failed to create tag_bank_1.json in ZIP: {}", e))?;
+        let tags_json = serde_json::to_string(&self.create_tags())
+            .map_err(|e| format!("Failed to serialize tag_bank: {}", e))?;
+        zip.write_all(tags_json.as_bytes())
+            .map_err(|e| format!("Failed to write tag_bank: {}", e))?;
 
         // 3. term_bank_N.json (chunked at 10,000 entries per file)
         let entries_per_bank = 10_000;
         for (i, chunk) in self.entries.chunks(entries_per_bank).enumerate() {
             let filename = format!("term_bank_{}.json", i + 1);
-            zip.start_file(&filename, json_options).unwrap();
-            let data = serde_json::to_string(chunk).unwrap();
-            zip.write_all(data.as_bytes()).unwrap();
+            zip.start_file(&filename, json_options)
+                .map_err(|e| format!("Failed to create {} in ZIP: {}", filename, e))?;
+            let data = serde_json::to_string(chunk)
+                .map_err(|e| format!("Failed to serialize {}: {}", filename, e))?;
+            zip.write_all(data.as_bytes())
+                .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
         }
 
         // 4. Images in img/ folder (stored uncompressed)
         for (filename, bytes) in &self.images {
             zip.start_file(format!("img/{}", filename), image_options)
-                .unwrap();
-            zip.write_all(bytes).unwrap();
+                .map_err(|e| format!("Failed to create img/{} in ZIP: {}", filename, e))?;
+            zip.write_all(bytes)
+                .map_err(|e| format!("Failed to write img/{}: {}", filename, e))?;
         }
 
-        let cursor = zip.finish().unwrap();
-        cursor.into_inner()
+        let cursor = zip.finish()
+            .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
+        Ok(cursor.into_inner())
     }
 }
 
@@ -690,7 +701,7 @@ mod tests {
         let char = make_test_character("c1", "Test Name", "テスト", "main");
         builder.add_character(&char, "Test Game");
 
-        let zip_bytes = builder.export_bytes();
+        let zip_bytes = builder.export_bytes().unwrap();
         assert!(!zip_bytes.is_empty(), "ZIP should not be empty");
 
         // Verify it's a valid ZIP (starts with PK magic bytes)
@@ -717,7 +728,7 @@ mod tests {
         let char = make_test_character("c1", "Test", "テスト", "main");
         builder.add_character(&char, "Test Game");
 
-        let zip_bytes = builder.export_bytes();
+        let zip_bytes = builder.export_bytes().unwrap();
         let cursor = std::io::Cursor::new(zip_bytes);
         let mut archive = zip::ZipArchive::new(cursor).unwrap();
 
@@ -739,7 +750,7 @@ mod tests {
         char.image_ext = Some("jpg".to_string());
         builder.add_character(&char, "Test");
 
-        let zip_bytes = builder.export_bytes();
+        let zip_bytes = builder.export_bytes().unwrap();
         let cursor = std::io::Cursor::new(zip_bytes);
         let mut archive = zip::ZipArchive::new(cursor).unwrap();
 
@@ -788,7 +799,7 @@ mod tests {
 
     /// Helper: build a ZIP and return a ZipArchive for inspection.
     fn build_zip_archive(builder: &DictBuilder) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
-        let bytes = builder.export_bytes();
+        let bytes = builder.export_bytes().unwrap();
         let cursor = std::io::Cursor::new(bytes);
         zip::ZipArchive::new(cursor).expect("export_bytes must produce a valid ZIP")
     }
@@ -1198,7 +1209,7 @@ mod tests {
         let ch = make_full_character();
         builder.add_character(&ch, "Steins;Gate");
 
-        let zip_bytes = builder.export_bytes();
+        let zip_bytes = builder.export_bytes().unwrap();
 
         // Step 1: Valid ZIP
         let cursor = std::io::Cursor::new(zip_bytes);

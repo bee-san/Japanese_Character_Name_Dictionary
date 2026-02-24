@@ -2,6 +2,40 @@ use reqwest::Client;
 
 use crate::models::*;
 
+/// Maximum number of retries on HTTP 429 (rate limited).
+const MAX_RETRIES: u32 = 3;
+
+/// Send a request with automatic retry on HTTP 429 (Too Many Requests).
+/// Uses exponential backoff: 1s, 2s, 4s.
+async fn send_with_retry(
+    request_builder: reqwest::RequestBuilder,
+    client: &Client,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let request = request_builder.build()?;
+    let mut delay_ms = 1000u64;
+
+    for attempt in 0..=MAX_RETRIES {
+        let req_clone = request.try_clone().expect("Request body must be cloneable");
+        let response = client.execute(req_clone).await?;
+
+        if response.status() == 429 && attempt < MAX_RETRIES {
+            if let Some(retry_after) = response.headers().get("retry-after") {
+                if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(secs.min(10))).await;
+                    continue;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            delay_ms *= 2;
+            continue;
+        }
+
+        return Ok(response);
+    }
+
+    client.execute(request).await
+}
+
 pub struct AnilistClient {
     client: Client,
 }
@@ -46,16 +80,17 @@ impl AnilistClient {
                 "type": media_type_gql
             });
 
-            let response = self
-                .client
-                .post("https://graphql.anilist.co")
-                .json(&serde_json::json!({
-                    "query": Self::USER_LIST_QUERY,
-                    "variables": variables
-                }))
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
+            let response = send_with_retry(
+                self.client
+                    .post("https://graphql.anilist.co")
+                    .json(&serde_json::json!({
+                        "query": Self::USER_LIST_QUERY,
+                        "variables": variables
+                    })),
+                &self.client,
+            )
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
 
             if response.status() != 200 {
                 // AniList returns 404 for non-existent users
@@ -201,16 +236,17 @@ impl AnilistClient {
                 "perPage": 25
             });
 
-            let response = self
-                .client
-                .post("https://graphql.anilist.co")
-                .json(&serde_json::json!({
-                    "query": Self::CHARACTERS_QUERY,
-                    "variables": variables
-                }))
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
+            let response = send_with_retry(
+                self.client
+                    .post("https://graphql.anilist.co")
+                    .json(&serde_json::json!({
+                        "query": Self::CHARACTERS_QUERY,
+                        "variables": variables
+                    })),
+                &self.client,
+            )
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
 
             if response.status() != 200 {
                 return Err(format!(

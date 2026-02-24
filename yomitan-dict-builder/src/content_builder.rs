@@ -79,33 +79,25 @@ impl ContentBuilder {
     /// Remove spoiler content from text. Both VNDB and AniList formats.
     pub fn strip_spoilers(text: &str) -> String {
         // VNDB: [spoiler]...[/spoiler]
-        let re_vndb = Regex::new(r"(?is)\[spoiler\].*?\[/spoiler\]").unwrap();
-        let text = re_vndb.replace_all(text, "");
+        let text = RE_VNDB_SPOILER.replace_all(text, "");
         // AniList: ~!...!~
-        let re_anilist = Regex::new(r"(?s)~!.*?!~").unwrap();
-        re_anilist.replace_all(&text, "").trim().to_string()
+        RE_ANILIST_SPOILER.replace_all(&text, "").trim().to_string()
     }
 
     /// Parse VNDB markup: strip [url=...], [quote], [code], [raw] tags down to inner text.
     pub fn parse_vndb_markup(text: &str) -> String {
         // [url=https://...]text[/url] → text
-        let re_url = Regex::new(r"(?i)\[url=[^\]]+\]([^\[]*)\[/url\]").unwrap();
-        let text = re_url.replace_all(text, "$1");
+        let text = RE_URL.replace_all(text, "$1");
         // [quote]...[/quote] → inner text
-        let re_quote = Regex::new(r"(?is)\[quote\](.*?)\[/quote\]").unwrap();
-        let text = re_quote.replace_all(&text, "$1");
+        let text = RE_QUOTE.replace_all(&text, "$1");
         // [code]...[/code] → inner text
-        let re_code = Regex::new(r"(?is)\[code\](.*?)\[/code\]").unwrap();
-        let text = re_code.replace_all(&text, "$1");
+        let text = RE_CODE.replace_all(&text, "$1");
         // [raw]...[/raw] → inner text (raw means "don't format", so we just unwrap)
-        let re_raw = Regex::new(r"(?is)\[raw\](.*?)\[/raw\]").unwrap();
-        let text = re_raw.replace_all(&text, "$1");
+        let text = RE_RAW.replace_all(&text, "$1");
         // [u]...[/u] → inner text (Yomitan doesn't support textDecoration style)
-        let re_u = Regex::new(r"(?is)\[u\](.*?)\[/u\]").unwrap();
-        let text = re_u.replace_all(&text, "$1");
+        let text = RE_UNDERLINE.replace_all(&text, "$1");
         // [s]...[/s] → inner text (Yomitan doesn't support textDecoration style)
-        let re_s = Regex::new(r"(?is)\[s\](.*?)\[/s\]").unwrap();
-        re_s.replace_all(&text, "$1").to_string()
+        RE_STRIKETHROUGH.replace_all(&text, "$1").to_string()
     }
 
     /// Parse BBCode [b] and [i] tags into Yomitan structured content nodes.
@@ -120,8 +112,7 @@ impl ContentBuilder {
 
         loop {
             // Match innermost tags: content must not contain `[`
-            let re_inner = Regex::new(r"(?is)\[(b|i)\]([^\[]*?)\[/(b|i)\]").unwrap();
-            if let Some(cap) = re_inner.captures(&working) {
+            if let Some(cap) = RE_BBCODE_INNER.captures(&working) {
                 let open_tag = cap[1].to_lowercase();
                 let close_tag = cap[3].to_lowercase();
 
@@ -167,15 +158,14 @@ impl ContentBuilder {
     /// Resolve placeholder markers back into structured content nodes.
     /// Returns a single Value (string, object, or array of mixed).
     fn resolve_placeholders(text: &str, nodes: &[serde_json::Value]) -> serde_json::Value {
-        let re_ph = Regex::new(r"\x00NODE(\d+)\x00").unwrap();
-        if !re_ph.is_match(text) {
+        if !RE_PLACEHOLDER.is_match(text) {
             return json!(text);
         }
 
         let mut result: Vec<serde_json::Value> = Vec::new();
         let mut last_end = 0;
 
-        for cap in re_ph.captures_iter(text) {
+        for cap in RE_PLACEHOLDER.captures_iter(text) {
             let full = cap.get(0).unwrap();
             if full.start() > last_end {
                 let before = &text[last_end..full.start()];
