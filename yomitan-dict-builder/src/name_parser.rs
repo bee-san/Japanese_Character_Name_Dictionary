@@ -313,12 +313,36 @@ pub const HONORIFIC_SUFFIXES: &[(&str, &str, &str)] = &[
 ];
 
 /// Check if text contains kanji characters.
-/// Unicode ranges: CJK Unified Ideographs (0x4E00–0x9FFF) + Extension A (0x3400–0x4DBF).
+/// Covers CJK Unified Ideographs, Extensions A–H, and Compatibility Ideographs.
 pub fn contains_kanji(text: &str) -> bool {
-    text.chars().any(|c| {
-        let code = c as u32;
-        (0x4E00..=0x9FFF).contains(&code) || (0x3400..=0x4DBF).contains(&code)
-    })
+    text.chars().any(is_kanji)
+}
+
+/// Returns true if the character is a CJK ideograph (kanji).
+fn is_kanji(c: char) -> bool {
+    let code = c as u32;
+    // CJK Unified Ideographs
+    (0x4E00..=0x9FFF).contains(&code)
+    // Extension A
+    || (0x3400..=0x4DBF).contains(&code)
+    // Extension B
+    || (0x20000..=0x2A6DF).contains(&code)
+    // Extension C
+    || (0x2A700..=0x2B73F).contains(&code)
+    // Extension D
+    || (0x2B740..=0x2B81F).contains(&code)
+    // Extension E
+    || (0x2B820..=0x2CEAF).contains(&code)
+    // Extension F
+    || (0x2CEB0..=0x2EBEF).contains(&code)
+    // Extension G
+    || (0x30000..=0x3134F).contains(&code)
+    // Extension H
+    || (0x31350..=0x323AF).contains(&code)
+    // CJK Compatibility Ideographs
+    || (0xF900..=0xFAFF).contains(&code)
+    // CJK Compatibility Ideographs Supplement
+    || (0x2F800..=0x2FA1F).contains(&code)
 }
 
 /// Split a Japanese name on the first space.
@@ -456,9 +480,10 @@ fn is_vowel_or_y(c: char) -> bool {
 fn lookup_romaji(key: &str) -> Option<&'static str> {
     match key {
         // === 3-character sequences ===
-        "sha" => Some("しゃ"), "shi" => Some("し"),  "shu" => Some("しゅ"), "sho" => Some("しょ"),
+        // Hepburn standard
+        "sha" => Some("しゃ"), "shi" => Some("し"),  "shu" => Some("しゅ"), "sho" => Some("しょ"), "she" => Some("しぇ"),
         "chi" => Some("ち"),   "tsu" => Some("つ"),
-        "cha" => Some("ちゃ"), "chu" => Some("ちゅ"), "cho" => Some("ちょ"),
+        "cha" => Some("ちゃ"), "chu" => Some("ちゅ"), "cho" => Some("ちょ"), "che" => Some("ちぇ"),
         "nya" => Some("にゃ"), "nyu" => Some("にゅ"), "nyo" => Some("にょ"),
         "hya" => Some("ひゃ"), "hyu" => Some("ひゅ"), "hyo" => Some("ひょ"),
         "mya" => Some("みゃ"), "myu" => Some("みゅ"), "myo" => Some("みょ"),
@@ -468,6 +493,13 @@ fn lookup_romaji(key: &str) -> Option<&'static str> {
         "pya" => Some("ぴゃ"), "pyu" => Some("ぴゅ"), "pyo" => Some("ぴょ"),
         "kya" => Some("きゃ"), "kyu" => Some("きゅ"), "kyo" => Some("きょ"),
         "jya" => Some("じゃ"), "jyu" => Some("じゅ"), "jyo" => Some("じょ"),
+        // Nihon-shiki / Kunrei-shiki variants (VNDB romanizations aren't always pure Hepburn)
+        "tya" => Some("ちゃ"), "tyu" => Some("ちゅ"), "tyo" => Some("ちょ"),
+        "sya" => Some("しゃ"), "syu" => Some("しゅ"), "syo" => Some("しょ"),
+        "zya" => Some("じゃ"), "zyu" => Some("じゅ"), "zyo" => Some("じょ"),
+        "dya" => Some("ぢゃ"), "dyu" => Some("ぢゅ"), "dyo" => Some("ぢょ"),
+        // Foreign-sound kana (common in character names from loanwords)
+        "tsa" => Some("つぁ"), "tsi" => Some("つぃ"), "tse" => Some("つぇ"), "tso" => Some("つぉ"),
 
         // === 2-character sequences ===
         "ka" => Some("か"), "ki" => Some("き"), "ku" => Some("く"), "ke" => Some("け"), "ko" => Some("こ"),
@@ -475,6 +507,8 @@ fn lookup_romaji(key: &str) -> Option<&'static str> {
         "ta" => Some("た"), "ti" => Some("ち"), "tu" => Some("つ"), "te" => Some("て"), "to" => Some("と"),
         "na" => Some("な"), "ni" => Some("に"), "nu" => Some("ぬ"), "ne" => Some("ね"), "no" => Some("の"),
         "ha" => Some("は"), "hi" => Some("ひ"), "hu" => Some("ふ"), "fu" => Some("ふ"), "he" => Some("へ"), "ho" => Some("ほ"),
+        "fa" => Some("ふぁ"), "fi" => Some("ふぃ"), "fe" => Some("ふぇ"), "fo" => Some("ふぉ"),
+        "je" => Some("じぇ"),
         "ma" => Some("ま"), "mi" => Some("み"), "mu" => Some("む"), "me" => Some("め"), "mo" => Some("も"),
         "ra" => Some("ら"), "ri" => Some("り"), "ru" => Some("る"), "re" => Some("れ"), "ro" => Some("ろ"),
         "ya" => Some("や"), "yu" => Some("ゆ"), "yo" => Some("よ"),

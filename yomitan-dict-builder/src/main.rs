@@ -185,7 +185,13 @@ fn zip_cache_key(
 /// Get the base URL for auto-update URLs.
 /// Reads from BASE_URL env var, defaults to http://127.0.0.1:3000.
 fn base_url() -> String {
-    std::env::var("BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:3000".to_string())
+    std::env::var("BASE_URL").unwrap_or_else(|_| {
+        let port = std::env::var("PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(3000);
+        format!("http://127.0.0.1:{}", port)
+    })
 }
 
 #[tokio::main]
@@ -210,10 +216,14 @@ async fn main() {
         .nest_service("/static", ServeDir::new(static_dir()))
         .with_state(state);
 
-    let addr = "0.0.0.0:3000";
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
+    let addr = format!("0.0.0.0:{}", port);
     info!("Server running on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 

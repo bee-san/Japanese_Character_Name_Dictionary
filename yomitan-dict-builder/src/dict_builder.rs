@@ -49,7 +49,12 @@ impl DictBuilder {
     pub fn add_character(&mut self, char: &Character, game_title: &str) {
         let name_original = &char.name_original;
         if name_original.is_empty() {
-            return; // Skip characters with no Japanese name
+            tracing::warn!(
+                id = %char.id,
+                name = %char.name,
+                "Skipping character with no Japanese name (name_original is empty)"
+            );
+            return;
         }
 
         // Generate hiragana readings using mixed name handling
