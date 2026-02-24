@@ -75,6 +75,49 @@ impl ContentBuilder {
         re.replace_all(text, "$1").to_string()
     }
 
+    /// Parse BBCode [b] and [i] tags into Yomitan structured content nodes.
+    /// Returns a serde_json::Value that is either a plain string (no tags found)
+    /// or an array of mixed strings and {"tag":"b"/"i","content":...} objects.
+    pub fn parse_bbcode_to_structured(text: &str) -> serde_json::Value {
+        let re = Regex::new(r"(?is)\[(b|i)\](.*?)\[/\1\]").unwrap();
+        if !re.is_match(text) {
+            return json!(text);
+        }
+
+        let mut result: Vec<serde_json::Value> = Vec::new();
+        let mut last_end = 0;
+
+        for cap in re.captures_iter(text) {
+            let full_match = cap.get(0).unwrap();
+            // Push any text before this match
+            if full_match.start() > last_end {
+                let before = &text[last_end..full_match.start()];
+                if !before.is_empty() {
+                    result.push(json!(before));
+                }
+            }
+            let tag = cap[1].to_lowercase();
+            // Recursively parse inner content for nested tags
+            let inner = Self::parse_bbcode_to_structured(&cap[2]);
+            result.push(json!({ "tag": tag, "content": inner }));
+            last_end = full_match.end();
+        }
+
+        // Push any remaining text after the last match
+        if last_end < text.len() {
+            let after = &text[last_end..];
+            if !after.is_empty() {
+                result.push(json!(after));
+            }
+        }
+
+        if result.len() == 1 {
+            result.into_iter().next().unwrap()
+        } else {
+            json!(result)
+        }
+    }
+
     /// Format birthday [month, day] → "September 1"
     pub fn format_birthday(birthday: &[u32]) -> String {
         if birthday.len() < 2 {
@@ -256,6 +299,7 @@ impl ContentBuilder {
 
                     if !display_desc.is_empty() {
                         let parsed = Self::parse_vndb_markup(&display_desc);
+                        let structured = Self::parse_bbcode_to_structured(&parsed);
                         content.push(json!({
                             "tag": "details",
                             "content": [
@@ -263,7 +307,7 @@ impl ContentBuilder {
                                 {
                                     "tag": "div",
                                     "style": { "fontSize": "0.9em", "marginTop": "4px" },
-                                    "content": parsed
+                                    "content": structured
                                 }
                             ]
                         }));
@@ -322,12 +366,16 @@ impl ContentBuilder {
         };
 
         // Honorific banner: styled div at the top of the card
+        // Note: Yomitan's structuredContentStyle only allows borderColor/borderStyle/borderWidth
+        // (applied to all sides), not borderLeft. We use a thin border + background tint instead.
         let banner = json!({
             "tag": "div",
             "style": {
                 "fontSize": "0.85em",
                 "color": "#4A90D9",
-                "borderLeft": "3px solid #4A90D9",
+                "borderColor": "#4A90D9",
+                "borderStyle": "solid",
+                "borderWidth": "0 0 0 3px",
                 "paddingLeft": "6px",
                 "marginBottom": "6px"
             },
@@ -461,6 +509,56 @@ mod tests {
     fn test_parse_vndb_markup_no_markup() {
         let result = ContentBuilder::parse_vndb_markup("plain text");
         assert_eq!(result, "plain text");
+    }
+
+    // === BBCode to structured content tests ===
+
+    #[test]
+    fn test_parse_bbcode_bold() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[b]bold text[/b]");
+        assert_eq!(result, json!({"tag": "b", "content": "bold text"}));
+    }
+
+    #[test]
+    fn test_parse_bbcode_italic() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[i]italic text[/i]");
+        assert_eq!(result, json!({"tag": "i", "content": "italic text"}));
+    }
+
+    #[test]
+    fn test_parse_bbcode_nested() {
+        let result = ContentBuilder::parse_bbcode_to_structured(
+            "[b]SNS Manager of [i]Lemonade Factory[/i][/b]",
+        );
+        assert_eq!(
+            result,
+            json!({"tag": "b", "content": ["SNS Manager of ", {"tag": "i", "content": "Lemonade Factory"}]})
+        );
+    }
+
+    #[test]
+    fn test_parse_bbcode_mixed_with_plain() {
+        let result = ContentBuilder::parse_bbcode_to_structured(
+            "[b]SNS Manager[/b]  The protagonist's friend.",
+        );
+        assert_eq!(
+            result,
+            json!([{"tag": "b", "content": "SNS Manager"}, "  The protagonist's friend."])
+        );
+    }
+
+    #[test]
+    fn test_parse_bbcode_no_tags() {
+        let result = ContentBuilder::parse_bbcode_to_structured("plain text");
+        assert_eq!(result, json!("plain text"));
+    }
+
+    #[test]
+    fn test_parse_bbcode_preserves_brackets_not_bbcode() {
+        let result = ContentBuilder::parse_bbcode_to_structured(
+            "[Translated from official website]",
+        );
+        assert_eq!(result, json!("[Translated from official website]"));
     }
 
     // === Birthday formatting tests ===
