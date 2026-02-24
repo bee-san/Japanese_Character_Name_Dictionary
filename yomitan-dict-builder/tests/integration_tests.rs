@@ -2,8 +2,6 @@
 //! These tests verify the core functionality of user list fetching,
 //! character processing, name parsing, content building, and dictionary assembly.
 
-use std::collections::HashSet;
-
 // We need to reference the library code. Since this is a binary crate,
 // we'll test the public modules by importing them through the binary's module structure.
 // For integration tests, we test via HTTP endpoints.
@@ -22,7 +20,7 @@ async fn test_index_page_accessible() {
     if let Ok(response) = result {
         assert_eq!(response.status(), 200);
         let body = response.text().await.unwrap();
-        assert!(body.contains("Yomitan Dictionary Builder"));
+        assert!(body.contains("Bee's Character Dictionary"));
         assert!(body.contains("From Username"));
         assert!(body.contains("From Media ID"));
     }

@@ -37,8 +37,9 @@ pub struct Character {
     pub roles: Vec<CharacterTrait>,
     pub engages_in: Vec<CharacterTrait>,
     pub subject_of: Vec<CharacterTrait>,
-    pub image_url: Option<String>,     // Raw URL from API (used for downloading)
-    pub image_base64: Option<String>,  // "data:image/jpeg;base64,..." after download
+    pub image_url: Option<String>,      // Raw URL from API (used for downloading)
+    pub image_bytes: Option<Vec<u8>>,   // Raw image bytes (after download + resize)
+    pub image_ext: Option<String>,      // File extension: "jpg", "png", "webp", etc.
 }
 
 /// Categorized characters for a single game/media.
@@ -69,7 +70,7 @@ impl CharacterData {
             .chain(self.appears.iter())
     }
 
-    /// Mutable iterator (used for populating image_base64 after download).
+    /// Mutable iterator (used for populating image_bytes after download).
     pub fn all_characters_mut(&mut self) -> impl Iterator<Item = &mut Character> {
         self.main
             .iter_mut()
@@ -125,7 +126,8 @@ mod tests {
             blood_type: None, birthday: None, description: None,
             aliases: vec![], personality: vec![], roles: vec![],
             engages_in: vec![], subject_of: vec![],
-            image_url: None, image_base64: None,
+            image_url: None,
+            image_bytes: None, image_ext: None,
         });
         cd.side.push(Character {
             id: "c2".to_string(),
@@ -136,7 +138,8 @@ mod tests {
             blood_type: None, birthday: None, description: None,
             aliases: vec![], personality: vec![], roles: vec![],
             engages_in: vec![], subject_of: vec![],
-            image_url: None, image_base64: None,
+            image_url: None,
+            image_bytes: None, image_ext: None,
         });
 
         assert_eq!(cd.all_characters().count(), 2);
@@ -157,16 +160,16 @@ mod tests {
             blood_type: None, birthday: None, description: None,
             aliases: vec![], personality: vec![], roles: vec![],
             engages_in: vec![], subject_of: vec![],
-            image_url: None, image_base64: None,
+            image_url: None,
+            image_bytes: None, image_ext: None,
         });
 
         for c in cd.all_characters_mut() {
-            c.image_base64 = Some("modified".to_string());
+            c.image_bytes = Some(vec![1, 2, 3]);
+            c.image_ext = Some("jpg".to_string());
         }
 
-        assert_eq!(
-            cd.main[0].image_base64.as_deref(),
-            Some("modified")
-        );
+        assert_eq!(cd.main[0].image_bytes.as_deref(), Some(&[1u8, 2, 3][..]));
+        assert_eq!(cd.main[0].image_ext.as_deref(), Some("jpg"));
     }
 }

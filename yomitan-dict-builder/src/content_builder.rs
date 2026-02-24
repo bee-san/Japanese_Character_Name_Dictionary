@@ -1,7 +1,31 @@
 use regex::Regex;
 use serde_json::json;
+use std::sync::LazyLock;
 
 use crate::models::{Character, CharacterTrait};
+
+// === Cached regex patterns (compiled once, reused across all calls) ===
+
+static RE_VNDB_SPOILER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[spoiler\].*?\[/spoiler\]").unwrap());
+static RE_ANILIST_SPOILER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)~!.*?!~").unwrap());
+static RE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\[url=[^\]]+\]([^\[]*)\[/url\]").unwrap());
+static RE_QUOTE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[quote\](.*?)\[/quote\]").unwrap());
+static RE_CODE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[code\](.*?)\[/code\]").unwrap());
+static RE_RAW: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[raw\](.*?)\[/raw\]").unwrap());
+static RE_UNDERLINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[u\](.*?)\[/u\]").unwrap());
+static RE_STRIKETHROUGH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[s\](.*?)\[/s\]").unwrap());
+static RE_BBCODE_INNER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)\[(b|i)\]([^\[]*?)\[/(b|i)\]").unwrap());
+static RE_PLACEHOLDER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x00NODE(\d+)\x00").unwrap());
 
 /// Role badge colors
 const ROLE_COLORS: &[(&str, &str)] = &[
@@ -60,13 +84,6 @@ impl ContentBuilder {
         // AniList: ~!...!~
         let re_anilist = Regex::new(r"(?s)~!.*?!~").unwrap();
         re_anilist.replace_all(&text, "").trim().to_string()
-    }
-
-    /// Check if text contains spoiler tags (either format).
-    pub fn has_spoiler_tags(text: &str) -> bool {
-        let re_vndb = Regex::new(r"(?i)\[spoiler\]").unwrap();
-        let re_anilist = Regex::new(r"(?s)~!.*?!~").unwrap();
-        re_vndb.is_match(text) || re_anilist.is_match(text)
     }
 
     /// Parse VNDB markup: strip [url=...], [quote], [code], [raw] tags down to inner text.
@@ -517,7 +534,8 @@ mod tests {
             engages_in: vec![],
             subject_of: vec![],
             image_url: None,
-            image_base64: None,
+            image_bytes: None,
+            image_ext: None,
         }
     }
 
@@ -545,23 +563,6 @@ mod tests {
     fn test_strip_spoilers_no_spoilers() {
         let result = ContentBuilder::strip_spoilers("clean text");
         assert_eq!(result, "clean text");
-    }
-
-    // === Spoiler detection tests ===
-
-    #[test]
-    fn test_has_spoiler_tags_vndb() {
-        assert!(ContentBuilder::has_spoiler_tags("x [spoiler]y[/spoiler]"));
-    }
-
-    #[test]
-    fn test_has_spoiler_tags_anilist() {
-        assert!(ContentBuilder::has_spoiler_tags("x ~!y!~"));
-    }
-
-    #[test]
-    fn test_has_spoiler_tags_none() {
-        assert!(!ContentBuilder::has_spoiler_tags("plain text"));
     }
 
     // === VNDB markup tests ===

@@ -27,10 +27,11 @@ pub struct DictBuilder {
     revision: String,
     download_url: Option<String>,
     game_title: String,
+    honorifics: bool,
 }
 
 impl DictBuilder {
-    pub fn new(spoiler_level: u8, download_url: Option<String>, game_title: String) -> Self {
+    pub fn new(spoiler_level: u8, download_url: Option<String>, game_title: String, honorifics: bool) -> Self {
         // Random 12-digit revision string
         let revision: u64 = rand::random::<u64>() % 1_000_000_000_000;
         Self {
@@ -40,6 +41,7 @@ impl DictBuilder {
             revision: format!("{:012}", revision),
             download_url,
             game_title,
+            honorifics,
         }
     }
 
@@ -58,11 +60,12 @@ impl DictBuilder {
 
         let content_builder = ContentBuilder::new(self.spoiler_level);
 
-        // Handle image: decode base64 → raw bytes for ZIP
-        let image_path = if let Some(ref img_base64) = char.image_base64 {
-            let (filename, image_bytes) = ImageHandler::decode_image(img_base64, &char.id);
+        // Handle image: use raw bytes from download + resize
+        let image_path = if let Some(ref img_bytes) = char.image_bytes {
+            let ext = char.image_ext.as_deref().unwrap_or("jpg");
+            let filename = ImageHandler::make_filename(&char.id, ext);
             let path = format!("img/{}", filename);
-            self.images.push((filename, image_bytes));
+            self.images.push((filename, img_bytes.clone()));
             Some(path)
         } else {
             None
@@ -285,24 +288,26 @@ impl DictBuilder {
             }
         }
 
-        for (base_name, base_reading) in &base_names_with_readings {
-            for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
-                let term_with_suffix = format!("{}{}", base_name, suffix);
-                let reading_with_suffix = format!("{}{}", base_reading, suffix_reading);
+        if self.honorifics {
+            for (base_name, base_reading) in &base_names_with_readings {
+                for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
+                    let term_with_suffix = format!("{}{}", base_name, suffix);
+                    let reading_with_suffix = format!("{}{}", base_reading, suffix_reading);
 
-                if added_terms.insert(term_with_suffix.clone()) {
-                    let honorific_content = ContentBuilder::build_honorific_content(
-                        &structured_content,
-                        suffix,
-                        description,
-                    );
-                    self.entries.push(ContentBuilder::create_term_entry(
-                        &term_with_suffix,
-                        &reading_with_suffix,
-                        role,
-                        score,
-                        &honorific_content,
-                    ));
+                    if added_terms.insert(term_with_suffix.clone()) {
+                        let honorific_content = ContentBuilder::build_honorific_content(
+                            &structured_content,
+                            suffix,
+                            description,
+                        );
+                        self.entries.push(ContentBuilder::create_term_entry(
+                            &term_with_suffix,
+                            &reading_with_suffix,
+                            role,
+                            score,
+                            &honorific_content,
+                        ));
+                    }
                 }
             }
         }
@@ -320,23 +325,25 @@ impl DictBuilder {
                 ));
 
                 // Also add honorific variants for each alias
-                for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
-                    let alias_with_suffix = format!("{}{}", alias, suffix);
-                    let reading_with_suffix = format!("{}{}", readings.full, suffix_reading);
+                if self.honorifics {
+                    for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
+                        let alias_with_suffix = format!("{}{}", alias, suffix);
+                        let reading_with_suffix = format!("{}{}", readings.full, suffix_reading);
 
-                    if added_terms.insert(alias_with_suffix.clone()) {
-                        let honorific_content = ContentBuilder::build_honorific_content(
-                            &structured_content,
-                            suffix,
-                            description,
-                        );
-                        self.entries.push(ContentBuilder::create_term_entry(
-                            &alias_with_suffix,
-                            &reading_with_suffix,
-                            role,
-                            score,
-                            &honorific_content,
-                        ));
+                        if added_terms.insert(alias_with_suffix.clone()) {
+                            let honorific_content = ContentBuilder::build_honorific_content(
+                                &structured_content,
+                                suffix,
+                                description,
+                            );
+                            self.entries.push(ContentBuilder::create_term_entry(
+                                &alias_with_suffix,
+                                &reading_with_suffix,
+                                role,
+                                score,
+                                &honorific_content,
+                            ));
+                        }
                     }
                 }
             }
@@ -391,16 +398,20 @@ impl DictBuilder {
         let buffer = Vec::new();
         let cursor = Cursor::new(buffer);
         let mut zip = ZipWriter::new(cursor);
-        let options =
+        let json_options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        // Images are already compressed (JPEG/WebP/PNG) — storing them
+        // uncompressed avoids wasting CPU for near-zero size reduction.
+        let image_options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // 1. index.json
-        zip.start_file("index.json", options).unwrap();
+        zip.start_file("index.json", json_options).unwrap();
         let index_json = serde_json::to_string_pretty(&self.create_index()).unwrap();
         zip.write_all(index_json.as_bytes()).unwrap();
 
         // 2. tag_bank_1.json
-        zip.start_file("tag_bank_1.json", options).unwrap();
+        zip.start_file("tag_bank_1.json", json_options).unwrap();
         let tags_json = serde_json::to_string(&self.create_tags()).unwrap();
         zip.write_all(tags_json.as_bytes()).unwrap();
 
@@ -408,14 +419,14 @@ impl DictBuilder {
         let entries_per_bank = 10_000;
         for (i, chunk) in self.entries.chunks(entries_per_bank).enumerate() {
             let filename = format!("term_bank_{}.json", i + 1);
-            zip.start_file(&filename, options).unwrap();
+            zip.start_file(&filename, json_options).unwrap();
             let data = serde_json::to_string(chunk).unwrap();
             zip.write_all(data.as_bytes()).unwrap();
         }
 
-        // 4. Images in img/ folder
+        // 4. Images in img/ folder (stored uncompressed)
         for (filename, bytes) in &self.images {
-            zip.start_file(format!("img/{}", filename), options)
+            zip.start_file(format!("img/{}", filename), image_options)
                 .unwrap();
             zip.write_all(bytes).unwrap();
         }
@@ -428,7 +439,6 @@ impl DictBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine;
     use crate::models::{Character, CharacterTrait};
     use std::collections::HashSet;
     use std::io::Read;
@@ -460,7 +470,8 @@ mod tests {
             engages_in: vec![],
             subject_of: vec![],
             image_url: None,
-            image_base64: None,
+            image_bytes: None,
+            image_ext: None,
         }
     }
 
@@ -480,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_add_character_empty_name_skipped() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Name", "", "main");
         builder.add_character(&char, "Test Game");
         assert_eq!(builder.entries.len(), 0, "Empty name_original should produce no entries");
@@ -488,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_add_character_creates_entries() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
         assert!(
@@ -499,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_add_character_two_part_name_creates_base_entries() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
 
@@ -519,7 +530,7 @@ mod tests {
 
     #[test]
     fn test_add_character_honorific_variants() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
 
@@ -542,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_honorific_entry_uses_honorific_content() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
 
@@ -578,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_add_character_alias_entries() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Name", "名前", "main");
         builder.add_character(&char, "Test Game");
 
@@ -596,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_add_character_deduplication() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let mut char = make_test_character("c1", "Name", "名前", "main");
         // Set alias same as original name
         char.aliases = vec!["名前".to_string()];
@@ -615,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_add_character_single_word_name() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let char = make_test_character("c1", "Saber", "セイバー", "main");
         builder.add_character(&char, "Test Game");
 
@@ -639,6 +650,7 @@ mod tests {
             0,
             Some("http://127.0.0.1:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
             "Test Game".to_string(),
+            true,
         );
         let index = builder.create_index_public();
 
@@ -653,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_index_metadata_no_download_url() {
-        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let index = builder.create_index_public();
 
         assert_eq!(index["title"], "Bee's Character Dictionary");
@@ -662,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_index_metadata_empty_title() {
-        let builder = DictBuilder::new(0, None, String::new());
+        let builder = DictBuilder::new(0, None, String::new(), true);
         let index = builder.create_index_public();
         assert_eq!(
             index["description"].as_str().unwrap(),
@@ -674,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_export_bytes_produces_valid_zip() {
-        let mut builder = DictBuilder::new(0, None, "Test Game".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test Game".to_string(), true);
         let char = make_test_character("c1", "Test Name", "テスト", "main");
         builder.add_character(&char, "Test Game");
 
@@ -701,7 +713,7 @@ mod tests {
 
     #[test]
     fn test_export_bytes_index_json_valid() {
-        let mut builder = DictBuilder::new(0, None, "Test Game".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test Game".to_string(), true);
         let char = make_test_character("c1", "Test", "テスト", "main");
         builder.add_character(&char, "Test Game");
 
@@ -720,13 +732,11 @@ mod tests {
 
     #[test]
     fn test_export_bytes_with_image() {
-        use base64::Engine;
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let mut char = make_test_character("c1", "Test", "テスト", "main");
-        // Provide a base64 image
         let raw = vec![0xFF, 0xD8, 0xFF];
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&raw);
-        char.image_base64 = Some(format!("data:image/jpeg;base64,{}", b64));
+        char.image_bytes = Some(raw);
+        char.image_ext = Some("jpg".to_string());
         builder.add_character(&char, "Test");
 
         let zip_bytes = builder.export_bytes();
@@ -748,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_multi_title_entries() {
-        let mut builder = DictBuilder::new(0, None, "Multi-title dict".to_string());
+        let mut builder = DictBuilder::new(0, None, "Multi-title dict".to_string(), true);
 
         let char1 = make_test_character("c1", "Name1", "名前一", "main");
         let char2 = make_test_character("c2", "Name2", "名前二", "side");
@@ -804,7 +814,6 @@ mod tests {
     /// Helper: build a realistic two-part-name character with image.
     fn make_full_character() -> Character {
         let raw = vec![0xFF, 0xD8, 0xFF, 0xE0]; // JPEG magic
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&raw);
         Character {
             id: "c42".to_string(),
             name: "Shinichi Suzuki".to_string(),
@@ -826,7 +835,8 @@ mod tests {
             engages_in: vec![],
             subject_of: vec![],
             image_url: Some("https://example.com/img.jpg".to_string()),
-            image_base64: Some(format!("data:image/jpeg;base64,{}", b64)),
+            image_bytes: Some(raw),
+            image_ext: Some("jpg".to_string()),
         }
     }
 
@@ -838,6 +848,7 @@ mod tests {
             0,
             Some("http://localhost:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
             "Steins;Gate".to_string(),
+            true,
         );
         let mut archive = build_zip_archive(&builder);
         let raw = read_zip_entry(&mut archive, "index.json");
@@ -854,7 +865,7 @@ mod tests {
     #[test]
     fn test_yomitan_index_update_fields() {
         let url = "http://localhost:3000/api/yomitan-dict?source=vndb&id=v17&spoiler_level=0";
-        let builder = DictBuilder::new(0, Some(url.to_string()), "Test".to_string());
+        let builder = DictBuilder::new(0, Some(url.to_string()), "Test".to_string(), true);
         let mut archive = build_zip_archive(&builder);
         let raw = read_zip_entry(&mut archive, "index.json");
         let index: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -870,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_index_no_update_fields_when_no_url() {
-        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let mut archive = build_zip_archive(&builder);
         let raw = read_zip_entry(&mut archive, "index.json");
         let index: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -888,8 +899,8 @@ mod tests {
 
     #[test]
     fn test_yomitan_revision_is_unique_per_build() {
-        let b1 = DictBuilder::new(0, None, "T".to_string());
-        let b2 = DictBuilder::new(0, None, "T".to_string());
+        let b1 = DictBuilder::new(0, None, "T".to_string(), true);
+        let b2 = DictBuilder::new(0, None, "T".to_string(), true);
         // Revisions should differ (random). Extremely unlikely to collide.
         assert_ne!(b1.revision, b2.revision, "Each build must have a unique revision");
     }
@@ -898,7 +909,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_tag_bank_format() {
-        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let mut archive = build_zip_archive(&builder);
         let raw = read_zip_entry(&mut archive, "tag_bank_1.json");
         let tags: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -919,7 +930,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_tag_bank_contains_role_tags() {
-        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let mut archive = build_zip_archive(&builder);
         let raw = read_zip_entry(&mut archive, "tag_bank_1.json");
         let tags: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -944,7 +955,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_term_entry_field_types() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test Game");
 
@@ -982,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_term_entry_definition_tags_format() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_test_character("c1", "Test", "テスト", "main");
         builder.add_character(&ch, "Test");
 
@@ -1001,7 +1012,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_term_entry_scores_match_roles() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
 
         let roles_scores = [("main", 100), ("primary", 75), ("side", 50), ("appears", 25)];
         for (role, expected_score) in &roles_scores {
@@ -1025,7 +1036,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_zip_required_files_present() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_test_character("c1", "Test", "テスト", "main");
         builder.add_character(&ch, "Test");
 
@@ -1042,7 +1053,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_zip_term_banks_are_valid_json_arrays() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
@@ -1059,7 +1070,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_zip_image_paths_resolve() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
@@ -1091,7 +1102,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_zip_image_bytes_not_empty() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
@@ -1110,7 +1121,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_term_bank_chunking() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
 
         // Generate enough entries to force multiple term banks.
         // Each character with a two-part name + aliases + honorifics produces many entries.
@@ -1134,7 +1145,8 @@ mod tests {
                 engages_in: vec![],
                 subject_of: vec![],
                 image_url: None,
-                image_base64: None,
+                image_bytes: None,
+                image_ext: None,
             };
             builder.add_character(&ch, "Test");
         }
@@ -1181,6 +1193,7 @@ mod tests {
             0,
             Some("http://localhost:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
             "Steins;Gate".to_string(),
+            true,
         );
         let ch = make_full_character();
         builder.add_character(&ch, "Steins;Gate");
@@ -1264,7 +1277,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_no_duplicate_terms_in_export() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
@@ -1287,7 +1300,7 @@ mod tests {
     fn test_yomitan_empty_dict_produces_valid_zip() {
         // A dictionary with no characters should still produce a valid ZIP
         // with index.json and tag_bank but no term banks
-        let builder = DictBuilder::new(0, None, "Empty".to_string());
+        let builder = DictBuilder::new(0, None, "Empty".to_string(), true);
         let mut archive = build_zip_archive(&builder);
         let names = zip_filenames(&mut archive);
 
@@ -1302,7 +1315,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_characters_without_japanese_name_skipped() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
 
         // Character with empty name_original
         let ch = make_test_character("c1", "John Smith", "", "main");
@@ -1319,12 +1332,12 @@ mod tests {
     #[test]
     fn test_yomitan_spoiler_level_affects_content() {
         // Level 0: spoiler traits should be excluded
-        let mut builder_l0 = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder_l0 = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character(); // has a spoiler=2 trait "Secret identity"
         builder_l0.add_character(&ch, "Test");
 
         // Level 2: spoiler traits should be included
-        let mut builder_l2 = DictBuilder::new(2, None, "Test".to_string());
+        let mut builder_l2 = DictBuilder::new(2, None, "Test".to_string(), true);
         builder_l2.add_character(&ch, "Test");
 
         // Find the base name entry in each
@@ -1348,7 +1361,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_single_word_name_no_family_given_split() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_test_character("c1", "Saber", "セイバー", "main");
         builder.add_character(&ch, "Test");
 
@@ -1364,7 +1377,7 @@ mod tests {
 
     #[test]
     fn test_yomitan_structured_content_has_type_field() {
-        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 

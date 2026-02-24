@@ -1,5 +1,3 @@
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use reqwest::Client;
 
 use crate::models::*;
@@ -15,10 +13,8 @@ pub struct VndbClient {
 }
 
 impl VndbClient {
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+    pub fn with_client(client: Client) -> Self {
+        Self { client }
     }
 
     /// Parse a VNDB user input which may be a URL, user ID, or username.
@@ -393,30 +389,11 @@ impl VndbClient {
             engages_in,
             subject_of,
             image_url,
-            image_base64: None, // Populated later in a separate pass
+            image_bytes: None,
+            image_ext: None,
         })
     }
 
-    /// Download an image and return as base64 data URI string.
-    /// Returns None on any failure (network, non-200 status, etc.).
-    pub async fn fetch_image_as_base64(&self, url: &str) -> Option<String> {
-        let response = self.client.get(url).send().await.ok()?;
-
-        if response.status() != 200 {
-            return None;
-        }
-
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("image/jpeg")
-            .to_string();
-
-        let bytes = response.bytes().await.ok()?;
-        let b64 = STANDARD.encode(&bytes);
-        Some(format!("data:{};base64,{}", content_type, b64))
-    }
 }
 
 #[cfg(test)]

@@ -11,8 +11,6 @@ pub struct JapaneseNameParts {
 /// Name reading results.
 #[derive(Debug, Clone)]
 pub struct NameReadings {
-    pub has_space: bool,
-    pub original: String,
     pub full: String,    // Full hiragana reading (family + given)
     pub family: String,  // Family name hiragana reading
     pub given: String,   // Given name hiragana reading
@@ -511,8 +509,6 @@ pub fn generate_mixed_name_readings(
     // Handle empty names
     if name_original.is_empty() {
         return NameReadings {
-            has_space: false,
-            original: String::new(),
             full: String::new(),
             family: String::new(),
             given: String::new(),
@@ -525,8 +521,6 @@ pub fn generate_mixed_name_readings(
             // Has kanji — use romanized reading
             let full = alphabet_to_kana(romanized_name);
             return NameReadings {
-                has_space: false,
-                original: name_original.to_string(),
                 full: full.clone(),
                 family: full.clone(),
                 given: full,
@@ -535,8 +529,6 @@ pub fn generate_mixed_name_readings(
             // Pure kana — use kata_to_hira on the Japanese text itself
             let full = kata_to_hira(&name_original.replace(' ', ""));
             return NameReadings {
-                has_space: false,
-                original: name_original.to_string(),
                 full: full.clone(),
                 family: full.clone(),
                 given: full,
@@ -576,8 +568,6 @@ pub fn generate_mixed_name_readings(
     let full_reading = format!("{}{}", family_reading, given_reading);
 
     NameReadings {
-        has_space: true,
-        original: name_original.to_string(),
         full: full_reading,
         family: family_reading,
         given: given_reading,

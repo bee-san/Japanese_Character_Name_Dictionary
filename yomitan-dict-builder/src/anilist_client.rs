@@ -1,5 +1,3 @@
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use reqwest::Client;
 
 use crate::models::*;
@@ -9,10 +7,8 @@ pub struct AnilistClient {
 }
 
 impl AnilistClient {
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+    pub fn with_client(client: Client) -> Self {
+        Self { client }
     }
 
     const USER_LIST_QUERY: &'static str = r#"
@@ -361,29 +357,9 @@ impl AnilistClient {
             engages_in: Vec::new(),
             subject_of: Vec::new(),
             image_url,
-            image_base64: None,
+            image_bytes: None,
+            image_ext: None,
         })
-    }
-
-    /// Download an image and return as base64 data URI string.
-    /// Returns None on any failure (network, non-200 status, etc.).
-    pub async fn fetch_image_as_base64(&self, url: &str) -> Option<String> {
-        let response = self.client.get(url).send().await.ok()?;
-
-        if response.status() != 200 {
-            return None;
-        }
-
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("image/jpeg")
-            .to_string();
-
-        let bytes = response.bytes().await.ok()?;
-        let b64 = STANDARD.encode(&bytes);
-        Some(format!("data:{};base64,{}", content_type, b64))
     }
 }
 
@@ -393,7 +369,7 @@ mod tests {
     use super::*;
 
     fn make_client() -> AnilistClient {
-        AnilistClient::new()
+        AnilistClient::with_client(Client::new())
     }
 
     // ── process_character tests ──
@@ -443,7 +419,7 @@ mod tests {
         assert_eq!(ch.description, Some("The protagonist.".to_string()));
         assert_eq!(ch.aliases, vec!["Zero".to_string()]);
         assert_eq!(ch.image_url, Some("https://example.com/img.jpg".to_string()));
-        assert!(ch.image_base64.is_none());
+        assert!(ch.image_bytes.is_none());
         assert!(ch.height.is_none());
         assert!(ch.weight.is_none());
         assert!(ch.personality.is_empty());

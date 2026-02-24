@@ -270,6 +270,13 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="honorificsUsername" checked style="width: auto; margin-right: 8px;">
+                    Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
+                </label>
+            </div>
+
             <button id="fetchListsBtn" onclick="fetchLists()">Fetch Lists & Preview</button>
 
             <div class="media-preview" id="mediaPreview">
@@ -317,6 +324,13 @@
                         <option value="1">Minor Spoilers (+ description, stats)</option>
                         <option value="2">Full Spoilers (+ all traits, full description)</option>
                     </select>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="honorificsManual" checked style="width: auto; margin-right: 8px;">
+                        Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
+                    </label>
                 </div>
 
                 <button type="submit" id="submitBtn">Generate Dictionary</button>
@@ -494,6 +508,7 @@
             const vndbUser = document.getElementById('vndbUser').value.trim();
             const anilistUser = document.getElementById('anilistUser').value.trim();
             const spoiler = document.getElementById('spoilerUsername').value;
+            const honorifics = document.getElementById('honorificsUsername').checked;
             const status = document.getElementById('statusUsername');
             const genBtn = document.getElementById('generateFromUsernameBtn');
             const fetchBtn = document.getElementById('fetchListsBtn');
@@ -512,6 +527,7 @@
             let url = '/api/generate-stream?spoiler_level=' + spoiler;
             if (vndbUser) url += '&vndb_user=' + encodeURIComponent(vndbUser);
             if (anilistUser) url += '&anilist_user=' + encodeURIComponent(anilistUser);
+            if (!honorifics) url += '&honorifics=false';
 
             const eventSource = new EventSource(url);
 
@@ -596,6 +612,7 @@
             const id = document.getElementById('id').value.trim();
             const spoiler = document.getElementById('spoiler').value;
             const mediaType = document.getElementById('mediaType').value;
+            const honorifics = document.getElementById('honorificsManual').checked;
             const submitBtn = document.getElementById('submitBtn');
             const status = document.getElementById('statusManual');
 
@@ -614,6 +631,9 @@
                 let url = `/api/yomitan-dict?source=${source}&id=${encodeURIComponent(id)}&spoiler_level=${spoiler}`;
                 if (source === 'anilist') {
                     url += `&media_type=${mediaType}`;
+                }
+                if (!honorifics) {
+                    url += '&honorifics=false';
                 }
 
                 const response = await fetch(url);
