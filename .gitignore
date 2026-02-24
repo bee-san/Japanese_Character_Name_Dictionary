@@ -8,3 +8,4 @@ yomitan-dict-builder/target/
 *.swp
 *.swo
 *~
+.vscode/

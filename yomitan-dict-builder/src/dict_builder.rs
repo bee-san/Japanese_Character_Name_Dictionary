@@ -428,7 +428,9 @@ impl DictBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use crate::models::{Character, CharacterTrait};
+    use std::collections::HashSet;
     use std::io::Read;
 
     fn make_test_character(
@@ -764,5 +766,622 @@ mod tests {
             entry1_str.contains("Game A"),
             "First character should reference Game A"
         );
+    }
+
+    // =========================================================================
+    // Yomitan Import Validation Tests
+    //
+    // These tests simulate what Yomitan does when importing a dictionary ZIP:
+    // unzip, parse index.json, validate tag banks, parse term banks with
+    // correct field types, and resolve image paths.
+    // =========================================================================
+
+    /// Helper: build a ZIP and return a ZipArchive for inspection.
+    fn build_zip_archive(builder: &DictBuilder) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
+        let bytes = builder.export_bytes();
+        let cursor = std::io::Cursor::new(bytes);
+        zip::ZipArchive::new(cursor).expect("export_bytes must produce a valid ZIP")
+    }
+
+    /// Helper: read a file from the archive as a string.
+    fn read_zip_entry(
+        archive: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>,
+        name: &str,
+    ) -> String {
+        let mut file = archive.by_name(name).unwrap_or_else(|_| panic!("ZIP missing {}", name));
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).unwrap();
+        buf
+    }
+
+    /// Helper: list all filenames in the archive.
+    fn zip_filenames(archive: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>) -> Vec<String> {
+        (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect()
+    }
+
+    /// Helper: build a realistic two-part-name character with image.
+    fn make_full_character() -> Character {
+        let raw = vec![0xFF, 0xD8, 0xFF, 0xE0]; // JPEG magic
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&raw);
+        Character {
+            id: "c42".to_string(),
+            name: "Shinichi Suzuki".to_string(),
+            name_original: "須々木 心一".to_string(),
+            role: "main".to_string(),
+            sex: Some("m".to_string()),
+            age: Some("17".to_string()),
+            height: Some(175),
+            weight: Some(65),
+            blood_type: Some("AB".to_string()),
+            birthday: Some(vec![3, 14]),
+            description: Some("A brilliant detective.".to_string()),
+            aliases: vec!["シンイチ".to_string()],
+            personality: vec![
+                CharacterTrait { name: "Clever".to_string(), spoiler: 0 },
+                CharacterTrait { name: "Secret identity".to_string(), spoiler: 2 },
+            ],
+            roles: vec![],
+            engages_in: vec![],
+            subject_of: vec![],
+            image_url: Some("https://example.com/img.jpg".to_string()),
+            image_base64: Some(format!("data:image/jpeg;base64,{}", b64)),
+        }
+    }
+
+    // --- index.json validation (Yomitan format 3 requirements) ---
+
+    #[test]
+    fn test_yomitan_index_required_fields() {
+        let builder = DictBuilder::new(
+            0,
+            Some("http://localhost:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
+            "Steins;Gate".to_string(),
+        );
+        let mut archive = build_zip_archive(&builder);
+        let raw = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        // Yomitan requires these fields
+        assert!(index["title"].is_string(), "title must be a string");
+        assert!(index["revision"].is_string(), "revision must be a string");
+        assert_eq!(index["format"].as_i64().unwrap(), 3, "format must be 3");
+        assert!(index["author"].is_string(), "author must be a string");
+        assert!(index["description"].is_string(), "description must be a string");
+    }
+
+    #[test]
+    fn test_yomitan_index_update_fields() {
+        let url = "http://localhost:3000/api/yomitan-dict?source=vndb&id=v17&spoiler_level=0";
+        let builder = DictBuilder::new(0, Some(url.to_string()), "Test".to_string());
+        let mut archive = build_zip_archive(&builder);
+        let raw = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        // Auto-update fields
+        assert_eq!(index["downloadUrl"].as_str().unwrap(), url);
+        assert!(
+            index["indexUrl"].as_str().unwrap().contains("/api/yomitan-index"),
+            "indexUrl must point to the index endpoint"
+        );
+        assert_eq!(index["isUpdatable"].as_bool().unwrap(), true);
+    }
+
+    #[test]
+    fn test_yomitan_index_no_update_fields_when_no_url() {
+        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut archive = build_zip_archive(&builder);
+        let raw = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        // Without download_url, these should be absent
+        assert!(
+            index.get("downloadUrl").is_none() || index["downloadUrl"].is_null(),
+            "downloadUrl should be absent without URL"
+        );
+        assert!(
+            index.get("isUpdatable").is_none() || index["isUpdatable"].is_null(),
+            "isUpdatable should be absent without URL"
+        );
+    }
+
+    #[test]
+    fn test_yomitan_revision_is_unique_per_build() {
+        let b1 = DictBuilder::new(0, None, "T".to_string());
+        let b2 = DictBuilder::new(0, None, "T".to_string());
+        // Revisions should differ (random). Extremely unlikely to collide.
+        assert_ne!(b1.revision, b2.revision, "Each build must have a unique revision");
+    }
+
+    // --- tag_bank validation ---
+
+    #[test]
+    fn test_yomitan_tag_bank_format() {
+        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut archive = build_zip_archive(&builder);
+        let raw = read_zip_entry(&mut archive, "tag_bank_1.json");
+        let tags: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        let arr = tags.as_array().expect("tag_bank must be a JSON array");
+        assert!(!arr.is_empty(), "tag_bank must not be empty");
+
+        for tag in arr {
+            let tag_arr = tag.as_array().expect("each tag must be an array");
+            assert_eq!(tag_arr.len(), 5, "each tag must have 5 fields: [name, category, sortOrder, notes, score]");
+            assert!(tag_arr[0].is_string(), "tag name must be string");
+            assert!(tag_arr[1].is_string(), "tag category must be string");
+            assert!(tag_arr[2].is_number(), "tag sortOrder must be number");
+            assert!(tag_arr[3].is_string(), "tag notes must be string");
+            assert!(tag_arr[4].is_number(), "tag score must be number");
+        }
+    }
+
+    #[test]
+    fn test_yomitan_tag_bank_contains_role_tags() {
+        let builder = DictBuilder::new(0, None, "Test".to_string());
+        let mut archive = build_zip_archive(&builder);
+        let raw = read_zip_entry(&mut archive, "tag_bank_1.json");
+        let tags: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        let tag_names: Vec<&str> = tags
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t[0].as_str().unwrap())
+            .collect();
+
+        for expected in &["name", "main", "primary", "side", "appears"] {
+            assert!(
+                tag_names.contains(expected),
+                "tag_bank must contain '{}' tag",
+                expected
+            );
+        }
+    }
+
+    // --- term_bank entry format validation ---
+
+    #[test]
+    fn test_yomitan_term_entry_field_types() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test Game");
+
+        // Validate every entry matches Yomitan's expected schema
+        for (i, entry) in builder.entries.iter().enumerate() {
+            let arr = entry.as_array().unwrap_or_else(|| panic!("entry {} must be array", i));
+            assert_eq!(arr.len(), 8, "entry {} must have 8 fields", i);
+
+            // [0] term: string
+            assert!(arr[0].is_string(), "entry {}[0] term must be string", i);
+            // [1] reading: string
+            assert!(arr[1].is_string(), "entry {}[1] reading must be string", i);
+            // [2] definitionTags: string
+            assert!(arr[2].is_string(), "entry {}[2] definitionTags must be string", i);
+            // [3] rules: string (always "")
+            assert_eq!(arr[3].as_str().unwrap(), "", "entry {}[3] rules must be empty string", i);
+            // [4] score: integer
+            assert!(arr[4].is_number(), "entry {}[4] score must be number", i);
+            // [5] definitions: array with structured-content objects
+            let defs = arr[5].as_array().unwrap_or_else(|| panic!("entry {}[5] must be array", i));
+            assert!(!defs.is_empty(), "entry {}[5] definitions must not be empty", i);
+            assert_eq!(
+                defs[0]["type"].as_str().unwrap(),
+                "structured-content",
+                "entry {}[5][0] must be structured-content",
+                i
+            );
+            assert!(defs[0].get("content").is_some(), "entry {}[5][0] must have content", i);
+            // [6] sequence: integer (always 0)
+            assert_eq!(arr[6].as_i64().unwrap(), 0, "entry {}[6] sequence must be 0", i);
+            // [7] termTags: string (always "")
+            assert_eq!(arr[7].as_str().unwrap(), "", "entry {}[7] termTags must be empty string", i);
+        }
+    }
+
+    #[test]
+    fn test_yomitan_term_entry_definition_tags_format() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        for entry in &builder.entries {
+            let tags_str = entry[2].as_str().unwrap();
+            // Must be space-separated, first tag is always "name"
+            assert!(
+                tags_str.starts_with("name"),
+                "definitionTags must start with 'name', got: {}",
+                tags_str
+            );
+            let parts: Vec<&str> = tags_str.split_whitespace().collect();
+            assert!(parts.len() >= 2, "definitionTags must have at least 'name' + role");
+        }
+    }
+
+    #[test]
+    fn test_yomitan_term_entry_scores_match_roles() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+
+        let roles_scores = [("main", 100), ("primary", 75), ("side", 50), ("appears", 25)];
+        for (role, expected_score) in &roles_scores {
+            let ch = make_test_character("c1", "Test", "テスト", role);
+            builder.entries.clear();
+            builder.add_character(&ch, "Test");
+
+            for entry in &builder.entries {
+                assert_eq!(
+                    entry[4].as_i64().unwrap(),
+                    *expected_score as i64,
+                    "role '{}' should have score {}",
+                    role,
+                    expected_score
+                );
+            }
+        }
+    }
+
+    // --- ZIP structure validation ---
+
+    #[test]
+    fn test_yomitan_zip_required_files_present() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        assert!(names.contains(&"index.json".to_string()), "ZIP must contain index.json");
+        assert!(names.contains(&"tag_bank_1.json".to_string()), "ZIP must contain tag_bank_1.json");
+        assert!(
+            names.iter().any(|n| n.starts_with("term_bank_") && n.ends_with(".json")),
+            "ZIP must contain at least one term_bank_N.json"
+        );
+    }
+
+    #[test]
+    fn test_yomitan_zip_term_banks_are_valid_json_arrays() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        for name in names.iter().filter(|n| n.starts_with("term_bank_")) {
+            let raw = read_zip_entry(&mut archive, name);
+            let parsed: serde_json::Value = serde_json::from_str(&raw)
+                .unwrap_or_else(|e| panic!("{} must be valid JSON: {}", name, e));
+            assert!(parsed.is_array(), "{} must be a JSON array", name);
+        }
+    }
+
+    #[test]
+    fn test_yomitan_zip_image_paths_resolve() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        // Collect all image paths referenced in structured content
+        let mut referenced_paths: HashSet<String> = HashSet::new();
+        for entry in &builder.entries {
+            let sc_str = serde_json::to_string(&entry[5]).unwrap();
+            // Look for "path":"img/..." patterns
+            for cap in regex::Regex::new(r#""path"\s*:\s*"(img/[^"]+)""#)
+                .unwrap()
+                .captures_iter(&sc_str)
+            {
+                referenced_paths.insert(cap[1].to_string());
+            }
+        }
+
+        // Every referenced image path must exist in the ZIP
+        for path in &referenced_paths {
+            assert!(
+                names.contains(path),
+                "Image path '{}' referenced in structured content but not found in ZIP",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_yomitan_zip_image_bytes_not_empty() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        for name in names.iter().filter(|n| n.starts_with("img/")) {
+            let mut file = archive.by_name(name).unwrap();
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).unwrap();
+            assert!(!buf.is_empty(), "Image file '{}' must not be empty", name);
+        }
+    }
+
+    // --- Term bank chunking ---
+
+    #[test]
+    fn test_yomitan_term_bank_chunking() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+
+        // Generate enough entries to force multiple term banks.
+        // Each character with a two-part name + aliases + honorifics produces many entries.
+        // We need > 10,000 entries total.
+        for i in 0..200 {
+            let ch = Character {
+                id: format!("c{}", i),
+                name: format!("Given{} Family{}", i, i),
+                name_original: format!("姓{} 名{}", i, i),
+                role: "main".to_string(),
+                sex: None,
+                age: None,
+                height: None,
+                weight: None,
+                blood_type: None,
+                birthday: None,
+                description: None,
+                aliases: vec![format!("Alias{}", i)],
+                personality: vec![],
+                roles: vec![],
+                engages_in: vec![],
+                subject_of: vec![],
+                image_url: None,
+                image_base64: None,
+            };
+            builder.add_character(&ch, "Test");
+        }
+
+        assert!(
+            builder.entries.len() > 10_000,
+            "Need >10k entries to test chunking, got {}",
+            builder.entries.len()
+        );
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        let term_banks: Vec<&String> = names
+            .iter()
+            .filter(|n| n.starts_with("term_bank_") && n.ends_with(".json"))
+            .collect();
+
+        assert!(
+            term_banks.len() >= 2,
+            "Should have at least 2 term banks with >10k entries, got {}",
+            term_banks.len()
+        );
+
+        // Verify each bank has at most 10,000 entries
+        for name in &term_banks {
+            let raw = read_zip_entry(&mut archive, name);
+            let arr: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+            assert!(
+                arr.len() <= 10_000,
+                "{} has {} entries, max is 10,000",
+                name,
+                arr.len()
+            );
+        }
+    }
+
+    // --- End-to-end realistic character import ---
+
+    #[test]
+    fn test_yomitan_full_import_simulation() {
+        // Simulate what Yomitan does: unzip → parse index → parse tags → parse all term banks
+        let mut builder = DictBuilder::new(
+            0,
+            Some("http://localhost:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
+            "Steins;Gate".to_string(),
+        );
+        let ch = make_full_character();
+        builder.add_character(&ch, "Steins;Gate");
+
+        let zip_bytes = builder.export_bytes();
+
+        // Step 1: Valid ZIP
+        let cursor = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(cursor).expect("Must be a valid ZIP");
+
+        // Step 2: Parse index.json
+        let index_raw = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&index_raw).expect("index.json must be valid JSON");
+        assert_eq!(index["format"].as_i64().unwrap(), 3);
+        assert!(!index["revision"].as_str().unwrap().is_empty());
+        assert!(index["description"].as_str().unwrap().contains("Steins;Gate"));
+
+        // Step 3: Parse tag_bank
+        let tags_raw = read_zip_entry(&mut archive, "tag_bank_1.json");
+        let tags: Vec<serde_json::Value> = serde_json::from_str(&tags_raw).expect("tag_bank must be valid JSON array");
+        let tag_names: HashSet<String> = tags.iter().map(|t| t[0].as_str().unwrap().to_string()).collect();
+
+        // Step 4: Parse all term banks and validate entries
+        let names = zip_filenames(&mut archive);
+        let mut total_entries = 0;
+        let mut all_terms: Vec<String> = Vec::new();
+
+        for name in names.iter().filter(|n| n.starts_with("term_bank_")) {
+            let raw = read_zip_entry(&mut archive, name);
+            let entries: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+
+            for entry in &entries {
+                let arr = entry.as_array().unwrap();
+                let term = arr[0].as_str().unwrap();
+                let reading = arr[1].as_str().unwrap();
+                let def_tags = arr[2].as_str().unwrap();
+
+                // Term and reading must be non-empty
+                assert!(!term.is_empty(), "term must not be empty");
+                assert!(!reading.is_empty(), "reading must not be empty");
+
+                // definitionTags must reference tags that exist in tag_bank
+                for tag in def_tags.split_whitespace() {
+                    assert!(
+                        tag_names.contains(tag),
+                        "definitionTag '{}' not found in tag_bank",
+                        tag
+                    );
+                }
+
+                all_terms.push(term.to_string());
+                total_entries += 1;
+            }
+        }
+
+        assert!(total_entries > 0, "Dictionary must have at least one entry");
+
+        // Verify expected base terms are present
+        assert!(all_terms.contains(&"須々木 心一".to_string()), "Must have full name with space");
+        assert!(all_terms.contains(&"須々木心一".to_string()), "Must have combined name");
+        assert!(all_terms.contains(&"須々木".to_string()), "Must have family name");
+        assert!(all_terms.contains(&"心一".to_string()), "Must have given name");
+        assert!(all_terms.contains(&"シンイチ".to_string()), "Must have alias entry");
+
+        // Verify honorific variants exist
+        assert!(
+            all_terms.iter().any(|t| t == "須々木さん"),
+            "Must have family+san"
+        );
+        assert!(
+            all_terms.iter().any(|t| t == "心一ちゃん"),
+            "Must have given+chan"
+        );
+
+        // Verify image is in the ZIP
+        assert!(
+            names.iter().any(|n| n.starts_with("img/") && n.contains("c42")),
+            "ZIP must contain the character's image"
+        );
+    }
+
+    #[test]
+    fn test_yomitan_no_duplicate_terms_in_export() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        // Collect (term, reading) pairs — should be unique
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        for entry in &builder.entries {
+            let term = entry[0].as_str().unwrap().to_string();
+            let reading = entry[1].as_str().unwrap().to_string();
+            let key = (term.clone(), reading.clone());
+            assert!(
+                seen.insert(key),
+                "Duplicate entry: term='{}', reading='{}'",
+                term,
+                reading
+            );
+        }
+    }
+
+    #[test]
+    fn test_yomitan_empty_dict_produces_valid_zip() {
+        // A dictionary with no characters should still produce a valid ZIP
+        // with index.json and tag_bank but no term banks
+        let builder = DictBuilder::new(0, None, "Empty".to_string());
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        assert!(names.contains(&"index.json".to_string()));
+        assert!(names.contains(&"tag_bank_1.json".to_string()));
+        // No term banks since no entries
+        assert!(
+            !names.iter().any(|n| n.starts_with("term_bank_")),
+            "Empty dict should have no term banks"
+        );
+    }
+
+    #[test]
+    fn test_yomitan_characters_without_japanese_name_skipped() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+
+        // Character with empty name_original
+        let ch = make_test_character("c1", "John Smith", "", "main");
+        builder.add_character(&ch, "Test");
+
+        assert_eq!(builder.entries.len(), 0, "Characters without Japanese names must produce no entries");
+
+        // ZIP should still be valid
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+        assert!(names.contains(&"index.json".to_string()));
+    }
+
+    #[test]
+    fn test_yomitan_spoiler_level_affects_content() {
+        // Level 0: spoiler traits should be excluded
+        let mut builder_l0 = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character(); // has a spoiler=2 trait "Secret identity"
+        builder_l0.add_character(&ch, "Test");
+
+        // Level 2: spoiler traits should be included
+        let mut builder_l2 = DictBuilder::new(2, None, "Test".to_string());
+        builder_l2.add_character(&ch, "Test");
+
+        // Find the base name entry in each
+        let find_base = |entries: &[serde_json::Value]| -> String {
+            let entry = entries.iter().find(|e| e[0].as_str().unwrap() == "須々木 心一").unwrap();
+            serde_json::to_string(&entry[5]).unwrap()
+        };
+
+        let content_l0 = find_base(&builder_l0.entries);
+        let content_l2 = find_base(&builder_l2.entries);
+
+        assert!(
+            !content_l0.contains("Secret identity"),
+            "Spoiler level 0 should exclude spoiler=2 traits"
+        );
+        assert!(
+            content_l2.contains("Secret identity"),
+            "Spoiler level 2 should include spoiler=2 traits"
+        );
+    }
+
+    #[test]
+    fn test_yomitan_single_word_name_no_family_given_split() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_test_character("c1", "Saber", "セイバー", "main");
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder.entries.iter()
+            .map(|e| e[0].as_str().unwrap().to_string())
+            .collect();
+
+        // Single-word name should not produce separate family/given entries
+        assert!(terms.contains(&"セイバー".to_string()));
+        // Should still have honorific variants
+        assert!(terms.iter().any(|t| t == "セイバーさん"), "Single name should get honorifics");
+    }
+
+    #[test]
+    fn test_yomitan_structured_content_has_type_field() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        for entry in &builder.entries {
+            let defs = entry[5].as_array().unwrap();
+            for def in defs {
+                assert_eq!(
+                    def["type"].as_str().unwrap(),
+                    "structured-content",
+                    "Every definition must have type=structured-content"
+                );
+                let content = &def["content"];
+                assert!(
+                    content.is_array() || content.is_object() || content.is_string(),
+                    "structured-content.content must be array, object, or string"
+                );
+            }
+        }
     }
 }

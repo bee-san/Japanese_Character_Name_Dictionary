@@ -69,41 +69,110 @@ impl ContentBuilder {
         re_vndb.is_match(text) || re_anilist.is_match(text)
     }
 
-    /// Parse VNDB markup: [url=https://...]text[/url] → just the text
+    /// Parse VNDB markup: strip [url=...], [quote], [code], [raw] tags down to inner text.
     pub fn parse_vndb_markup(text: &str) -> String {
-        let re = Regex::new(r"(?i)\[url=[^\]]+\]([^\[]*)\[/url\]").unwrap();
-        re.replace_all(text, "$1").to_string()
+        // [url=https://...]text[/url] → text
+        let re_url = Regex::new(r"(?i)\[url=[^\]]+\]([^\[]*)\[/url\]").unwrap();
+        let text = re_url.replace_all(text, "$1");
+        // [quote]...[/quote] → inner text
+        let re_quote = Regex::new(r"(?is)\[quote\](.*?)\[/quote\]").unwrap();
+        let text = re_quote.replace_all(&text, "$1");
+        // [code]...[/code] → inner text
+        let re_code = Regex::new(r"(?is)\[code\](.*?)\[/code\]").unwrap();
+        let text = re_code.replace_all(&text, "$1");
+        // [raw]...[/raw] → inner text (raw means "don't format", so we just unwrap)
+        let re_raw = Regex::new(r"(?is)\[raw\](.*?)\[/raw\]").unwrap();
+        let text = re_raw.replace_all(&text, "$1");
+        // [u]...[/u] → inner text (Yomitan doesn't support textDecoration style)
+        let re_u = Regex::new(r"(?is)\[u\](.*?)\[/u\]").unwrap();
+        let text = re_u.replace_all(&text, "$1");
+        // [s]...[/s] → inner text (Yomitan doesn't support textDecoration style)
+        let re_s = Regex::new(r"(?is)\[s\](.*?)\[/s\]").unwrap();
+        re_s.replace_all(&text, "$1").to_string()
     }
 
     /// Parse BBCode [b] and [i] tags into Yomitan structured content nodes.
     /// Returns a serde_json::Value that is either a plain string (no tags found)
     /// or an array of mixed strings and {"tag":"b"/"i","content":...} objects.
     pub fn parse_bbcode_to_structured(text: &str) -> serde_json::Value {
-        let re = Regex::new(r"(?is)\[(b|i)\](.*?)\[/\1\]").unwrap();
-        if !re.is_match(text) {
+        // Process innermost BBCode tags first, then work outward.
+        // Each pass finds tags whose content has no nested `[x]` tags (no `[` inside).
+        let mut nodes: Vec<serde_json::Value> = Vec::new();
+        let mut working = text.to_string();
+        let placeholder_prefix = "\x00NODE";
+
+        loop {
+            // Match innermost tags: content must not contain `[`
+            let re_inner = Regex::new(r"(?is)\[(b|i)\]([^\[]*?)\[/(b|i)\]").unwrap();
+            if let Some(cap) = re_inner.captures(&working) {
+                let open_tag = cap[1].to_lowercase();
+                let close_tag = cap[3].to_lowercase();
+
+                // Mismatched tags — strip the tags, keep content
+                if open_tag != close_tag {
+                    let full = cap.get(0).unwrap();
+                    working = format!("{}{}{}", &working[..full.start()], &cap[2], &working[full.end()..]);
+                    continue;
+                }
+
+                let inner_text = &cap[2];
+                // Build the inner content: resolve any placeholders in it
+                let inner_content = Self::resolve_placeholders(inner_text, &nodes);
+
+                let node = match open_tag.as_str() {
+                    "b" => json!({
+                        "tag": "span",
+                        "style": { "fontWeight": "bold" },
+                        "content": inner_content
+                    }),
+                    "i" => json!({
+                        "tag": "span",
+                        "style": { "fontStyle": "italic" },
+                        "content": inner_content
+                    }),
+                    _ => json!({ "tag": "span", "content": inner_content }),
+                };
+
+                let idx = nodes.len();
+                nodes.push(node);
+                let placeholder = format!("{}{}\x00", placeholder_prefix, idx);
+                let full = cap.get(0).unwrap();
+                working = format!("{}{}{}", &working[..full.start()], placeholder, &working[full.end()..]);
+            } else {
+                break;
+            }
+        }
+
+        // Now resolve the final working string with all placeholders
+        Self::resolve_placeholders(&working, &nodes)
+    }
+
+    /// Resolve placeholder markers back into structured content nodes.
+    /// Returns a single Value (string, object, or array of mixed).
+    fn resolve_placeholders(text: &str, nodes: &[serde_json::Value]) -> serde_json::Value {
+        let re_ph = Regex::new(r"\x00NODE(\d+)\x00").unwrap();
+        if !re_ph.is_match(text) {
             return json!(text);
         }
 
         let mut result: Vec<serde_json::Value> = Vec::new();
         let mut last_end = 0;
 
-        for cap in re.captures_iter(text) {
-            let full_match = cap.get(0).unwrap();
-            // Push any text before this match
-            if full_match.start() > last_end {
-                let before = &text[last_end..full_match.start()];
+        for cap in re_ph.captures_iter(text) {
+            let full = cap.get(0).unwrap();
+            if full.start() > last_end {
+                let before = &text[last_end..full.start()];
                 if !before.is_empty() {
                     result.push(json!(before));
                 }
             }
-            let tag = cap[1].to_lowercase();
-            // Recursively parse inner content for nested tags
-            let inner = Self::parse_bbcode_to_structured(&cap[2]);
-            result.push(json!({ "tag": tag, "content": inner }));
-            last_end = full_match.end();
+            let idx: usize = cap[1].parse().unwrap();
+            if idx < nodes.len() {
+                result.push(nodes[idx].clone());
+            }
+            last_end = full.end();
         }
 
-        // Push any remaining text after the last match
         if last_end < text.len() {
             let after = &text[last_end..];
             if !after.is_empty() {
@@ -516,13 +585,13 @@ mod tests {
     #[test]
     fn test_parse_bbcode_bold() {
         let result = ContentBuilder::parse_bbcode_to_structured("[b]bold text[/b]");
-        assert_eq!(result, json!({"tag": "b", "content": "bold text"}));
+        assert_eq!(result, json!({"tag": "span", "style": {"fontWeight": "bold"}, "content": "bold text"}));
     }
 
     #[test]
     fn test_parse_bbcode_italic() {
         let result = ContentBuilder::parse_bbcode_to_structured("[i]italic text[/i]");
-        assert_eq!(result, json!({"tag": "i", "content": "italic text"}));
+        assert_eq!(result, json!({"tag": "span", "style": {"fontStyle": "italic"}, "content": "italic text"}));
     }
 
     #[test]
@@ -532,7 +601,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            json!({"tag": "b", "content": ["SNS Manager of ", {"tag": "i", "content": "Lemonade Factory"}]})
+            json!({"tag": "span", "style": {"fontWeight": "bold"}, "content": ["SNS Manager of ", {"tag": "span", "style": {"fontStyle": "italic"}, "content": "Lemonade Factory"}]})
         );
     }
 
@@ -543,7 +612,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            json!([{"tag": "b", "content": "SNS Manager"}, "  The protagonist's friend."])
+            json!([{"tag": "span", "style": {"fontWeight": "bold"}, "content": "SNS Manager"}, "  The protagonist's friend."])
         );
     }
 
@@ -559,6 +628,54 @@ mod tests {
             "[Translated from official website]",
         );
         assert_eq!(result, json!("[Translated from official website]"));
+    }
+
+    // === Underline [u] and strikethrough [s] are stripped in parse_vndb_markup ===
+
+    #[test]
+    fn test_parse_vndb_markup_underline() {
+        let result = ContentBuilder::parse_vndb_markup("text [u]underlined[/u] here");
+        assert_eq!(result, "text underlined here");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_strikethrough() {
+        let result = ContentBuilder::parse_vndb_markup("text [s]struck[/s] here");
+        assert_eq!(result, "text struck here");
+    }
+
+    // === VNDB markup stripping: [quote], [code], [raw] ===
+
+    #[test]
+    fn test_parse_vndb_markup_quote() {
+        let result = ContentBuilder::parse_vndb_markup(
+            "before [quote]quoted text[/quote] after",
+        );
+        assert_eq!(result, "before quoted text after");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_code() {
+        let result = ContentBuilder::parse_vndb_markup(
+            "see [code]some code[/code] here",
+        );
+        assert_eq!(result, "see some code here");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_raw() {
+        let result = ContentBuilder::parse_vndb_markup(
+            "text [raw][b]not bold[/b][/raw] end",
+        );
+        assert_eq!(result, "text [b]not bold[/b] end");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_multiple_tags() {
+        let result = ContentBuilder::parse_vndb_markup(
+            "[url=https://example.com]link[/url] and [quote]quoted[/quote]",
+        );
+        assert_eq!(result, "link and quoted");
     }
 
     // === Birthday formatting tests ===
