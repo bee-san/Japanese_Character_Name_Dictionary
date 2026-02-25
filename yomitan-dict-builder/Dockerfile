@@ -18,9 +18,8 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # ---- Runtime Stage ----
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+# Distroless: no shell, no package manager, no OS utilities — minimal attack surface
+FROM gcr.io/distroless/cc-debian12:nonroot
 
 WORKDIR /app
 
@@ -33,5 +32,10 @@ COPY static/ static/
 EXPOSE 3000
 
 ENV PORT=3000
+# Bind to localhost only — Caddy on the host handles external traffic
+ENV HOST=127.0.0.1
+
+# Run as nonroot user (uid 65534) built into distroless
+USER nonroot
 
 CMD ["./yomitan-dict-builder"]

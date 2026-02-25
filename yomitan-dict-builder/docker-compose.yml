@@ -1,14 +1,18 @@
 services:
   yomitan-dict-builder:
-    build: .
-    ports:
-      - "9721:3000"
+    image: ghcr.io/bee-san/japanese_character_name_dictionary:latest
+    # Host networking so 127.0.0.1 inside the container = host's 127.0.0.1
+    # This lets Caddy on the host reach the app without exposing it externally
+    network_mode: host
     environment:
       - PORT=3000
-      - BASE_URL=http://localhost:9721
+      - HOST=127.0.0.1
+      - BASE_URL=https://yourdomain.com
       # - CACHE_DIR=/var/cache/yomitan
     volumes:
       - cache-data:/var/cache/yomitan
+    labels:
+      - "io.containers.autoupdate=registry"
     restart: unless-stopped
 
 volumes:
