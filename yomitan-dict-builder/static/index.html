@@ -168,6 +168,21 @@
         .badge.anime { background: #e74c3c; }
         .badge.manga { background: #2ecc71; }
         #mediaTypeGroup { display: none; }
+        .tooltip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            font-size: 14px;
+            color: #e84393;
+            cursor: help;
+            vertical-align: middle;
+            margin-left: 4px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        .tooltip-icon:hover { opacity: 1; }
         .or-divider {
             text-align: center;
             color: #ccc;
@@ -274,6 +289,7 @@
                 <label>
                     <input type="checkbox" id="honorificsUsername" checked style="width: auto; margin-right: 8px;">
                     Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
+                    <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.">ⓘ</span>
                 </label>
             </div>
 
@@ -330,6 +346,7 @@
                     <label>
                         <input type="checkbox" id="honorificsManual" checked style="width: auto; margin-right: 8px;">
                         Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
+                        <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.">ⓘ</span>
                     </label>
                 </div>
 
