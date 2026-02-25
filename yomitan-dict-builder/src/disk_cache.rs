@@ -110,10 +110,10 @@ impl DiskImageCache {
         if let Ok(json) = serde_json::to_vec(&meta) {
             let tmp_meta = self.dir.join(format!("{}.meta.tmp", hash));
             let final_meta = self.dir.join(format!("{}.meta", hash));
-            if tokio::fs::write(&tmp_meta, &json).await.is_ok() {
-                if tokio::fs::rename(&tmp_meta, &final_meta).await.is_err() {
+            if tokio::fs::write(&tmp_meta, &json).await.is_ok()
+                && tokio::fs::rename(&tmp_meta, &final_meta).await.is_err()
+            {
                     let _ = tokio::fs::remove_file(&tmp_meta).await;
-                }
             }
         }
     }
@@ -231,10 +231,10 @@ impl DiskDataCache {
         if let Ok(json) = serde_json::to_vec(&meta) {
             let tmp_meta = self.dir.join(format!("{}.meta.tmp", hash));
             let final_meta = self.dir.join(format!("{}.meta", hash));
-            if tokio::fs::write(&tmp_meta, &json).await.is_ok() {
-                if tokio::fs::rename(&tmp_meta, &final_meta).await.is_err() {
-                    let _ = tokio::fs::remove_file(&tmp_meta).await;
-                }
+            if tokio::fs::write(&tmp_meta, &json).await.is_ok()
+                && tokio::fs::rename(&tmp_meta, &final_meta).await.is_err()
+            {
+                let _ = tokio::fs::remove_file(&tmp_meta).await;
             }
         }
     }

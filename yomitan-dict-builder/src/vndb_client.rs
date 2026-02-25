@@ -60,7 +60,7 @@ impl VndbClient {
     ///   - "vndb.org/u306587"
     ///   - "u306587"
     ///   - "yorhel" (plain username)
-    /// Returns either a resolved user ID or the cleaned username for API lookup.
+    ///     Returns either a resolved user ID or the cleaned username for API lookup.
     fn parse_user_input(input: &str) -> ParsedUserInput {
         let input = input.trim();
 
@@ -104,8 +104,8 @@ impl VndbClient {
     pub async fn resolve_user(&self, username: &str) -> Result<String, String> {
         // First, parse the input to handle URLs and direct user IDs
         match Self::parse_user_input(username) {
-            ParsedUserInput::UserId(id) => return Ok(id),
-            ParsedUserInput::Username(name) => return self.resolve_username(&name).await,
+            ParsedUserInput::UserId(id) => Ok(id),
+            ParsedUserInput::Username(name) => self.resolve_username(&name).await,
         }
     }
 

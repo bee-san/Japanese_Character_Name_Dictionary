@@ -280,8 +280,8 @@
         </div>
 
         <div class="tabs">
-            <div class="tab active" data-tab="username">From Username</div>
-            <div class="tab" data-tab="manual">From Media ID</div>
+            <div class="tab active" data-tab="username">From VNDB / AniList Username</div>
+            <div class="tab" data-tab="manual">From VNDB / AniList Media ID</div>
         </div>
 
         <!-- Tab 1: Username-based (Primary) -->
@@ -310,7 +310,7 @@
                 <label>
                     <input type="checkbox" id="honorificsUsername" checked style="width: auto; margin-right: 8px;">
                     Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
-                    <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.">ⓘ</span>
+                    <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match." onclick="alert('If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.')">ⓘ</span>
                 </label>
             </div>
 
@@ -367,7 +367,7 @@
                     <label>
                         <input type="checkbox" id="honorificsManual" checked style="width: auto; margin-right: 8px;">
                         Generate honorific suffix entries (さん, ちゃん, 先生, etc.)
-                        <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.">ⓘ</span>
+                        <span class="tooltip-icon" title="If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match." onclick="alert('If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.')">ⓘ</span>
                     </label>
                 </div>
 
@@ -560,7 +560,7 @@
             progressContainer.classList.add('show');
             progressBar.style.width = '0%';
             progressBar.textContent = '';
-            status.textContent = 'Starting dictionary generation...';
+            status.innerHTML = 'Starting dictionary generation... Sorry for the wait — we rate-limit our requests to be kind to VNDB and AniList, who generously provide their APIs for free. 💛';
             status.className = 'status show loading';
 
             let url = '/api/generate-stream?spoiler_level=' + spoiler;
@@ -663,7 +663,7 @@
 
             submitBtn.disabled = true;
             submitBtn.textContent = 'Generating...';
-            status.textContent = 'Fetching characters and building dictionary... This may take a minute.';
+            status.innerHTML = 'Fetching characters and building dictionary... Sorry for the wait — we rate-limit our requests to be kind to VNDB and AniList, who generously provide their APIs for free. 💛';
             status.className = 'status show loading';
 
             try {

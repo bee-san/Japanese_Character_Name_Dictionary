@@ -109,9 +109,7 @@ impl ContentBuilder {
         let mut working = text.to_string();
         let placeholder_prefix = "\x00NODE";
 
-        loop {
-            // Match innermost tags: content must not contain `[`
-            if let Some(cap) = RE_BBCODE_INNER.captures(&working) {
+        while let Some(cap) = RE_BBCODE_INNER.captures(&working) {
                 let open_tag = cap[1].to_lowercase();
                 let close_tag = cap[3].to_lowercase();
 
@@ -155,9 +153,6 @@ impl ContentBuilder {
                     placeholder,
                     &working[full.end()..]
                 );
-            } else {
-                break;
-            }
         }
 
         // Now resolve the final working string with all placeholders
