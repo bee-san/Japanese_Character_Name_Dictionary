@@ -433,7 +433,10 @@ impl DictBuilder {
 
     /// Create tag_bank_1.json — fixed tag definitions for character roles.
     fn create_tags(&self) -> serde_json::Value {
-        let build_timestamp = env!("BUILD_TIMESTAMP").split(' ').next().unwrap_or("unknown");
+        let build_timestamp = env!("BUILD_TIMESTAMP")
+            .split(' ')
+            .next()
+            .unwrap_or("unknown");
         let dict_built = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
         json!([

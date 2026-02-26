@@ -23,8 +23,8 @@ use tracing::{info, warn};
 mod anilist_client;
 mod content_builder;
 mod dict_builder;
-mod image_handler;
 mod image_cache;
+mod image_handler;
 mod kana;
 mod models;
 mod name_parser;
@@ -35,8 +35,8 @@ mod anilist_name_test_data;
 
 use anilist_client::AnilistClient;
 use dict_builder::DictBuilder;
-use image_handler::ImageHandler;
 use image_cache::ImageCache;
+use image_handler::ImageHandler;
 use models::UserMediaEntry;
 use vndb_client::VndbClient;
 
@@ -824,21 +824,19 @@ async fn generate_dict(
     };
 
     match result {
-        Ok(bytes) => {
-            (
-                StatusCode::OK,
-                [
-                    ("content-type", "application/zip"),
-                    (
-                        "content-disposition",
-                        "attachment; filename=bee_characters.zip",
-                    ),
-                    ("access-control-allow-origin", "*"),
-                ],
-                bytes,
-            )
-                .into_response()
-        }
+        Ok(bytes) => (
+            StatusCode::OK,
+            [
+                ("content-type", "application/zip"),
+                (
+                    "content-disposition",
+                    "attachment; filename=bee_characters.zip",
+                ),
+                ("access-control-allow-origin", "*"),
+            ],
+            bytes,
+        )
+            .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
@@ -934,13 +932,7 @@ async fn generate_vndb_dict(
     let mut char_data = client.fetch_characters(vn_id).await?;
 
     // Concurrent image downloads with resize
-    download_images_concurrent(
-        &mut char_data,
-        &state.http_client,
-        &state.image_cache,
-        8,
-    )
-    .await;
+    download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 8).await;
 
     let mut builder = DictBuilder::new(
         spoiler_level,
@@ -979,13 +971,7 @@ async fn generate_anilist_dict(
     };
 
     // Concurrent image downloads with resize
-    download_images_concurrent(
-        &mut char_data,
-        &state.http_client,
-        &state.image_cache,
-        6,
-    )
-    .await;
+    download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 6).await;
 
     let mut builder = DictBuilder::new(
         spoiler_level,

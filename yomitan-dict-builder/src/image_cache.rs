@@ -46,8 +46,8 @@ impl ImageCache {
             .map_err(|e| format!("Failed to create cache dir: {}", e))?;
 
         let db_path = images_dir.join("cache.db");
-        let conn = Connection::open(&db_path)
-            .map_err(|e| format!("Failed to open cache DB: {}", e))?;
+        let conn =
+            Connection::open(&db_path).map_err(|e| format!("Failed to open cache DB: {}", e))?;
 
         // WAL mode for concurrent reads + single writer
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
@@ -214,7 +214,9 @@ impl ImageCache {
         if let Some(old) = old_size {
             let old = old as u64;
             if size > old {
-                self.inner.total_bytes.fetch_add(size - old, Ordering::Relaxed);
+                self.inner
+                    .total_bytes
+                    .fetch_add(size - old, Ordering::Relaxed);
             } else {
                 saturating_sub(&self.inner.total_bytes, old - size);
             }
@@ -391,10 +393,14 @@ mod tests {
 
         assert_eq!(cache.total_bytes(), 0);
 
-        cache.put("https://a.com/1.jpg", &vec![0u8; 100], "jpg").await;
+        cache
+            .put("https://a.com/1.jpg", &vec![0u8; 100], "jpg")
+            .await;
         assert_eq!(cache.total_bytes(), 100);
 
-        cache.put("https://a.com/2.jpg", &vec![0u8; 200], "jpg").await;
+        cache
+            .put("https://a.com/2.jpg", &vec![0u8; 200], "jpg")
+            .await;
         assert_eq!(cache.total_bytes(), 300);
     }
 

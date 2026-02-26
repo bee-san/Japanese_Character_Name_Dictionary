@@ -588,10 +588,10 @@ fn find_split_point(native: &str, family_kana: &str, given_kana: &str) -> Option
 
         // Kanji typically produce 1-3 kana (most commonly 2)
         // Penalize ratios outside this range
-        if family_ratio < 0.5 || family_ratio > 4.0 {
+        if !(0.5..=4.0).contains(&family_ratio) {
             continue;
         }
-        if given_ratio < 0.5 || given_ratio > 4.0 {
+        if !(0.5..=4.0).contains(&given_ratio) {
             continue;
         }
 

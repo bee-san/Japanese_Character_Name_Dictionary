@@ -9,8 +9,5 @@ fn main() {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_else(|| "unknown".to_string());
 
-    println!(
-        "cargo:rustc-env=BUILD_TIMESTAMP={}",
-        output.trim()
-    );
+    println!("cargo:rustc-env=BUILD_TIMESTAMP={}", output.trim());
 }
