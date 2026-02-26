@@ -426,6 +426,8 @@ impl VndbClient {
             image_url,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         })
     }
 }

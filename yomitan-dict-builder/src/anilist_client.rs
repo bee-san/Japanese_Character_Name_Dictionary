@@ -188,6 +188,8 @@ impl AnilistClient {
                             full
                             native
                             alternative
+                            first
+                            last
                         }
                         image {
                             large
@@ -310,6 +312,14 @@ impl AnilistClient {
         let name_data = node.get("name")?;
         let name_full = name_data["full"].as_str().unwrap_or("").to_string();
         let name_native = name_data["native"].as_str().unwrap_or("").to_string();
+        let name_first = name_data["first"]
+            .as_str()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let name_last = name_data["last"]
+            .as_str()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
 
         let alternatives: Vec<String> = name_data["alternative"]
             .as_array()
@@ -381,6 +391,8 @@ impl AnilistClient {
             image_url,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: name_first,
+            last_name_hint: name_last,
         })
     }
 }
@@ -474,6 +486,97 @@ mod tests {
         assert!(ch.roles.is_empty());
         assert!(ch.engages_in.is_empty());
         assert!(ch.subject_of.is_empty());
+    }
+
+    #[test]
+    fn test_process_character_extracts_name_hints() {
+        let client = make_client();
+        let mut edge = make_edge(
+            "MAIN",
+            100,
+            "Souma Yukihira",
+            "幸平創真",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        // Add first/last to the name object
+        edge["node"]["name"]["first"] = serde_json::json!("Souma");
+        edge["node"]["name"]["last"] = serde_json::json!("Yukihira");
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.first_name_hint, Some("Souma".to_string()));
+        assert_eq!(ch.last_name_hint, Some("Yukihira".to_string()));
+    }
+
+    #[test]
+    fn test_process_character_no_hints_when_missing() {
+        let client = make_client();
+        let edge = make_edge(
+            "MAIN",
+            100,
+            "Souma Yukihira",
+            "幸平創真",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.first_name_hint, None);
+        assert_eq!(ch.last_name_hint, None);
+    }
+
+    #[test]
+    fn test_process_character_trims_hint_whitespace() {
+        let client = make_client();
+        let mut edge = make_edge(
+            "MAIN",
+            100,
+            "Souma Yukihira",
+            "幸平創真",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        edge["node"]["name"]["first"] = serde_json::json!("Souma ");
+        edge["node"]["name"]["last"] = serde_json::json!(" Yukihira ");
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.first_name_hint, Some("Souma".to_string()));
+        assert_eq!(ch.last_name_hint, Some("Yukihira".to_string()));
+    }
+
+    #[test]
+    fn test_process_character_empty_hint_becomes_none() {
+        let client = make_client();
+        let mut edge = make_edge(
+            "MAIN",
+            100,
+            "Himiko",
+            "ヒミコ",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        edge["node"]["name"]["first"] = serde_json::json!("Himiko");
+        edge["node"]["name"]["last"] = serde_json::json!("");
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.first_name_hint, Some("Himiko".to_string()));
+        assert_eq!(ch.last_name_hint, None); // empty string → None
     }
 
     #[test]
@@ -815,6 +918,8 @@ mod tests {
         assert!(query.contains("full"));
         assert!(query.contains("native"));
         assert!(query.contains("alternative"));
+        assert!(query.contains("first"));
+        assert!(query.contains("last"));
         assert!(query.contains("dateOfBirth"));
         assert!(query.contains("bloodType"));
         assert!(query.contains("gender"));

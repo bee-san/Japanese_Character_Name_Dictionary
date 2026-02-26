@@ -7,6 +7,7 @@ use zip::ZipWriter;
 
 use crate::content_builder::ContentBuilder;
 use crate::image_handler::ImageHandler;
+use crate::kana;
 use crate::models::*;
 use crate::name_parser::{self, HONORIFIC_SUFFIXES};
 
@@ -62,8 +63,13 @@ impl DictBuilder {
             return;
         }
 
-        // Generate hiragana readings using mixed name handling
-        let readings = name_parser::generate_mixed_name_readings(name_original, &char.name);
+        // Generate hiragana readings using unified name handling (supports hints)
+        let readings = name_parser::generate_name_readings(
+            name_original,
+            &char.name,
+            char.first_name_hint.as_deref(),
+            char.last_name_hint.as_deref(),
+        );
 
         let role = &char.role;
         let score = get_score(role);
@@ -88,12 +94,18 @@ impl DictBuilder {
         // Track terms to avoid duplicates
         let mut added_terms: HashSet<String> = HashSet::new();
 
-        // Split the Japanese name
-        let name_parts = name_parser::split_japanese_name(name_original);
+        // Split the Japanese name (with hints for AniList characters)
+        let name_parts = name_parser::split_japanese_name_with_hints(
+            name_original,
+            char.first_name_hint.as_deref(),
+            char.last_name_hint.as_deref(),
+        );
 
         // --- Base name entries ---
+        // Generate split entries when we have family/given parts (either from space or hints)
+        let has_split = name_parts.has_space || name_parts.family.is_some();
 
-        if name_parts.has_space {
+        if has_split {
             // 1. Original with space: "須々木 心一"
             if !name_parts.original.is_empty() && added_terms.insert(name_parts.original.clone()) {
                 self.entries.push(ContentBuilder::create_term_entry(
@@ -158,7 +170,7 @@ impl DictBuilder {
         // When the original name contains kanji, also add entries where the term
         // itself is the hiragana or katakana form so lookups work on kana text too.
 
-        if name_parts.has_space {
+        if has_split {
             // Hiragana combined (no space): "すずきしんいち"
             let hira_combined = format!("{}{}", readings.family, readings.given);
             if !hira_combined.is_empty() && added_terms.insert(hira_combined.clone()) {
@@ -203,8 +215,8 @@ impl DictBuilder {
             }
 
             // Katakana variants
-            let kata_family = name_parser::hira_to_kata(&readings.family);
-            let kata_given = name_parser::hira_to_kata(&readings.given);
+            let kata_family = kana::hira_to_kata(&readings.family);
+            let kata_given = kana::hira_to_kata(&readings.given);
             let kata_combined = format!("{}{}", kata_family, kata_given);
             if !kata_combined.is_empty() && added_terms.insert(kata_combined.clone()) {
                 self.entries.push(ContentBuilder::create_term_entry(
@@ -254,7 +266,7 @@ impl DictBuilder {
                     &structured_content,
                 ));
             }
-            let kata_full = name_parser::hira_to_kata(&readings.full);
+            let kata_full = kana::hira_to_kata(&readings.full);
             if !kata_full.is_empty() && added_terms.insert(kata_full.clone()) {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_full,
@@ -270,7 +282,7 @@ impl DictBuilder {
         // Includes original kanji forms + hiragana/katakana forms
 
         let mut base_names_with_readings: Vec<(String, String)> = Vec::new();
-        if name_parts.has_space {
+        if has_split {
             // Original kanji forms
             if let Some(ref family) = name_parts.family {
                 if !family.is_empty() {
@@ -300,8 +312,8 @@ impl DictBuilder {
                 base_names_with_readings.push((hira_combined, readings.full.clone()));
             }
             // Katakana forms (family, given, combined)
-            let kata_family = name_parser::hira_to_kata(&readings.family);
-            let kata_given = name_parser::hira_to_kata(&readings.given);
+            let kata_family = kana::hira_to_kata(&readings.family);
+            let kata_given = kana::hira_to_kata(&readings.given);
             if !kata_family.is_empty() {
                 base_names_with_readings.push((kata_family.clone(), readings.family.clone()));
             }
@@ -319,7 +331,7 @@ impl DictBuilder {
                 base_names_with_readings.push((readings.full.clone(), readings.full.clone()));
             }
             // Katakana form
-            let kata_full = name_parser::hira_to_kata(&readings.full);
+            let kata_full = kana::hira_to_kata(&readings.full);
             if !kata_full.is_empty() {
                 base_names_with_readings.push((kata_full, readings.full.clone()));
             }
@@ -516,6 +528,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         }
     }
 
@@ -911,6 +925,8 @@ mod tests {
             image_url: Some("https://example.com/img.jpg".to_string()),
             image_bytes: Some(raw),
             image_ext: Some("jpg".to_string()),
+            first_name_hint: None,
+            last_name_hint: None,
         }
     }
 
@@ -1281,6 +1297,8 @@ mod tests {
                 image_url: None,
                 image_bytes: None,
                 image_ext: None,
+                first_name_hint: None,
+                last_name_hint: None,
             };
             builder.add_character(&ch, "Test");
         }

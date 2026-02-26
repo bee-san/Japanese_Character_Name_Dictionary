@@ -1,3 +1,8 @@
+/// Name handling: splitting Japanese names, generating readings, and honorific data.
+///
+/// Uses low-level kana utilities from `crate::kana`.
+use crate::kana;
+
 /// Name parts result from splitting a Japanese name.
 #[derive(Debug, Clone)]
 pub struct JapaneseNameParts {
@@ -340,42 +345,9 @@ pub const HONORIFIC_SUFFIXES: &[(&str, &str, &str)] = &[
     ("さま", "さま", "Kana form of 様 (duplicate)"),
 ];
 
-/// Check if text contains kanji characters.
-/// Covers CJK Unified Ideographs, Extensions A–H, and Compatibility Ideographs.
-pub fn contains_kanji(text: &str) -> bool {
-    text.chars().any(is_kanji)
-}
-
-/// Returns true if the character is a CJK ideograph (kanji).
-fn is_kanji(c: char) -> bool {
-    let code = c as u32;
-    // CJK Unified Ideographs
-    (0x4E00..=0x9FFF).contains(&code)
-    // Extension A
-    || (0x3400..=0x4DBF).contains(&code)
-    // Extension B
-    || (0x20000..=0x2A6DF).contains(&code)
-    // Extension C
-    || (0x2A700..=0x2B73F).contains(&code)
-    // Extension D
-    || (0x2B740..=0x2B81F).contains(&code)
-    // Extension E
-    || (0x2B820..=0x2CEAF).contains(&code)
-    // Extension F
-    || (0x2CEB0..=0x2EBEF).contains(&code)
-    // Extension G
-    || (0x30000..=0x3134F).contains(&code)
-    // Extension H
-    || (0x31350..=0x323AF).contains(&code)
-    // CJK Compatibility Ideographs
-    || (0xF900..=0xFAFF).contains(&code)
-    // CJK Compatibility Ideographs Supplement
-    || (0x2F800..=0x2FA1F).contains(&code)
-}
-
-/// Split a Japanese name on the first space.
+/// Split a Japanese name on the first space (internal helper).
 /// Returns (family, given, combined, original, has_space)
-pub fn split_japanese_name(name_original: &str) -> JapaneseNameParts {
+fn split_japanese_name(name_original: &str) -> JapaneseNameParts {
     if name_original.is_empty() || !name_original.contains(' ') {
         return JapaneseNameParts {
             has_space: false,
@@ -401,276 +373,7 @@ pub fn split_japanese_name(name_original: &str) -> JapaneseNameParts {
     }
 }
 
-/// Convert katakana to hiragana.
-/// Katakana range: U+30A1 (ァ) to U+30F6 (ヶ). Subtract 0x60 to get hiragana equivalent.
-pub fn kata_to_hira(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            let code = c as u32;
-            if (0x30A1..=0x30F6).contains(&code) {
-                char::from_u32(code - 0x60).unwrap_or(c)
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-/// Convert hiragana to katakana.
-/// Hiragana range: U+3041 (ぁ) to U+3096 (ゖ). Add 0x60 to get katakana equivalent.
-pub fn hira_to_kata(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            let code = c as u32;
-            if (0x3041..=0x3096).contains(&code) {
-                char::from_u32(code + 0x60).unwrap_or(c)
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
-/// Convert romanized text to hiragana.
-/// Handles double consonants (っ), special 'n' rules, and multi-char sequences.
-pub fn alphabet_to_kana(input: &str) -> String {
-    let text = input.to_lowercase();
-    let chars: Vec<char> = text.chars().collect();
-    let mut result = String::new();
-    let mut i = 0;
-
-    while i < chars.len() {
-        // 1. Double consonant check: if chars[i] == chars[i+1] and both are consonants → っ
-        if i + 1 < chars.len() && chars[i] == chars[i + 1] && is_consonant(chars[i]) {
-            result.push('っ');
-            i += 1; // Skip one; the second consonant starts the next match
-            continue;
-        }
-
-        // 2. Try 3-character sequence
-        if i + 3 <= chars.len() {
-            let three: String = chars[i..i + 3].iter().collect();
-            if let Some(kana) = lookup_romaji(&three) {
-                result.push_str(kana);
-                i += 3;
-                continue;
-            }
-        }
-
-        // 3. Try 2-character sequence
-        if i + 2 <= chars.len() {
-            let two: String = chars[i..i + 2].iter().collect();
-            if let Some(kana) = lookup_romaji(&two) {
-                result.push_str(kana);
-                i += 2;
-                continue;
-            }
-        }
-
-        // 4. Special 'n' handling: ん only when NOT followed by a vowel or 'y'
-        if chars[i] == 'n' {
-            let next = chars.get(i + 1).copied();
-            if next.is_none() || !is_vowel_or_y(next.unwrap()) {
-                result.push('ん');
-                i += 1;
-                continue;
-            }
-        }
-
-        // 5. Try 1-character sequence (vowels)
-        let one = chars[i].to_string();
-        if let Some(kana) = lookup_romaji(&one) {
-            result.push_str(kana);
-        } else {
-            // Unknown character — pass through unchanged
-            result.push(chars[i]);
-        }
-        i += 1;
-    }
-
-    result
-}
-
-fn is_consonant(c: char) -> bool {
-    matches!(
-        c,
-        'b' | 'c'
-            | 'd'
-            | 'f'
-            | 'g'
-            | 'h'
-            | 'j'
-            | 'k'
-            | 'l'
-            | 'm'
-            | 'n'
-            | 'p'
-            | 'q'
-            | 'r'
-            | 's'
-            | 't'
-            | 'v'
-            | 'w'
-            | 'x'
-            | 'y'
-            | 'z'
-    )
-}
-
-fn is_vowel_or_y(c: char) -> bool {
-    matches!(c, 'a' | 'i' | 'u' | 'e' | 'o' | 'y')
-}
-
-fn lookup_romaji(key: &str) -> Option<&'static str> {
-    match key {
-        // === 3-character sequences ===
-        // Hepburn standard
-        "sha" => Some("しゃ"),
-        "shi" => Some("し"),
-        "shu" => Some("しゅ"),
-        "sho" => Some("しょ"),
-        "she" => Some("しぇ"),
-        "chi" => Some("ち"),
-        "tsu" => Some("つ"),
-        "cha" => Some("ちゃ"),
-        "chu" => Some("ちゅ"),
-        "cho" => Some("ちょ"),
-        "che" => Some("ちぇ"),
-        "nya" => Some("にゃ"),
-        "nyu" => Some("にゅ"),
-        "nyo" => Some("にょ"),
-        "hya" => Some("ひゃ"),
-        "hyu" => Some("ひゅ"),
-        "hyo" => Some("ひょ"),
-        "mya" => Some("みゃ"),
-        "myu" => Some("みゅ"),
-        "myo" => Some("みょ"),
-        "rya" => Some("りゃ"),
-        "ryu" => Some("りゅ"),
-        "ryo" => Some("りょ"),
-        "gya" => Some("ぎゃ"),
-        "gyu" => Some("ぎゅ"),
-        "gyo" => Some("ぎょ"),
-        "bya" => Some("びゃ"),
-        "byu" => Some("びゅ"),
-        "byo" => Some("びょ"),
-        "pya" => Some("ぴゃ"),
-        "pyu" => Some("ぴゅ"),
-        "pyo" => Some("ぴょ"),
-        "kya" => Some("きゃ"),
-        "kyu" => Some("きゅ"),
-        "kyo" => Some("きょ"),
-        "jya" => Some("じゃ"),
-        "jyu" => Some("じゅ"),
-        "jyo" => Some("じょ"),
-        // Nihon-shiki / Kunrei-shiki variants (VNDB romanizations aren't always pure Hepburn)
-        "tya" => Some("ちゃ"),
-        "tyu" => Some("ちゅ"),
-        "tyo" => Some("ちょ"),
-        "sya" => Some("しゃ"),
-        "syu" => Some("しゅ"),
-        "syo" => Some("しょ"),
-        "zya" => Some("じゃ"),
-        "zyu" => Some("じゅ"),
-        "zyo" => Some("じょ"),
-        "dya" => Some("ぢゃ"),
-        "dyu" => Some("ぢゅ"),
-        "dyo" => Some("ぢょ"),
-        // Foreign-sound kana (common in character names from loanwords)
-        "tsa" => Some("つぁ"),
-        "tsi" => Some("つぃ"),
-        "tse" => Some("つぇ"),
-        "tso" => Some("つぉ"),
-
-        // === 2-character sequences ===
-        "ka" => Some("か"),
-        "ki" => Some("き"),
-        "ku" => Some("く"),
-        "ke" => Some("け"),
-        "ko" => Some("こ"),
-        "sa" => Some("さ"),
-        "si" => Some("し"),
-        "su" => Some("す"),
-        "se" => Some("せ"),
-        "so" => Some("そ"),
-        "ta" => Some("た"),
-        "ti" => Some("ち"),
-        "tu" => Some("つ"),
-        "te" => Some("て"),
-        "to" => Some("と"),
-        "na" => Some("な"),
-        "ni" => Some("に"),
-        "nu" => Some("ぬ"),
-        "ne" => Some("ね"),
-        "no" => Some("の"),
-        "ha" => Some("は"),
-        "hi" => Some("ひ"),
-        "hu" => Some("ふ"),
-        "fu" => Some("ふ"),
-        "he" => Some("へ"),
-        "ho" => Some("ほ"),
-        "fa" => Some("ふぁ"),
-        "fi" => Some("ふぃ"),
-        "fe" => Some("ふぇ"),
-        "fo" => Some("ふぉ"),
-        "je" => Some("じぇ"),
-        "ma" => Some("ま"),
-        "mi" => Some("み"),
-        "mu" => Some("む"),
-        "me" => Some("め"),
-        "mo" => Some("も"),
-        "ra" => Some("ら"),
-        "ri" => Some("り"),
-        "ru" => Some("る"),
-        "re" => Some("れ"),
-        "ro" => Some("ろ"),
-        "ya" => Some("や"),
-        "yu" => Some("ゆ"),
-        "yo" => Some("よ"),
-        "wa" => Some("わ"),
-        "wi" => Some("ゐ"),
-        "we" => Some("ゑ"),
-        "wo" => Some("を"),
-        "ga" => Some("が"),
-        "gi" => Some("ぎ"),
-        "gu" => Some("ぐ"),
-        "ge" => Some("げ"),
-        "go" => Some("ご"),
-        "za" => Some("ざ"),
-        "zi" => Some("じ"),
-        "zu" => Some("ず"),
-        "ze" => Some("ぜ"),
-        "zo" => Some("ぞ"),
-        "da" => Some("だ"),
-        "di" => Some("ぢ"),
-        "du" => Some("づ"),
-        "de" => Some("で"),
-        "do" => Some("ど"),
-        "ba" => Some("ば"),
-        "bi" => Some("び"),
-        "bu" => Some("ぶ"),
-        "be" => Some("べ"),
-        "bo" => Some("ぼ"),
-        "pa" => Some("ぱ"),
-        "pi" => Some("ぴ"),
-        "pu" => Some("ぷ"),
-        "pe" => Some("ぺ"),
-        "po" => Some("ぽ"),
-        "ja" => Some("じゃ"),
-        "ju" => Some("じゅ"),
-        "jo" => Some("じょ"),
-
-        // === 1-character sequences (vowels only; 'n' handled separately) ===
-        "a" => Some("あ"),
-        "i" => Some("い"),
-        "u" => Some("う"),
-        "e" => Some("え"),
-        "o" => Some("お"),
-
-        _ => None,
-    }
-}
-
-/// Generate hiragana readings for a name that may have mixed kanji/kana parts.
+/// Generate hiragana readings for a name using positional romaji mapping (internal helper).
 ///
 /// For each name part (family, given) independently:
 /// - If part contains kanji → convert corresponding romanized part via alphabet_to_kana
@@ -679,7 +382,7 @@ fn lookup_romaji(key: &str) -> Option<&'static str> {
 /// IMPORTANT: Romanized names from VNDB are Western order ("Given Family").
 /// Japanese names are Japanese order ("Family Given").
 /// romanized_parts[0] maps to Japanese family; romanized_parts[1] maps to Japanese given.
-pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -> NameReadings {
+fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -> NameReadings {
     // Handle empty names
     if name_original.is_empty() {
         return NameReadings {
@@ -691,9 +394,9 @@ pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -
 
     // For single-word names (no space)
     if !name_original.contains(' ') {
-        if contains_kanji(name_original) {
+        if kana::contains_kanji(name_original) {
             // Has kanji — use romanized reading
-            let full = alphabet_to_kana(romanized_name);
+            let full = kana::alphabet_to_kana(romanized_name);
             return NameReadings {
                 full: full.clone(),
                 family: full.clone(),
@@ -701,7 +404,7 @@ pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -
             };
         } else {
             // Pure kana — use kata_to_hira on the Japanese text itself
-            let full = kata_to_hira(&name_original.replace(' ', ""));
+            let full = kana::kata_to_hira(&name_original.replace(' ', ""));
             return NameReadings {
                 full: full.clone(),
                 family: full.clone(),
@@ -715,8 +418,8 @@ pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -
     let family_jp = jp_parts.family.as_deref().unwrap_or("");
     let given_jp = jp_parts.given.as_deref().unwrap_or("");
 
-    let family_has_kanji = contains_kanji(family_jp);
-    let given_has_kanji = contains_kanji(given_jp);
+    let family_has_kanji = kana::contains_kanji(family_jp);
+    let given_has_kanji = kana::contains_kanji(given_jp);
 
     // Split romanized name (Western order: first_word second_word)
     let rom_parts: Vec<&str> = romanized_name.splitn(2, ' ').collect();
@@ -726,17 +429,17 @@ pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -
     // Family reading: if kanji, use rom_first (romanized_parts[0]) via alphabet_to_kana
     //                 if kana, use Japanese family text via kata_to_hira
     let family_reading = if family_has_kanji {
-        alphabet_to_kana(rom_first)
+        kana::alphabet_to_kana(rom_first)
     } else {
-        kata_to_hira(family_jp)
+        kana::kata_to_hira(family_jp)
     };
 
     // Given reading: if kanji, use rom_second (romanized_parts[1]) via alphabet_to_kana
     //                if kana, use Japanese given text via kata_to_hira
     let given_reading = if given_has_kanji {
-        alphabet_to_kana(rom_second)
+        kana::alphabet_to_kana(rom_second)
     } else {
-        kata_to_hira(given_jp)
+        kana::kata_to_hira(given_jp)
     };
 
     let full_reading = format!("{}{}", family_reading, given_reading);
@@ -748,32 +451,325 @@ pub fn generate_mixed_name_readings(name_original: &str, romanized_name: &str) -
     }
 }
 
+/// Split a Japanese name into family/given parts.
+///
+/// This is the primary name splitting function. It accepts optional romaji hints
+/// from AniList (first=given, last=family in Western order) to split native names
+/// that have no space separator.
+///
+/// Behavior:
+/// - Native has space → splits on space (hints ignored for splitting, used for readings)
+/// - Native has no space + both hints provided → uses reading lengths to find split point
+/// - Native has no space + missing hints → returns as single unsplit block
+/// - Katakana with middle dot (・) → never split (foreign names)
+///
+/// For VNDB characters, pass `None` for both hints — falls back to space-based splitting.
+/// For AniList characters, pass `first_name_hint` (given) and `last_name_hint` (family).
+pub fn split_japanese_name_with_hints(
+    name_original: &str,
+    first_name_hint: Option<&str>,
+    last_name_hint: Option<&str>,
+) -> JapaneseNameParts {
+    // If native already has a space, use the existing split logic
+    if name_original.contains(' ') {
+        return split_japanese_name(name_original);
+    }
+
+    // Trim hints and treat empty as None
+    let first = first_name_hint.map(|s| s.trim()).filter(|s| !s.is_empty());
+    let last = last_name_hint.map(|s| s.trim()).filter(|s| !s.is_empty());
+
+    // Need both hints to attempt a split on a spaceless name
+    let (first_hint, last_hint) = match (first, last) {
+        (Some(f), Some(l)) => (f, l),
+        _ => return split_japanese_name(name_original),
+    };
+
+    // Don't try to split katakana names with middle dots (foreign names)
+    if name_original.contains('・') {
+        return split_japanese_name(name_original);
+    }
+
+    // Convert hints to kana to estimate character boundaries
+    let family_kana = kana::alphabet_to_kana(last_hint);
+    let given_kana = kana::alphabet_to_kana(first_hint);
+
+    // Try to find the split point in the native name.
+    // Strategy: the family name comes first in Japanese order.
+    // We try to find where the family portion ends by matching
+    // kana/kanji character counts against the family reading length.
+    if let Some((family_str, given_str)) =
+        find_split_point(name_original, &family_kana, &given_kana)
+    {
+        let combined = format!("{}{}", family_str, given_str);
+        JapaneseNameParts {
+            has_space: false,
+            original: name_original.to_string(),
+            combined,
+            family: Some(family_str),
+            given: Some(given_str),
+        }
+    } else {
+        // Couldn't determine split point — return as single block
+        split_japanese_name(name_original)
+    }
+}
+
+/// Try to find where to split a spaceless Japanese name into family/given parts.
+///
+/// Uses the kana readings of family and given names to estimate the character
+/// boundary. For mixed kanji/kana names, detects the transition point between
+/// kanji and kana characters as a likely boundary.
+fn find_split_point(native: &str, family_kana: &str, given_kana: &str) -> Option<(String, String)> {
+    let chars: Vec<char> = native.chars().collect();
+    if chars.is_empty() {
+        return None;
+    }
+
+    let family_kana_len = family_kana.chars().count();
+    let given_kana_len = given_kana.chars().count();
+
+    // Strategy 1: Look for a kanji→kana transition point.
+    // Many Japanese names have kanji family + kana given (e.g., 薙切えりな).
+    // Find the first transition from kanji to non-kanji (hiragana/katakana).
+    let mut last_kanji_idx = None;
+    let mut first_kana_after_kanji = None;
+    for (i, &c) in chars.iter().enumerate() {
+        if kana::contains_kanji(&c.to_string()) {
+            last_kanji_idx = Some(i);
+        } else if last_kanji_idx.is_some() && first_kana_after_kanji.is_none() {
+            first_kana_after_kanji = Some(i);
+        }
+    }
+
+    // If we found a kanji→kana boundary, check if the kana portion matches
+    // the given name reading length
+    if let Some(boundary) = first_kana_after_kanji {
+        let candidate_given: String = chars[boundary..].iter().collect();
+        let candidate_given_hira = kana::kata_to_hira(&candidate_given);
+
+        // Check if the kana portion matches the given name reading
+        if candidate_given_hira.chars().count() == given_kana_len
+            || candidate_given_hira == kana::kata_to_hira(given_kana)
+        {
+            let family_str: String = chars[..boundary].iter().collect();
+            return Some((family_str, candidate_given));
+        }
+    }
+
+    // Strategy 2: For all-kanji names, use the reading lengths to estimate
+    // the split point. Each kanji typically maps to 1-3 kana.
+    // We try each possible split position and check if the resulting
+    // character counts are plausible given the reading lengths.
+    let total_chars = chars.len();
+    if total_chars < 2 {
+        return None;
+    }
+
+    // For all-kanji names, try to find the split by testing each position.
+    // A kanji character typically produces 1-3 kana. We look for a split
+    // where family_chars * avg_kana_per_kanji ≈ family_kana_len.
+    let total_kana = family_kana_len + given_kana_len;
+    if total_kana == 0 {
+        return None;
+    }
+
+    // Try each possible split position
+    let mut best_split = None;
+    let mut best_score = f64::MAX;
+
+    for split_pos in 1..total_chars {
+        let family_chars = split_pos;
+        let given_chars = total_chars - split_pos;
+
+        // Expected kana per character for each part
+        let family_ratio = family_kana_len as f64 / family_chars as f64;
+        let given_ratio = given_kana_len as f64 / given_chars as f64;
+
+        // Kanji typically produce 1-3 kana (most commonly 2)
+        // Penalize ratios outside this range
+        if family_ratio < 0.5 || family_ratio > 4.0 {
+            continue;
+        }
+        if given_ratio < 0.5 || given_ratio > 4.0 {
+            continue;
+        }
+
+        // Score: how close are both ratios to each other and to typical values
+        let score = (family_ratio - given_ratio).abs()
+            + (family_ratio - 2.0).abs() * 0.1
+            + (given_ratio - 2.0).abs() * 0.1;
+
+        if score < best_score {
+            best_score = score;
+            best_split = Some(split_pos);
+        }
+    }
+
+    if let Some(pos) = best_split {
+        let family_str: String = chars[..pos].iter().collect();
+        let given_str: String = chars[pos..].iter().collect();
+        Some((family_str, given_str))
+    } else {
+        None
+    }
+}
+
+/// Generate hiragana readings for a character name.
+///
+/// This is the primary reading generation function. It accepts optional romaji hints
+/// from AniList to correctly map family/given readings even when the native name
+/// has no space separator.
+///
+/// Parameters:
+/// - `name_original`: Japanese name (native script)
+/// - `romanized_name`: Full romanized name (used as fallback when no hints)
+/// - `first_name_hint`: Given name in romaji (AniList "first"), Western order
+/// - `last_name_hint`: Family name in romaji (AniList "last"), Western order
+///
+/// Behavior:
+/// - Empty native → empty readings
+/// - Katakana with middle dot → kata_to_hira on whole name (no split)
+/// - No last hint → single-name treatment
+/// - Native has space + hints → space-based split, hints for readings
+/// - Native no space + hints → hint-based split and readings
+/// - No hints at all → VNDB-style positional romaji mapping
+///
+/// For VNDB characters, pass `None` for both hints.
+/// For AniList characters, pass the `first` and `last` fields from the API.
+/// For future sources, pass whatever name hints are available.
+pub fn generate_name_readings(
+    name_original: &str,
+    romanized_name: &str,
+    first_name_hint: Option<&str>,
+    last_name_hint: Option<&str>,
+) -> NameReadings {
+    // Handle empty native name
+    if name_original.is_empty() {
+        return NameReadings {
+            full: String::new(),
+            family: String::new(),
+            given: String::new(),
+        };
+    }
+
+    // Trim hints and treat empty as None
+    let first = first_name_hint.map(|s| s.trim()).filter(|s| !s.is_empty());
+    let last = last_name_hint.map(|s| s.trim()).filter(|s| !s.is_empty());
+
+    // If no hints provided, fall back to existing behavior
+    if first.is_none() && last.is_none() {
+        return generate_mixed_name_readings(name_original, romanized_name);
+    }
+
+    // Katakana names with middle dot — just convert to hiragana, don't split
+    if name_original.contains('・') {
+        let full = kana::kata_to_hira(name_original);
+        return NameReadings {
+            full: full.clone(),
+            family: full.clone(),
+            given: full,
+        };
+    }
+
+    // Single-name character (no last name hint)
+    if last.is_none() {
+        // Only first_name_hint — treat as single name
+        if kana::contains_kanji(name_original) {
+            let reading = kana::alphabet_to_kana(first.unwrap_or(romanized_name));
+            return NameReadings {
+                full: reading.clone(),
+                family: reading.clone(),
+                given: reading,
+            };
+        } else {
+            let full = kana::kata_to_hira(name_original);
+            return NameReadings {
+                full: full.clone(),
+                family: full.clone(),
+                given: full,
+            };
+        }
+    }
+
+    // We have at least a last_name_hint (family)
+    let last_hint = last.unwrap();
+    let first_hint = first.unwrap_or("");
+
+    // If native name has a space, split on it and use hints for readings
+    if name_original.contains(' ') {
+        let parts = split_japanese_name(name_original);
+        let family_jp = parts.family.as_deref().unwrap_or("");
+        let given_jp = parts.given.as_deref().unwrap_or("");
+
+        let family_reading = if kana::contains_kanji(family_jp) {
+            kana::alphabet_to_kana(last_hint)
+        } else {
+            kana::kata_to_hira(family_jp)
+        };
+
+        let given_reading = if kana::contains_kanji(given_jp) {
+            kana::alphabet_to_kana(first_hint)
+        } else {
+            kana::kata_to_hira(given_jp)
+        };
+
+        let full = format!("{}{}", family_reading, given_reading);
+        return NameReadings {
+            full,
+            family: family_reading,
+            given: given_reading,
+        };
+    }
+
+    // No space in native name — use hints to generate readings
+    let family_kana = kana::alphabet_to_kana(last_hint);
+    let given_kana = if !first_hint.is_empty() {
+        kana::alphabet_to_kana(first_hint)
+    } else {
+        String::new()
+    };
+
+    // Try to split the native name using hints
+    let parts = split_japanese_name_with_hints(name_original, first_name_hint, last_name_hint);
+
+    if parts.family.is_some() && parts.given.is_some() {
+        let family_jp = parts.family.as_deref().unwrap();
+        let given_jp = parts.given.as_deref().unwrap();
+
+        // For each part: if it's kana, use it directly; if kanji, use hint reading
+        let family_reading = if kana::contains_kanji(family_jp) {
+            family_kana
+        } else {
+            kana::kata_to_hira(family_jp)
+        };
+
+        let given_reading = if kana::contains_kanji(given_jp) {
+            given_kana
+        } else {
+            kana::kata_to_hira(given_jp)
+        };
+
+        let full = format!("{}{}", family_reading, given_reading);
+        NameReadings {
+            full,
+            family: family_reading,
+            given: given_reading,
+        }
+    } else {
+        // Couldn't split — use hint readings directly
+        let full = format!("{}{}", family_kana, given_kana);
+        NameReadings {
+            full,
+            family: family_kana,
+            given: given_kana,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // === Kanji detection tests ===
-
-    #[test]
-    fn test_contains_kanji_with_kanji() {
-        assert!(contains_kanji("漢字"));
-        assert!(contains_kanji("漢a"));
-        assert!(contains_kanji("a漢"));
-        assert!(contains_kanji("須々木"));
-    }
-
-    #[test]
-    fn test_contains_kanji_without_kanji() {
-        assert!(!contains_kanji("kana"));
-        assert!(!contains_kanji("ひらがな"));
-        assert!(!contains_kanji("カタカナ"));
-        assert!(!contains_kanji("abc123"));
-    }
-
-    #[test]
-    fn test_contains_kanji_empty() {
-        assert!(!contains_kanji(""));
-    }
 
     // === Name splitting tests ===
 
@@ -805,94 +801,28 @@ mod tests {
 
     #[test]
     fn test_split_japanese_name_multiple_spaces() {
-        // Should split on first space only
         let parts = split_japanese_name("A B C");
         assert!(parts.has_space);
         assert_eq!(parts.family.as_deref(), Some("A"));
         assert_eq!(parts.given.as_deref(), Some("B C"));
     }
 
-    // === Katakana to Hiragana tests ===
-
     #[test]
-    fn test_kata_to_hira_basic() {
-        assert_eq!(kata_to_hira("アイウエオ"), "あいうえお");
-        assert_eq!(kata_to_hira("カキクケコ"), "かきくけこ");
+    fn test_split_japanese_name_middle_dot() {
+        let parts = split_japanese_name("ルルーシュ・ランペルージ");
+        assert!(
+            !parts.has_space,
+            "Middle dot should not be treated as space"
+        );
+        assert_eq!(parts.combined, "ルルーシュ・ランペルージ");
     }
 
     #[test]
-    fn test_kata_to_hira_mixed() {
-        assert_eq!(kata_to_hira("あいカキ"), "あいかき");
-    }
-
-    #[test]
-    fn test_kata_to_hira_romaji_passthrough() {
-        assert_eq!(kata_to_hira("abc"), "abc");
-    }
-
-    #[test]
-    fn test_kata_to_hira_empty() {
-        assert_eq!(kata_to_hira(""), "");
-    }
-
-    // === Romaji to Kana tests ===
-
-    #[test]
-    fn test_alphabet_to_kana_simple_vowels() {
-        assert_eq!(alphabet_to_kana("a"), "あ");
-        assert_eq!(alphabet_to_kana("i"), "い");
-        assert_eq!(alphabet_to_kana("u"), "う");
-        assert_eq!(alphabet_to_kana("e"), "え");
-        assert_eq!(alphabet_to_kana("o"), "お");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_basic_syllables() {
-        assert_eq!(alphabet_to_kana("ka"), "か");
-        assert_eq!(alphabet_to_kana("shi"), "し");
-        assert_eq!(alphabet_to_kana("tsu"), "つ");
-        assert_eq!(alphabet_to_kana("fu"), "ふ");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_words() {
-        assert_eq!(alphabet_to_kana("sakura"), "さくら");
-        assert_eq!(alphabet_to_kana("tokyo"), "ときょ");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_double_consonant() {
-        assert_eq!(alphabet_to_kana("kappa"), "かっぱ");
-        assert_eq!(alphabet_to_kana("matte"), "まって");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_n_rules() {
-        // n before consonant = ん
-        assert_eq!(alphabet_to_kana("kantan"), "かんたん");
-        // n at end of string = ん
-        assert_eq!(alphabet_to_kana("san"), "さん");
-        // n before vowel = な/に/etc
-        assert_eq!(alphabet_to_kana("kana"), "かな");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_case_insensitive() {
-        assert_eq!(alphabet_to_kana("Sakura"), "さくら");
-        assert_eq!(alphabet_to_kana("TOKYO"), "ときょ");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_compound_syllables() {
-        assert_eq!(alphabet_to_kana("sha"), "しゃ");
-        assert_eq!(alphabet_to_kana("chi"), "ち");
-        assert_eq!(alphabet_to_kana("nya"), "にゃ");
-        assert_eq!(alphabet_to_kana("ryo"), "りょ");
-    }
-
-    #[test]
-    fn test_alphabet_to_kana_empty() {
-        assert_eq!(alphabet_to_kana(""), "");
+    fn test_split_japanese_name_single_space() {
+        let parts = split_japanese_name(" ");
+        assert!(parts.has_space);
+        assert_eq!(parts.family.as_deref(), Some(""));
+        assert_eq!(parts.given.as_deref(), Some(""));
     }
 
     // === Mixed name reading tests ===
@@ -908,36 +838,33 @@ mod tests {
     #[test]
     fn test_mixed_readings_single_kanji() {
         let r = generate_mixed_name_readings("漢", "Kan");
-        assert_eq!(r.full, alphabet_to_kana("kan"));
+        assert_eq!(r.full, kana::alphabet_to_kana("kan"));
     }
 
     #[test]
     fn test_mixed_readings_single_kana() {
         let r = generate_mixed_name_readings("あいう", "unused");
-        assert_eq!(r.full, "あいう"); // Pure hiragana passes through
+        assert_eq!(r.full, "あいう");
     }
 
     #[test]
     fn test_mixed_readings_single_katakana() {
         let r = generate_mixed_name_readings("アイウ", "unused");
-        assert_eq!(r.full, "あいう"); // Katakana converted to hiragana
+        assert_eq!(r.full, "あいう");
     }
 
     #[test]
     fn test_mixed_readings_two_part_both_kanji() {
         let r = generate_mixed_name_readings("漢 字", "Given Family");
-        // Family (漢) has kanji -> uses rom_parts[0] ("Given")
-        assert_eq!(r.family, alphabet_to_kana("given"));
-        // Given (字) has kanji -> uses rom_parts[1] ("Family")
-        assert_eq!(r.given, alphabet_to_kana("family"));
+        assert_eq!(r.family, kana::alphabet_to_kana("given"));
+        assert_eq!(r.given, kana::alphabet_to_kana("family"));
     }
 
     #[test]
     fn test_mixed_readings_two_part_mixed() {
-        // Family has kanji, given is kana
         let r = generate_mixed_name_readings("漢 かな", "Romaji Unused");
-        assert_eq!(r.family, alphabet_to_kana("romaji"));
-        assert_eq!(r.given, "かな"); // Pure kana uses Japanese text directly
+        assert_eq!(r.family, kana::alphabet_to_kana("romaji"));
+        assert_eq!(r.given, "かな");
     }
 
     #[test]
@@ -946,6 +873,26 @@ mod tests {
         assert_eq!(r.family, "あい");
         assert_eq!(r.given, "うえ");
         assert_eq!(r.full, "あいうえ");
+    }
+
+    #[test]
+    fn test_mixed_readings_kanji_with_empty_romanized() {
+        let r = generate_mixed_name_readings("漢字", "");
+        assert_eq!(r.full, "");
+    }
+
+    #[test]
+    fn test_mixed_readings_two_part_kanji_single_word_romanized() {
+        let r = generate_mixed_name_readings("漢 字", "SingleWord");
+        assert_eq!(r.family, kana::alphabet_to_kana("singleword"));
+        assert_eq!(r.given, "");
+    }
+
+    #[test]
+    fn test_mixed_readings_two_part_romanized_has_extra_spaces() {
+        let r = generate_mixed_name_readings("漢 字", "Given  Family");
+        assert_eq!(r.family, kana::alphabet_to_kana("given"));
+        assert_eq!(r.given, kana::alphabet_to_kana(" family"));
     }
 
     // === Honorific suffixes tests ===
@@ -975,171 +922,215 @@ mod tests {
         }
     }
 
-    // === Edge case: double-n before vowel ===
+    // === End-to-end: name reading with apostrophe in romanized name ===
 
     #[test]
-    fn test_alphabet_to_kana_nn_before_vowel() {
-        // "nna" should be んな (ん + な), not っな
-        // The double consonant rule fires for nn, but for 'n' specifically
-        // the result っな is what the current code produces. This test documents
-        // the actual behavior: nn triggers っ like any other double consonant.
-        let result = alphabet_to_kana("nna");
-        // Current behavior: nn → っ, then na → な
-        assert_eq!(result, "っな");
+    fn test_mixed_readings_apostrophe_in_romanized() {
+        // Character: 岡部 倫太郎, romanized: "Rin'tarou Okabe"
+        // (VNDB Western order: Given Family)
+        // Family 岡部 has kanji → use rom_first "Rin'tarou" → りんたろう
+        // Wait, that's wrong — rom_first is the given name in Western order.
+        // Let me use the correct mapping:
+        // Japanese: "岡部 倫太郎" (Family Given)
+        // Romanized: "Rintarou Okabe" (Given Family)
+        // rom_first = "Rintarou" → maps to family (岡部)
+        // rom_second = "Okabe" → maps to given (倫太郎)
+        // But that's the VNDB name order swap (see agents.md critical detail #1).
+        let r = generate_mixed_name_readings("岡部 倫太郎", "Rintarou Okabe");
+        assert_eq!(r.family, "りんたろう"); // rom_first for family
+        assert_eq!(r.given, "おかべ"); // rom_second for given
     }
 
     #[test]
-    fn test_alphabet_to_kana_nn_at_end() {
-        // "nn" at end of string: first n triggers っ, second n triggers ん
-        let result = alphabet_to_kana("nn");
-        assert_eq!(result, "っん");
+    fn test_mixed_readings_apostrophe_disambiguation() {
+        // Name with apostrophe: "Shin'ichi Kudou" → しんいち for family reading
+        let r = generate_mixed_name_readings("工藤 新一", "Shin'ichi Kudou");
+        assert_eq!(r.family, "しんいち"); // Apostrophe correctly produces ん+い
+        assert_eq!(r.given, "くどう");
+    }
+
+    // === Unified generate_name_readings tests ===
+
+    #[test]
+    fn test_name_readings_no_hints_delegates_to_vndb_behavior() {
+        // Without hints, should produce the same VNDB-style positional mapping
+        let r = generate_name_readings("須々木 心一", "Shinichi Suzuki", None, None);
+        // VNDB Western order: rom_first="Shinichi" → family, rom_second="Suzuki" → given
+        assert_eq!(r.family, kana::alphabet_to_kana("shinichi"));
+        assert_eq!(r.given, kana::alphabet_to_kana("suzuki"));
     }
 
     #[test]
-    fn test_alphabet_to_kana_n_before_n_before_consonant() {
-        // "nnk" — first n triggers っ, then "nk" → ん + k passthrough
-        // This documents the behavior for unusual romanizations
-        let result = alphabet_to_kana("anna");
-        assert_eq!(result, "あっな");
-    }
-
-    // === Edge case: numbers and special chars pass through ===
-
-    #[test]
-    fn test_alphabet_to_kana_numbers_passthrough() {
-        assert_eq!(alphabet_to_kana("2020"), "2020");
-        assert_eq!(alphabet_to_kana("a1b"), "あ1b");
+    fn test_name_readings_empty_native() {
+        let r = generate_name_readings("", "Some Name", Some("Some"), Some("Name"));
+        assert!(r.full.is_empty());
     }
 
     #[test]
-    fn test_alphabet_to_kana_special_chars_passthrough() {
-        // o → お, ' passes through, c+l don't match romaji,
-        // o → お, c+k don't match romaji
-        assert_eq!(alphabet_to_kana("o'clock"), "お'clおck");
-    }
-
-    // === Edge case: katakana long vowel mark ===
-
-    #[test]
-    fn test_kata_to_hira_long_vowel_mark() {
-        // ー (U+30FC) is outside the conversion range, should pass through
-        assert_eq!(kata_to_hira("セイバー"), "せいばー");
-        assert_eq!(kata_to_hira("ー"), "ー");
-    }
-
-    #[test]
-    fn test_kata_to_hira_voiced_marks() {
-        // Dakuten katakana: ガギグゲゴ
-        assert_eq!(kata_to_hira("ガギグゲゴ"), "がぎぐげご");
-        assert_eq!(kata_to_hira("ザジズゼゾ"), "ざじずぜぞ");
-        assert_eq!(kata_to_hira("パピプペポ"), "ぱぴぷぺぽ");
-    }
-
-    #[test]
-    fn test_kata_to_hira_vu() {
-        // ヴ (U+30F4) should convert to ゔ (U+3094)
-        assert_eq!(kata_to_hira("ヴ"), "ゔ");
-    }
-
-    // === Edge case: hira_to_kata roundtrip ===
-
-    #[test]
-    fn test_hira_to_kata_basic() {
-        assert_eq!(hira_to_kata("あいうえお"), "アイウエオ");
-        assert_eq!(hira_to_kata("かきくけこ"), "カキクケコ");
-    }
-
-    #[test]
-    fn test_hira_to_kata_long_vowel_passthrough() {
-        // ー is not hiragana, should pass through
-        assert_eq!(hira_to_kata("ー"), "ー");
-    }
-
-    #[test]
-    fn test_hira_kata_roundtrip() {
-        let original = "あいうえおかきくけこ";
-        assert_eq!(kata_to_hira(&hira_to_kata(original)), original);
-    }
-
-    // === Edge case: name with middle dot (・) ===
-
-    #[test]
-    fn test_split_japanese_name_middle_dot() {
-        // Names like ルルーシュ・ランペルージ use ・ not space
-        let parts = split_japanese_name("ルルーシュ・ランペルージ");
-        assert!(
-            !parts.has_space,
-            "Middle dot should not be treated as space"
+    fn test_name_readings_hints_with_space() {
+        // Native has space + hints → use hints for readings
+        let r = generate_name_readings(
+            "田所 恵",
+            "Megumi Tadokoro",
+            Some("Megumi"),
+            Some("Tadokoro"),
         );
-        assert_eq!(parts.combined, "ルルーシュ・ランペルージ");
+        assert_eq!(r.family, "たどころ");
+        assert_eq!(r.given, "めぐみ");
     }
 
-    // === Edge case: name with only spaces ===
+    #[test]
+    fn test_name_readings_hints_no_space_kanji() {
+        // All kanji, no space, with hints
+        let r = generate_name_readings(
+            "幸平創真",
+            "Souma Yukihira",
+            Some("Souma"),
+            Some("Yukihira"),
+        );
+        assert_eq!(r.family, "ゆきひら");
+        assert_eq!(r.given, "そうま");
+    }
 
     #[test]
-    fn test_split_japanese_name_single_space() {
-        let parts = split_japanese_name(" ");
+    fn test_name_readings_hints_katakana_given() {
+        // Kanji family + katakana given, no space
+        let r = generate_name_readings("薙切アリス", "Alice Nakiri", Some("Alice"), Some("Nakiri"));
+        assert_eq!(r.family, "なきり");
+        assert_eq!(r.given, "ありす");
+    }
+
+    #[test]
+    fn test_name_readings_hints_middledot() {
+        // Katakana with middle dot — should not split
+        let r = generate_name_readings(
+            "タクミ・アルディーニ",
+            "Takumi Aldini",
+            Some("Takumi"),
+            Some("Aldini"),
+        );
+        assert_eq!(r.full, "たくみ・あるでぃーに");
+    }
+
+    #[test]
+    fn test_name_readings_single_name_only_first() {
+        let r = generate_name_readings("ヒミコ", "Himiko", Some("Himiko"), None);
+        assert_eq!(r.full, "ひみこ");
+    }
+
+    #[test]
+    fn test_name_readings_single_kanji_only_first() {
+        let r = generate_name_readings("徳蔵", "Tokuzou", Some("Tokuzou"), None);
+        assert_eq!(r.full, "とくぞう");
+    }
+
+    #[test]
+    fn test_name_readings_trims_whitespace() {
+        let r =
+            generate_name_readings("佐藤昭二", "Shouji Satou", Some("Shouji "), Some(" Satou "));
+        assert_eq!(r.family, "さとう");
+        assert_eq!(r.given, "しょうじ");
+    }
+
+    #[test]
+    fn test_name_readings_empty_last_hint_treated_as_none() {
+        // Empty last hint → treated as single name
+        let r = generate_name_readings(
+            "田所の母",
+            "Tadokoro no Haha",
+            Some("Tadokoro no Haha"),
+            Some(""),
+        );
+        // Empty last → no family, single name behavior
+        assert!(!r.full.is_empty());
+    }
+
+    // === split_japanese_name_with_hints tests ===
+
+    #[test]
+    fn test_split_hints_no_hints_delegates() {
+        let parts = split_japanese_name_with_hints("須々木 心一", None, None);
         assert!(parts.has_space);
-        assert_eq!(parts.family.as_deref(), Some(""));
-        assert_eq!(parts.given.as_deref(), Some(""));
-    }
-
-    // === Edge case: mixed readings with empty romanized name ===
-
-    #[test]
-    fn test_mixed_readings_kanji_with_empty_romanized() {
-        // Kanji original but empty romanized → alphabet_to_kana("") = ""
-        let r = generate_mixed_name_readings("漢字", "");
-        assert_eq!(r.full, "");
+        assert_eq!(parts.family.as_deref(), Some("須々木"));
+        assert_eq!(parts.given.as_deref(), Some("心一"));
     }
 
     #[test]
-    fn test_mixed_readings_two_part_kanji_single_word_romanized() {
-        // Japanese has space but romanized doesn't → rom_second is ""
-        let r = generate_mixed_name_readings("漢 字", "SingleWord");
-        assert_eq!(r.family, alphabet_to_kana("singleword"));
-        assert_eq!(r.given, ""); // rom_second is empty
+    fn test_split_hints_with_space_uses_space() {
+        let parts = split_japanese_name_with_hints("千俵 おりえ", Some("Orie"), Some("Sendawara"));
+        assert!(parts.has_space);
+        assert_eq!(parts.family.as_deref(), Some("千俵"));
+        assert_eq!(parts.given.as_deref(), Some("おりえ"));
     }
 
     #[test]
-    fn test_mixed_readings_two_part_romanized_has_extra_spaces() {
-        // Romanized with multiple spaces — splitn(2, ' ') handles this
-        let r = generate_mixed_name_readings("漢 字", "Given  Family");
-        assert_eq!(r.family, alphabet_to_kana("given"));
-        // rom_second is " Family" (leading space)
-        assert_eq!(r.given, alphabet_to_kana(" family"));
-    }
-
-    // === Edge case: contains_kanji with rare CJK ranges ===
-
-    #[test]
-    fn test_contains_kanji_cjk_extension_a() {
-        // U+3400 is in CJK Extension A
-        assert!(contains_kanji("\u{3400}"));
+    fn test_split_hints_middledot_not_split() {
+        let parts = split_japanese_name_with_hints(
+            "ローランド・シャペル",
+            Some("Roland"),
+            Some("Chapelle"),
+        );
+        assert!(!parts.has_space);
+        assert_eq!(parts.family, None);
     }
 
     #[test]
-    fn test_contains_kanji_compatibility_ideographs() {
-        // U+F900 is in CJK Compatibility Ideographs
-        assert!(contains_kanji("\u{F900}"));
-    }
-
-    // === Edge case: alphabet_to_kana with consecutive vowels ===
-
-    #[test]
-    fn test_alphabet_to_kana_consecutive_vowels() {
-        assert_eq!(alphabet_to_kana("aoi"), "あおい");
-        assert_eq!(alphabet_to_kana("oui"), "おうい");
+    fn test_split_hints_empty_last_no_split() {
+        let parts = split_japanese_name_with_hints("田所の母", Some("Tadokoro no Haha"), Some(""));
+        assert!(!parts.has_space);
+        assert_eq!(parts.family, None);
     }
 
     #[test]
-    fn test_alphabet_to_kana_nihon_shiki_variants() {
-        // VNDB sometimes uses non-Hepburn romanizations
-        assert_eq!(alphabet_to_kana("si"), "し");
-        assert_eq!(alphabet_to_kana("ti"), "ち");
-        assert_eq!(alphabet_to_kana("tu"), "つ");
-        assert_eq!(alphabet_to_kana("hu"), "ふ");
-        assert_eq!(alphabet_to_kana("tya"), "ちゃ");
-        assert_eq!(alphabet_to_kana("sya"), "しゃ");
+    fn test_split_hints_kanji_no_space_produces_parts() {
+        let parts = split_japanese_name_with_hints("幸平創真", Some("Souma"), Some("Yukihira"));
+        assert!(parts.family.is_some(), "Should produce family part");
+        assert!(parts.given.is_some(), "Should produce given part");
+        assert_eq!(parts.combined, "幸平創真");
+    }
+
+    #[test]
+    fn test_split_hints_mixed_kana_kanji() {
+        let parts = split_japanese_name_with_hints("薙切えりな", Some("Erina"), Some("Nakiri"));
+        assert!(parts.family.is_some());
+        assert!(parts.given.is_some());
+        // Family should be the kanji part, given should be the kana part
+        assert_eq!(parts.family.as_deref(), Some("薙切"));
+        assert_eq!(parts.given.as_deref(), Some("えりな"));
+    }
+
+    // === find_split_point tests ===
+
+    #[test]
+    fn test_find_split_kanji_kana_boundary() {
+        // 薙切アリス → family=薙切, given=アリス
+        let result = find_split_point("薙切アリス", "なきり", "ありす");
+        assert!(result.is_some());
+        let (family, given) = result.unwrap();
+        assert_eq!(family, "薙切");
+        assert_eq!(given, "アリス");
+    }
+
+    #[test]
+    fn test_find_split_all_kanji() {
+        // 幸平創真 → family=幸平, given=創真
+        let result = find_split_point("幸平創真", "ゆきひら", "そうま");
+        assert!(result.is_some());
+        let (family, given) = result.unwrap();
+        assert_eq!(family, "幸平");
+        assert_eq!(given, "創真");
+    }
+
+    #[test]
+    fn test_find_split_single_char() {
+        // Single character — can't split
+        let result = find_split_point("漢", "かん", "");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_split_empty() {
+        let result = find_split_point("", "かん", "じ");
+        assert!(result.is_none());
     }
 }

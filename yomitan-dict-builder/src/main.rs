@@ -27,9 +27,13 @@ mod content_builder;
 mod dict_builder;
 mod disk_cache;
 mod image_handler;
+mod kana;
 mod models;
 mod name_parser;
 mod vndb_client;
+
+#[cfg(test)]
+mod anilist_name_test_data;
 
 use anilist_client::AnilistClient;
 use dict_builder::DictBuilder;
@@ -110,13 +114,16 @@ impl AppState {
             });
 
         let disk_image_cache = DiskImageCache::new(cache_dir.join("images")).await;
-        disk_image_cache.spawn_cleanup_task();
+        // TESTING: commenting out disk cache cleanup to test if caching causes problems
+        // disk_image_cache.spawn_cleanup_task();
 
         let disk_zip_cache = DiskDataCache::new(cache_dir.join("zips"), DISK_ZIP_TTL_SECS).await;
-        disk_zip_cache.spawn_cleanup_task();
+        // TESTING: commenting out disk cache cleanup to test if caching causes problems
+        // disk_zip_cache.spawn_cleanup_task();
 
         let disk_api_cache = DiskDataCache::new(cache_dir.join("api"), DISK_API_TTL_SECS).await;
-        disk_api_cache.spawn_cleanup_task();
+        // TESTING: commenting out disk cache cleanup to test if caching causes problems
+        // disk_api_cache.spawn_cleanup_task();
 
         let downloads: DownloadStore = Arc::new(Mutex::new(HashMap::new()));
 
@@ -501,19 +508,19 @@ async fn fetch_and_cache_image(
     url: &str,
     http_client: &reqwest::Client,
     image_cache: &Cache<String, ImageCacheEntry>,
-    disk_cache: &DiskImageCache,
+    _disk_cache: &DiskImageCache,
 ) -> Option<ImageCacheEntry> {
     // Tier 1: in-memory cache
     if let Some(cached) = image_cache.get(url).await {
         return Some(cached);
     }
 
-    // Tier 2: disk cache (promotes to memory on hit)
-    if let Some((bytes, ext)) = disk_cache.get(url).await {
-        let entry: ImageCacheEntry = (bytes, ext);
-        image_cache.insert(url.to_string(), entry.clone()).await;
-        return Some(entry);
-    }
+    // TESTING: commenting out disk cache reads to test if caching causes problems
+    // if let Some((bytes, ext)) = disk_cache.get(url).await {
+    //     let entry: ImageCacheEntry = (bytes, ext);
+    //     image_cache.insert(url.to_string(), entry.clone()).await;
+    //     return Some(entry);
+    // }
 
     // Tier 3: HTTP download with per-image timeout
     let download_future = async {
@@ -540,9 +547,10 @@ async fn fetch_and_cache_image(
 
     let entry: ImageCacheEntry = (resized, ext.to_string());
 
-    // Write to both cache tiers
+    // Write to in-memory cache only
     image_cache.insert(url.to_string(), entry.clone()).await;
-    disk_cache.put(url, &entry.0, &entry.1).await;
+    // TESTING: commenting out disk cache writes to test if caching causes problems
+    // disk_cache.put(url, &entry.0, &entry.1).await;
 
     Some(entry)
 }
@@ -701,13 +709,14 @@ async fn generate_dict_from_usernames(
 
         match entry.source.as_str() {
             "vndb" => {
-                let api_key = api_cache_key("vndb", &entry.id);
+                let _api_key = api_cache_key("vndb", &entry.id);
 
-                // Check disk API cache first
-                let cached =
-                    state.disk_api_cache.get(&api_key).await.and_then(|bytes| {
-                        serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok()
-                    });
+                // TESTING: commenting out disk API cache to test if caching causes problems
+                // let cached =
+                //     state.disk_api_cache.get(&api_key).await.and_then(|bytes| {
+                //         serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok()
+                //     });
+                let cached: Option<CachedMediaCharacters> = None;
 
                 if let Some(mut cached) = cached {
                     // Cache hit — still need to populate image bytes from image cache
@@ -740,14 +749,14 @@ async fn generate_dict_from_usernames(
 
                     match client.fetch_characters(&entry.id).await {
                         Ok(mut char_data) => {
-                            // Cache the API response (without image bytes) before downloading images
-                            let cache_entry = CachedMediaCharacters {
-                                title: title.clone(),
-                                char_data: char_data.clone(),
-                            };
-                            if let Ok(json) = serde_json::to_vec(&cache_entry) {
-                                state.disk_api_cache.put(&api_key, &json).await;
-                            }
+                            // TESTING: commenting out disk API cache writes to test if caching causes problems
+                            // let cache_entry = CachedMediaCharacters {
+                            //     title: title.clone(),
+                            //     char_data: char_data.clone(),
+                            // };
+                            // if let Ok(json) = serde_json::to_vec(&cache_entry) {
+                            //     state.disk_api_cache.put(&api_key, &json).await;
+                            // }
 
                             download_images_concurrent(
                                 &mut char_data,
@@ -785,13 +794,14 @@ async fn generate_dict_from_usernames(
                     _ => "ANIME",
                 };
 
-                let api_key = api_cache_key("anilist", &format!("{}:{}", entry.id, media_type));
+                let _api_key = api_cache_key("anilist", &format!("{}:{}", entry.id, media_type));
 
-                // Check disk API cache first
-                let cached =
-                    state.disk_api_cache.get(&api_key).await.and_then(|bytes| {
-                        serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok()
-                    });
+                // TESTING: commenting out disk API cache to test if caching causes problems
+                // let cached =
+                //     state.disk_api_cache.get(&api_key).await.and_then(|bytes| {
+                //         serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok()
+                //     });
+                let cached: Option<CachedMediaCharacters> = None;
 
                 if let Some(mut cached) = cached {
                     download_images_concurrent(
@@ -817,14 +827,14 @@ async fn generate_dict_from_usernames(
                                 game_title.clone()
                             };
 
-                            // Cache the API response before downloading images
-                            let cache_entry = CachedMediaCharacters {
-                                title: title.clone(),
-                                char_data: char_data.clone(),
-                            };
-                            if let Ok(json) = serde_json::to_vec(&cache_entry) {
-                                state.disk_api_cache.put(&api_key, &json).await;
-                            }
+                            // TESTING: commenting out disk API cache writes to test if caching causes problems
+                            // let cache_entry = CachedMediaCharacters {
+                            //     title: title.clone(),
+                            //     char_data: char_data.clone(),
+                            // };
+                            // if let Ok(json) = serde_json::to_vec(&cache_entry) {
+                            //     state.disk_api_cache.put(&api_key, &json).await;
+                            // }
 
                             download_images_concurrent(
                                 &mut char_data,
@@ -922,29 +932,29 @@ async fn generate_dict(
             .into_response();
     }
 
-    // Check disk ZIP cache for single-media requests
-    let cache_key = zip_cache_key(
-        source,
-        id,
-        spoiler_level,
-        params.honorifics,
-        &params.media_type,
-    );
-    if let Some(cached) = state.disk_zip_cache.get(&cache_key).await {
-        return (
-            StatusCode::OK,
-            [
-                ("content-type", "application/zip"),
-                (
-                    "content-disposition",
-                    "attachment; filename=bee_characters.zip",
-                ),
-                ("access-control-allow-origin", "*"),
-            ],
-            cached,
-        )
-            .into_response();
-    }
+    // TESTING: commenting out disk ZIP cache reads to test if caching causes problems
+    // let cache_key = zip_cache_key(
+    //     source,
+    //     id,
+    //     spoiler_level,
+    //     params.honorifics,
+    //     &params.media_type,
+    // );
+    // if let Some(cached) = state.disk_zip_cache.get(&cache_key).await {
+    //     return (
+    //         StatusCode::OK,
+    //         [
+    //             ("content-type", "application/zip"),
+    //             (
+    //                 "content-disposition",
+    //                 "attachment; filename=bee_characters.zip",
+    //             ),
+    //             ("access-control-allow-origin", "*"),
+    //         ],
+    //         cached,
+    //     )
+    //         .into_response();
+    // }
 
     let download_url = {
         let base = base_url();
@@ -1004,8 +1014,8 @@ async fn generate_dict(
 
     match result {
         Ok(bytes) => {
-            // Cache the single-media ZIP to disk
-            state.disk_zip_cache.put(&cache_key, &bytes).await;
+            // TESTING: commenting out disk ZIP cache writes to test if caching causes problems
+            // state.disk_zip_cache.put(&cache_key, &bytes).await;
             (
                 StatusCode::OK,
                 [
@@ -1100,14 +1110,15 @@ async fn generate_vndb_dict(
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    let api_key = api_cache_key("vndb", vn_id);
+    let _api_key = api_cache_key("vndb", vn_id);
 
-    // Check disk API cache first
-    let cached = state
-        .disk_api_cache
-        .get(&api_key)
-        .await
-        .and_then(|bytes| serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok());
+    // TESTING: commenting out disk API cache to test if caching causes problems
+    // let cached = state
+    //     .disk_api_cache
+    //     .get(&api_key)
+    //     .await
+    //     .and_then(|bytes| serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok());
+    let cached: Option<CachedMediaCharacters> = None;
 
     let (mut char_data, game_title) = if let Some(cached) = cached {
         (cached.char_data, cached.title)
@@ -1126,14 +1137,14 @@ async fn generate_vndb_dict(
 
         let cd = client.fetch_characters(vn_id).await?;
 
-        // Cache the API response
-        let cache_entry = CachedMediaCharacters {
-            title: title.clone(),
-            char_data: cd.clone(),
-        };
-        if let Ok(json) = serde_json::to_vec(&cache_entry) {
-            state.disk_api_cache.put(&api_key, &json).await;
-        }
+        // TESTING: commenting out disk API cache writes to test if caching causes problems
+        // let cache_entry = CachedMediaCharacters {
+        //     title: title.clone(),
+        //     char_data: cd.clone(),
+        // };
+        // if let Ok(json) = serde_json::to_vec(&cache_entry) {
+        //     state.disk_api_cache.put(&api_key, &json).await;
+        // }
 
         (cd, title)
     };
@@ -1174,14 +1185,15 @@ async fn generate_anilist_dict(
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    let api_key = api_cache_key("anilist", &format!("{}:{}", media_id, media_type));
+    let _api_key = api_cache_key("anilist", &format!("{}:{}", media_id, media_type));
 
-    // Check disk API cache first
-    let cached = state
-        .disk_api_cache
-        .get(&api_key)
-        .await
-        .and_then(|bytes| serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok());
+    // TESTING: commenting out disk API cache to test if caching causes problems
+    // let cached = state
+    //     .disk_api_cache
+    //     .get(&api_key)
+    //     .await
+    //     .and_then(|bytes| serde_json::from_slice::<CachedMediaCharacters>(&bytes).ok());
+    let cached: Option<CachedMediaCharacters> = None;
 
     let (mut char_data, game_title) = if let Some(cached) = cached {
         (cached.char_data, cached.title)
@@ -1196,14 +1208,14 @@ async fn generate_anilist_dict(
             format!("AniList {}", media_id)
         };
 
-        // Cache the API response
-        let cache_entry = CachedMediaCharacters {
-            title: title.clone(),
-            char_data: cd.clone(),
-        };
-        if let Ok(json) = serde_json::to_vec(&cache_entry) {
-            state.disk_api_cache.put(&api_key, &json).await;
-        }
+        // TESTING: commenting out disk API cache writes to test if caching causes problems
+        // let cache_entry = CachedMediaCharacters {
+        //     title: title.clone(),
+        //     char_data: cd.clone(),
+        // };
+        // if let Ok(json) = serde_json::to_vec(&cache_entry) {
+        //     state.disk_api_cache.put(&api_key, &json).await;
+        // }
 
         (cd, title)
     };

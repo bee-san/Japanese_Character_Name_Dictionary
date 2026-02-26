@@ -113,7 +113,7 @@ impl DiskImageCache {
             if tokio::fs::write(&tmp_meta, &json).await.is_ok()
                 && tokio::fs::rename(&tmp_meta, &final_meta).await.is_err()
             {
-                    let _ = tokio::fs::remove_file(&tmp_meta).await;
+                let _ = tokio::fs::remove_file(&tmp_meta).await;
             }
         }
     }

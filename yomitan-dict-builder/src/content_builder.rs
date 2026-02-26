@@ -110,49 +110,49 @@ impl ContentBuilder {
         let placeholder_prefix = "\x00NODE";
 
         while let Some(cap) = RE_BBCODE_INNER.captures(&working) {
-                let open_tag = cap[1].to_lowercase();
-                let close_tag = cap[3].to_lowercase();
+            let open_tag = cap[1].to_lowercase();
+            let close_tag = cap[3].to_lowercase();
 
-                // Mismatched tags — strip the tags, keep content
-                if open_tag != close_tag {
-                    let full = cap.get(0).unwrap();
-                    working = format!(
-                        "{}{}{}",
-                        &working[..full.start()],
-                        &cap[2],
-                        &working[full.end()..]
-                    );
-                    continue;
-                }
-
-                let inner_text = &cap[2];
-                // Build the inner content: resolve any placeholders in it
-                let inner_content = Self::resolve_placeholders(inner_text, &nodes);
-
-                let node = match open_tag.as_str() {
-                    "b" => json!({
-                        "tag": "span",
-                        "style": { "fontWeight": "bold" },
-                        "content": inner_content
-                    }),
-                    "i" => json!({
-                        "tag": "span",
-                        "style": { "fontStyle": "italic" },
-                        "content": inner_content
-                    }),
-                    _ => json!({ "tag": "span", "content": inner_content }),
-                };
-
-                let idx = nodes.len();
-                nodes.push(node);
-                let placeholder = format!("{}{}\x00", placeholder_prefix, idx);
+            // Mismatched tags — strip the tags, keep content
+            if open_tag != close_tag {
                 let full = cap.get(0).unwrap();
                 working = format!(
                     "{}{}{}",
                     &working[..full.start()],
-                    placeholder,
+                    &cap[2],
                     &working[full.end()..]
                 );
+                continue;
+            }
+
+            let inner_text = &cap[2];
+            // Build the inner content: resolve any placeholders in it
+            let inner_content = Self::resolve_placeholders(inner_text, &nodes);
+
+            let node = match open_tag.as_str() {
+                "b" => json!({
+                    "tag": "span",
+                    "style": { "fontWeight": "bold" },
+                    "content": inner_content
+                }),
+                "i" => json!({
+                    "tag": "span",
+                    "style": { "fontStyle": "italic" },
+                    "content": inner_content
+                }),
+                _ => json!({ "tag": "span", "content": inner_content }),
+            };
+
+            let idx = nodes.len();
+            nodes.push(node);
+            let placeholder = format!("{}{}\x00", placeholder_prefix, idx);
+            let full = cap.get(0).unwrap();
+            working = format!(
+                "{}{}{}",
+                &working[..full.start()],
+                placeholder,
+                &working[full.end()..]
+            );
         }
 
         // Now resolve the final working string with all placeholders
@@ -541,6 +541,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         }
     }
 

@@ -40,6 +40,8 @@ pub struct Character {
     pub image_url: Option<String>, // Raw URL from API (used for downloading)
     pub image_bytes: Option<Vec<u8>>, // Raw image bytes (after download + resize)
     pub image_ext: Option<String>, // File extension: "jpg", "png", "webp", etc.
+    pub first_name_hint: Option<String>, // Given name romaji hint (AniList "first")
+    pub last_name_hint: Option<String>, // Family name romaji hint (AniList "last")
 }
 
 /// Categorized characters for a single game/media.
@@ -137,6 +139,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         });
         cd.side.push(Character {
             id: "c2".to_string(),
@@ -158,6 +162,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         });
 
         assert_eq!(cd.all_characters().count(), 2);
@@ -189,6 +195,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            first_name_hint: None,
+            last_name_hint: None,
         });
 
         for c in cd.all_characters_mut() {
