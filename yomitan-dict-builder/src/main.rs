@@ -62,7 +62,7 @@ fn static_dir() -> std::path::PathBuf {
 type DownloadStore = Arc<Mutex<HashMap<String, (Vec<u8>, std::time::Instant)>>>;
 
 /// Result of fetching an image: the index into the character list, and optionally the image bytes + extension.
-type IndexedImageResult = (usize, Option<(Vec<u8>, String)>);
+type IndexedImageResult = (usize, Option<(Vec<u8>, String, u32, u32)>);
 
 /// Interval for cleaning up expired download tokens.
 const DOWNLOAD_CLEANUP_INTERVAL_SECS: u64 = 60;
@@ -487,15 +487,19 @@ async fn download_zip(
 
 /// Download and resize a single character image.
 /// Checks the on-disk cache first; on miss, downloads, resizes, and caches.
-/// Returns (resized_bytes, extension) or None on failure.
+/// Returns (resized_bytes, extension, width, height) or None on failure.
 async fn fetch_image(
     url: &str,
     http_client: &reqwest::Client,
     image_cache: &ImageCache,
-) -> Option<(Vec<u8>, String)> {
+) -> Option<(Vec<u8>, String, u32, u32)> {
     // Check cache first
-    if let Some(hit) = image_cache.get(url).await {
-        return Some(hit);
+    if let Some((data, ext)) = image_cache.get(url).await {
+        // Decode dimensions from cached bytes
+        let (w, h) = image::load_from_memory(&data)
+            .map(|img| (img.width(), img.height()))
+            .unwrap_or((0, 0));
+        return Some((data, ext, w, h));
     }
 
     let download_future = async {
@@ -518,12 +522,12 @@ async fn fetch_image(
         };
 
     // Resize to thumbnail + convert to JPEG
-    let (resized, ext) = ImageHandler::resize_image(&raw_bytes);
+    let (resized, ext, w, h) = ImageHandler::resize_image(&raw_bytes);
 
     // Write to cache (fire-and-forget, non-blocking)
     image_cache.put(url, &resized, ext).await;
 
-    Some((resized, ext.to_string()))
+    Some((resized, ext.to_string(), w, h))
 }
 
 /// Download images for all characters concurrently, with resize.
@@ -558,10 +562,14 @@ async fn download_images_concurrent(
     // Apply results back to characters
     let mut flat: Vec<&mut models::Character> = char_data.all_characters_mut().collect();
     for (idx, result) in results {
-        if let Some((bytes, ext)) = result {
+        if let Some((bytes, ext, w, h)) = result {
             if let Some(ch) = flat.get_mut(idx) {
                 ch.image_bytes = Some(bytes);
                 ch.image_ext = Some(ext);
+                if w > 0 && h > 0 {
+                    ch.image_width = Some(w);
+                    ch.image_height = Some(h);
+                }
             }
         }
     }

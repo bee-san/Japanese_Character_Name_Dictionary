@@ -88,8 +88,12 @@ impl DictBuilder {
         };
 
         // Build the structured content card (shared across all entries for this character)
+        let image_dims = match (char.image_width, char.image_height) {
+            (Some(w), Some(h)) => Some((w, h)),
+            _ => None,
+        };
         let structured_content =
-            content_builder.build_content(char, image_path.as_deref(), game_title);
+            content_builder.build_content(char, image_path.as_deref(), image_dims, game_title);
 
         // Track terms to avoid duplicates
         let mut added_terms: HashSet<String> = HashSet::new();
@@ -550,6 +554,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         }
@@ -947,6 +953,8 @@ mod tests {
             image_url: Some("https://example.com/img.jpg".to_string()),
             image_bytes: Some(raw),
             image_ext: Some("jpg".to_string()),
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         }
@@ -1319,6 +1327,8 @@ mod tests {
                 image_url: None,
                 image_bytes: None,
                 image_ext: None,
+                image_width: None,
+                image_height: None,
                 first_name_hint: None,
                 last_name_hint: None,
             };

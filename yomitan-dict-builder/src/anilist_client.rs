@@ -433,6 +433,8 @@ impl AnilistClient {
             image_url,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: name_first,
             last_name_hint: name_last,
         })

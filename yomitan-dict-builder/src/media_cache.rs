@@ -353,6 +353,8 @@ mod tests {
             image_url: Some("https://example.com/img.jpg".to_string()),
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });
@@ -376,6 +378,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });
@@ -438,6 +442,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });
@@ -536,6 +542,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });

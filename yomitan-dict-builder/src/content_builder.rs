@@ -285,11 +285,17 @@ impl ContentBuilder {
         items
     }
 
+    /// Maximum display height for character portrait images (in CSS pixels).
+    const MAX_DISPLAY_HEIGHT: u32 = 100;
+    /// Fallback display width when actual dimensions are unknown.
+    const FALLBACK_DISPLAY_WIDTH: u32 = 67;
+
     /// Build the complete Yomitan structured content for a character card.
     pub fn build_content(
         &self,
         char: &Character,
         image_path: Option<&str>,
+        image_dims: Option<(u32, u32)>,
         game_title: &str,
     ) -> serde_json::Value {
         let mut content: Vec<serde_json::Value> = Vec::new();
@@ -316,11 +322,21 @@ impl ContentBuilder {
 
         // Character portrait image
         if let Some(path) = image_path {
+            // Compute display dimensions that preserve aspect ratio.
+            // Target: max height of MAX_DISPLAY_HEIGHT px, width scaled proportionally.
+            let (display_w, display_h) = match image_dims {
+                Some((w, h)) if w > 0 && h > 0 => {
+                    let dh = Self::MAX_DISPLAY_HEIGHT;
+                    let dw = (w * dh + h / 2) / h; // rounded integer division
+                    (dw, dh)
+                }
+                _ => (Self::FALLBACK_DISPLAY_WIDTH, Self::MAX_DISPLAY_HEIGHT),
+            };
             content.push(json!({
                 "tag": "img",
                 "path": path,
-                "width": 80,
-                "height": 100,
+                "width": display_w,
+                "height": display_h,
                 "sizeUnits": "px",
                 "collapsible": false,
                 "collapsed": false,
@@ -541,6 +557,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         }
@@ -795,7 +813,7 @@ mod tests {
     fn test_build_content_level_0() {
         let cb = ContentBuilder::new(0);
         let char = make_test_character();
-        let content = cb.build_content(&char, None, "Test Game");
+        let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         // Level 0: should NOT contain <details> tags
         let has_details = items.iter().any(|v| v["tag"].as_str() == Some("details"));
@@ -809,7 +827,7 @@ mod tests {
     fn test_build_content_level_1() {
         let cb = ContentBuilder::new(1);
         let char = make_test_character();
-        let content = cb.build_content(&char, None, "Test Game");
+        let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         // Level 1: should contain <details> tags (Description + Character Information)
         let details_count = items
@@ -823,7 +841,7 @@ mod tests {
     fn test_build_content_level_2() {
         let cb = ContentBuilder::new(2);
         let char = make_test_character();
-        let content = cb.build_content(&char, None, "Test Game");
+        let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         let details_count = items
             .iter()
@@ -836,7 +854,7 @@ mod tests {
     fn test_build_content_with_image() {
         let cb = ContentBuilder::new(0);
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c123.jpg"), "Test Game");
+        let content = cb.build_content(&char, Some("img/c123.jpg"), None, "Test Game");
         let items = content["content"].as_array().unwrap();
         let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
         assert!(has_img, "Should contain image tag");
@@ -1066,7 +1084,7 @@ mod tests {
         let cb = ContentBuilder::new(0);
         let mut char = make_test_character();
         char.role = "custom_role".to_string();
-        let content = cb.build_content(&char, None, "Test");
+        let content = cb.build_content(&char, None, None, "Test");
         let items = content["content"].as_array().unwrap();
         // Should use fallback color and "Unknown" label
         let role_span = items
@@ -1082,7 +1100,7 @@ mod tests {
     fn test_build_content_empty_game_title() {
         let cb = ContentBuilder::new(0);
         let char = make_test_character();
-        let content = cb.build_content(&char, None, "");
+        let content = cb.build_content(&char, None, None, "");
         let content_str = serde_json::to_string(&content).unwrap();
         // Empty game title should not produce a "From: " div
         assert!(!content_str.contains("From: "));
@@ -1095,7 +1113,7 @@ mod tests {
         let cb = ContentBuilder::new(1);
         let mut char = make_test_character();
         char.description = Some("[spoiler]everything is hidden[/spoiler]".to_string());
-        let content = cb.build_content(&char, None, "Test");
+        let content = cb.build_content(&char, None, None, "Test");
         let items = content["content"].as_array().unwrap();
         // After stripping, description is empty → no Description details section
         let desc_details = items.iter().find(|v| {

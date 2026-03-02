@@ -40,6 +40,8 @@ pub struct Character {
     pub image_url: Option<String>, // Raw URL from API (used for downloading)
     pub image_bytes: Option<Vec<u8>>, // Raw image bytes (after download + resize)
     pub image_ext: Option<String>, // File extension: "jpg", "png", "webp", etc.
+    pub image_width: Option<u32>,  // Actual pixel width after resize
+    pub image_height: Option<u32>, // Actual pixel height after resize
     pub first_name_hint: Option<String>, // Given name romaji hint (AniList "first")
     pub last_name_hint: Option<String>, // Family name romaji hint (AniList "last")
 }
@@ -139,6 +141,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });
@@ -162,6 +166,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });
@@ -195,6 +201,8 @@ mod tests {
             image_url: None,
             image_bytes: None,
             image_ext: None,
+            image_width: None,
+            image_height: None,
             first_name_hint: None,
             last_name_hint: None,
         });

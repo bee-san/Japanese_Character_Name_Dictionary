@@ -42,14 +42,15 @@ impl ImageHandler {
     }
 
     /// Resize raw image bytes to fit within MAX_WIDTH × MAX_HEIGHT, output as JPEG.
-    /// Returns (resized_bytes, "jpg") on success, or the original (bytes, detected_ext) on failure.
-    pub fn resize_image(bytes: &[u8]) -> (Vec<u8>, &'static str) {
+    /// Returns (resized_bytes, ext, width, height) on success,
+    /// or the original (bytes, detected_ext, 0, 0) on failure.
+    pub fn resize_image(bytes: &[u8]) -> (Vec<u8>, &'static str, u32, u32) {
         // Try to decode the image
         let img = match image::load_from_memory(bytes) {
             Ok(img) => img,
             Err(_) => {
                 // Can't decode — return original bytes with detected extension
-                return (bytes.to_vec(), Self::detect_extension(bytes));
+                return (bytes.to_vec(), Self::detect_extension(bytes), 0, 0);
             }
         };
 
@@ -62,11 +63,13 @@ impl ImageHandler {
             img
         };
 
+        let (rw, rh) = (resized.width(), resized.height());
+
         // Encode as JPEG (widely supported by Yomitan and all browsers)
         let mut buf = Cursor::new(Vec::new());
         match resized.write_to(&mut buf, ImageFormat::Jpeg) {
-            Ok(_) => (buf.into_inner(), "jpg"),
-            Err(_) => (bytes.to_vec(), Self::detect_extension(bytes)),
+            Ok(_) => (buf.into_inner(), "jpg", rw, rh),
+            Err(_) => (bytes.to_vec(), Self::detect_extension(bytes), w, h),
         }
     }
 
@@ -137,12 +140,15 @@ mod tests {
         img.write_to(&mut buf, ImageFormat::Jpeg).unwrap();
         let jpeg_bytes = buf.into_inner();
 
-        let (resized, ext) = ImageHandler::resize_image(&jpeg_bytes);
+        let (resized, ext, w, h) = ImageHandler::resize_image(&jpeg_bytes);
         assert_eq!(ext, "jpg");
         // Should still be valid image data
         assert!(!resized.is_empty());
         // Verify it's actually JPEG by checking magic bytes
         assert_eq!(&resized[0..3], &[0xFF, 0xD8, 0xFF]);
+        // Dimensions should match the original (no resize needed)
+        assert_eq!(w, 2);
+        assert_eq!(h, 2);
     }
 
     #[test]
@@ -153,7 +159,7 @@ mod tests {
         img.write_to(&mut buf, ImageFormat::Png).unwrap();
         let png_bytes = buf.into_inner();
 
-        let (resized, ext) = ImageHandler::resize_image(&png_bytes);
+        let (resized, ext, w, h) = ImageHandler::resize_image(&png_bytes);
         assert_eq!(ext, "jpg");
 
         // Verify the resized image dimensions are within bounds
@@ -168,6 +174,9 @@ mod tests {
             "height {} > 200",
             resized_img.height()
         );
+        // Returned dimensions should match the actual resized image
+        assert_eq!(w, resized_img.width());
+        assert_eq!(h, resized_img.height());
     }
 
     #[test]
@@ -178,7 +187,7 @@ mod tests {
         img.write_to(&mut buf, ImageFormat::Jpeg).unwrap();
         let jpeg_bytes = buf.into_inner();
 
-        let (resized, _) = ImageHandler::resize_image(&jpeg_bytes);
+        let (resized, _, rw, rh) = ImageHandler::resize_image(&jpeg_bytes);
         let resized_img = image::load_from_memory(&resized).unwrap();
         assert!(resized_img.height() <= 200);
         assert!(resized_img.width() <= 160);
@@ -189,14 +198,19 @@ mod tests {
             "aspect ratio {} not ~0.5",
             ratio
         );
+        // Returned dimensions should match
+        assert_eq!(rw, resized_img.width());
+        assert_eq!(rh, resized_img.height());
     }
 
     #[test]
     fn test_resize_invalid_bytes_returns_original() {
         let garbage = vec![0x00, 0x01, 0x02, 0x03, 0x04];
-        let (result, ext) = ImageHandler::resize_image(&garbage);
+        let (result, ext, w, h) = ImageHandler::resize_image(&garbage);
         assert_eq!(result, garbage);
         assert_eq!(ext, "jpg"); // fallback
+        assert_eq!(w, 0);
+        assert_eq!(h, 0);
     }
 
     // === make_filename tests ===
@@ -236,9 +250,11 @@ mod tests {
 
     #[test]
     fn test_resize_empty_bytes() {
-        let (result, ext) = ImageHandler::resize_image(&[]);
+        let (result, ext, w, h) = ImageHandler::resize_image(&[]);
         assert!(result.is_empty());
         assert_eq!(ext, "jpg"); // fallback
+        assert_eq!(w, 0);
+        assert_eq!(h, 0);
     }
 
     // === Edge case: resize 1x1 image ===
@@ -250,9 +266,11 @@ mod tests {
         img.write_to(&mut buf, ImageFormat::Png).unwrap();
         let png_bytes = buf.into_inner();
 
-        let (resized, ext) = ImageHandler::resize_image(&png_bytes);
+        let (resized, ext, w, h) = ImageHandler::resize_image(&png_bytes);
         assert_eq!(ext, "jpg");
         assert!(!resized.is_empty());
+        assert_eq!(w, 1);
+        assert_eq!(h, 1);
     }
 
     // === Edge case: make_filename with special characters ===
