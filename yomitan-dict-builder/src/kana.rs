@@ -1,7 +1,7 @@
-/// Low-level kana conversion utilities.
-///
-/// Provides romaji→hiragana, katakana↔hiragana conversion, and kanji detection.
-/// These are pure text transforms with no name-level semantics.
+//! Low-level kana conversion utilities.
+//!
+//! Provides romaji→hiragana, katakana↔hiragana conversion, and kanji detection.
+//! These are pure text transforms with no name-level semantics.
 
 /// Check if text contains kanji characters.
 /// Covers CJK Unified Ideographs, Extensions A–H, and Compatibility Ideographs.

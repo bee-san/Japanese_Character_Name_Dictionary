@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,12 +15,12 @@ const EVICT_FRACTION: f64 = 0.35;
 /// 6 months in seconds (180 days).
 const MAX_AGE_SECS: i64 = 180 * 24 * 60 * 60;
 
-/// Simple on-disk image cache backed by SQLite metadata + flat files.
+/// On-disk image cache backed by SQLite with BLOB storage.
 ///
-/// Images are stored in sharded subdirectories (first 2 hex chars of hash).
-/// SQLite tracks metadata and popularity (hit_count). Eviction removes the
-/// least popular 35% of entries when total size exceeds 20 GB. Entries older
-/// than 6 months are treated as expired on read and cleaned up.
+/// Image bytes are stored directly as BLOBs in the SQLite database alongside
+/// metadata. SQLite tracks popularity (hit_count). Eviction removes the least
+/// popular 35% of entries when total size exceeds 20 GB. Entries older than
+/// 6 months are treated as expired on read and cleaned up.
 #[derive(Clone)]
 pub struct ImageCache {
     inner: Arc<ImageCacheInner>,
@@ -29,8 +29,6 @@ pub struct ImageCache {
 struct ImageCacheInner {
     /// SQLite connection (single-writer, serialized via Mutex).
     db: Mutex<Connection>,
-    /// Root directory for cached image files.
-    images_dir: PathBuf,
     /// Running total of cached bytes (kept in sync with DB).
     total_bytes: AtomicU64,
 }
@@ -38,14 +36,14 @@ struct ImageCacheInner {
 impl ImageCache {
     /// Open (or create) the image cache at the given directory.
     ///
-    /// Creates the directory structure and SQLite DB if they don't exist.
+    /// Creates the cache directory and SQLite DB if they don't exist.
     /// Initializes the in-memory byte counter from the DB.
     pub fn open(cache_dir: &Path) -> Result<Self, String> {
-        let images_dir = cache_dir.join("images");
-        std::fs::create_dir_all(&images_dir)
+        // Ensure cache directory exists (just the top-level dir, no images/ subdirectory)
+        std::fs::create_dir_all(cache_dir)
             .map_err(|e| format!("Failed to create cache dir: {}", e))?;
 
-        let db_path = images_dir.join("cache.db");
+        let db_path = cache_dir.join("image_cache.db");
         let conn =
             Connection::open(&db_path).map_err(|e| format!("Failed to open cache DB: {}", e))?;
 
@@ -57,7 +55,7 @@ impl ImageCache {
             "CREATE TABLE IF NOT EXISTS images (
                 url_hash    TEXT PRIMARY KEY,
                 url         TEXT NOT NULL,
-                file_path   TEXT NOT NULL,
+                data        BLOB NOT NULL,
                 size_bytes  INTEGER NOT NULL,
                 ext         TEXT NOT NULL,
                 created_at  INTEGER NOT NULL,
@@ -77,16 +75,21 @@ impl ImageCache {
             )
             .unwrap_or(0);
 
+        // Log if old images/ directory exists (from pre-BLOB migration)
+        let old_images_dir = cache_dir.join("images");
+        if old_images_dir.exists() {
+            info!("Old image cache directory found at images/, it can be safely deleted");
+        }
+
         info!(
             total_mb = total / (1024 * 1024),
-            path = %images_dir.display(),
+            path = %cache_dir.display(),
             "Image cache opened"
         );
 
         Ok(Self {
             inner: Arc::new(ImageCacheInner {
                 db: Mutex::new(conn),
-                images_dir,
                 total_bytes: AtomicU64::new(total),
             }),
         })
@@ -99,26 +102,23 @@ impl ImageCache {
         let hash = url_hash(url);
         let db = self.inner.db.lock().await;
 
-        let result: Option<(String, String, i64, i64)> = db
+        // Query returns: data (BLOB), ext, size_bytes, created_at
+        let result: Option<(Vec<u8>, String, i64, i64)> = db
             .query_row(
-                "SELECT file_path, ext, size_bytes, created_at FROM images WHERE url_hash = ?1",
+                "SELECT data, ext, size_bytes, created_at FROM images WHERE url_hash = ?1",
                 params![hash],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .ok();
 
-        let (file_path, ext, size_bytes, created_at) = result?;
+        let (data, ext, size_bytes, created_at) = result?;
 
         // TTL check: expire entries older than 6 months
         let now = now_secs();
         if now - created_at > MAX_AGE_SECS {
             let _ = db.execute("DELETE FROM images WHERE url_hash = ?1", params![hash]);
             drop(db);
-            // Subtract from counter (saturating to avoid underflow)
             saturating_sub(&self.inner.total_bytes, size_bytes as u64);
-            // Best-effort file cleanup
-            let full_path = self.inner.images_dir.join(&file_path);
-            let _ = tokio::fs::remove_file(&full_path).await;
             return None;
         }
 
@@ -128,22 +128,7 @@ impl ImageCache {
             params![now, hash],
         );
 
-        // Drop the lock before doing file I/O
-        drop(db);
-
-        let full_path = self.inner.images_dir.join(&file_path);
-        match tokio::fs::read(&full_path).await {
-            Ok(bytes) => Some((bytes, ext)),
-            Err(e) => {
-                warn!(path = %full_path.display(), error = %e, "Cache file missing, removing entry");
-                // File gone — clean up the DB row and fix the byte counter
-                let db = self.inner.db.lock().await;
-                let _ = db.execute("DELETE FROM images WHERE url_hash = ?1", params![hash]);
-                drop(db);
-                saturating_sub(&self.inner.total_bytes, size_bytes as u64);
-                None
-            }
-        }
+        Some((data, ext))
     }
 
     /// Store a processed image in the cache.
@@ -152,53 +137,6 @@ impl ImageCache {
     /// and correctly adjusts the byte counter for the size delta.
     pub async fn put(&self, url: &str, bytes: &[u8], ext: &str) {
         let hash = url_hash(url);
-        let shard = &hash[..2];
-        let file_name = format!("{}.{}", hash, ext);
-        let rel_path = format!("{}/{}", shard, file_name);
-        let shard_dir = self.inner.images_dir.join(shard);
-
-        // Create shard directory
-        if let Err(e) = tokio::fs::create_dir_all(&shard_dir).await {
-            warn!(error = %e, "Failed to create shard dir");
-            return;
-        }
-
-        // Atomic write: tmp → rename
-        let final_path = shard_dir.join(&file_name);
-        let tmp_path = shard_dir.join(format!("{}.tmp", file_name));
-
-        if let Err(e) = tokio::fs::write(&tmp_path, bytes).await {
-            warn!(error = %e, "Failed to write cache tmp file");
-            let _ = tokio::fs::remove_file(&tmp_path).await;
-            return;
-        }
-        if let Err(e) = tokio::fs::rename(&tmp_path, &final_path).await {
-            // Retry once after re-creating the shard directory (race condition: dir may
-            // have been removed by eviction between create_dir_all and rename).
-            if e.kind() == std::io::ErrorKind::NotFound {
-                let _ = tokio::fs::create_dir_all(&shard_dir).await;
-                if let Err(e2) = tokio::fs::rename(&tmp_path, &final_path).await {
-                    warn!(
-                        src = %tmp_path.display(),
-                        dst = %final_path.display(),
-                        error = %e2,
-                        "Failed to rename cache file after retry"
-                    );
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return;
-                }
-            } else {
-                warn!(
-                    src = %tmp_path.display(),
-                    dst = %final_path.display(),
-                    error = %e,
-                    "Failed to rename cache file"
-                );
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return;
-            }
-        }
-
         let size = bytes.len() as u64;
         let now = now_secs();
 
@@ -213,21 +151,21 @@ impl ImageCache {
             )
             .ok();
 
-        // Upsert: on conflict, update file/size/ext but preserve hit_count and last_hit_at
+        // Upsert: on conflict, update data/size/ext but preserve hit_count and last_hit_at
         let result = db.execute(
-            "INSERT INTO images (url_hash, url, file_path, size_bytes, ext, created_at, hit_count, last_hit_at)
+            "INSERT INTO images (url_hash, url, data, size_bytes, ext, created_at, hit_count, last_hit_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?6)
              ON CONFLICT(url_hash) DO UPDATE SET
-                file_path = excluded.file_path,
+                data = excluded.data,
                 size_bytes = excluded.size_bytes,
                 ext = excluded.ext,
                 created_at = excluded.created_at",
-            params![hash, url, rel_path, size as i64, ext, now],
+            params![hash, url, bytes, size as i64, ext, now],
         );
         drop(db);
 
         if result.is_err() {
-            warn!("Failed to insert cache metadata");
+            warn!("Failed to insert cache entry");
             return;
         }
 
@@ -256,22 +194,22 @@ impl ImageCache {
 
     /// Evict the bottom 35% least popular entries.
     async fn evict(&self) {
-        // Collect entries to evict while holding the DB lock, then release before file I/O
-        let entries: Vec<(String, String, u64)> = {
-            let db = self.inner.db.lock().await;
+        let db = self.inner.db.lock().await;
 
-            let count: u64 = db
-                .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
-                .unwrap_or(0);
+        let count: u64 = db
+            .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .unwrap_or(0);
 
-            if count == 0 {
-                return;
-            }
+        if count == 0 {
+            return;
+        }
 
-            let evict_count = ((count as f64) * EVICT_FRACTION).ceil() as u64;
+        let evict_count = ((count as f64) * EVICT_FRACTION).ceil() as u64;
 
+        // Select the least popular entries (scope stmt so it's dropped before the DELETE)
+        let entries: Vec<(String, u64)> = {
             let mut stmt = match db.prepare(
-                "SELECT url_hash, file_path, size_bytes FROM images
+                "SELECT url_hash, size_bytes FROM images
                  ORDER BY hit_count ASC, last_hit_at ASC
                  LIMIT ?1",
             ) {
@@ -282,53 +220,39 @@ impl ImageCache {
                 }
             };
 
-            let result: Vec<(String, String, u64)> = stmt
-                .query_map(params![evict_count], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? as u64))
-                })
-                .ok()
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
-                .unwrap_or_default();
-
-            result
-            // db lock + stmt dropped here
+            stmt.query_map(params![evict_count], |row| {
+                Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
+            })
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
         };
 
         if entries.is_empty() {
             return;
         }
 
-        let mut freed: u64 = 0;
-        let mut deleted_hashes: Vec<String> = Vec::with_capacity(entries.len());
+        // Batch DELETE — this removes both metadata AND data (BLOBs) in one query
+        let hashes: Vec<String> = entries.iter().map(|(h, _)| h.clone()).collect();
+        let freed: u64 = entries.iter().map(|(_, s)| s).sum();
 
-        for (hash, file_path, size) in &entries {
-            let full_path = self.inner.images_dir.join(file_path);
-            let _ = tokio::fs::remove_file(&full_path).await;
-            freed += size;
-            deleted_hashes.push(hash.clone());
-        }
+        let placeholders: Vec<String> = (1..=hashes.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "DELETE FROM images WHERE url_hash IN ({})",
+            placeholders.join(",")
+        );
+        let params: Vec<&dyn rusqlite::types::ToSql> = hashes
+            .iter()
+            .map(|h| h as &dyn rusqlite::types::ToSql)
+            .collect();
+        let _ = db.execute(&sql, params.as_slice());
 
-        // Batch delete from DB using a single IN(...) query
-        if !deleted_hashes.is_empty() {
-            let db = self.inner.db.lock().await;
-            let placeholders: Vec<String> = (1..=deleted_hashes.len())
-                .map(|i| format!("?{}", i))
-                .collect();
-            let sql = format!(
-                "DELETE FROM images WHERE url_hash IN ({})",
-                placeholders.join(",")
-            );
-            let params: Vec<&dyn rusqlite::types::ToSql> = deleted_hashes
-                .iter()
-                .map(|h| h as &dyn rusqlite::types::ToSql)
-                .collect();
-            let _ = db.execute(&sql, params.as_slice());
-        }
+        drop(db);
 
         saturating_sub(&self.inner.total_bytes, freed);
 
         info!(
-            evicted = deleted_hashes.len(),
+            evicted = hashes.len(),
             freed_mb = freed / (1024 * 1024),
             "Image cache eviction complete"
         );
@@ -495,35 +419,55 @@ mod tests {
         assert_eq!(cache.total_bytes(), 50);
     }
 
-    #[tokio::test]
-    async fn test_get_missing_file_fixes_counter() {
-        let dir = tempfile::tempdir().unwrap();
-        let cache = ImageCache::open(dir.path()).unwrap();
-
-        let url = "https://example.com/vanish.jpg";
-        let data = vec![0u8; 200];
-        cache.put(url, &data, "jpg").await;
-        assert_eq!(cache.total_bytes(), 200);
-
-        // Delete the file behind the cache's back
-        let hash = url_hash(url);
-        let shard = &hash[..2];
-        let file_path = cache
-            .inner
-            .images_dir
-            .join(shard)
-            .join(format!("{}.jpg", hash));
-        tokio::fs::remove_file(&file_path).await.unwrap();
-
-        // get() should return None and fix the counter
-        assert!(cache.get(url).await.is_none());
-        assert_eq!(cache.total_bytes(), 0);
-    }
-
     #[test]
     fn test_saturating_sub_no_underflow() {
         let a = AtomicU64::new(10);
         saturating_sub(&a, 20);
         assert_eq!(a.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn test_blob_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path()).unwrap();
+
+        // Create bytes that exercise edge cases: null bytes, high bytes, all 256 values
+        let mut bytes: Vec<u8> = (0..=255).collect();
+        // Add some typical JPEG-like data
+        bytes.extend_from_slice(&[0xFF, 0xD8, 0xFF, 0xE0]); // JPEG header
+        bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // null bytes
+        bytes.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]); // high bytes
+
+        cache
+            .put("https://example.com/test.jpg", &bytes, "jpg")
+            .await;
+
+        let result = cache.get("https://example.com/test.jpg").await;
+        assert!(result.is_some());
+        let (got_bytes, got_ext) = result.unwrap();
+
+        // Every single byte must match exactly
+        assert_eq!(got_bytes.len(), bytes.len());
+        assert_eq!(got_bytes, bytes);
+        assert_eq!(got_ext, "jpg");
+    }
+
+    #[tokio::test]
+    async fn test_large_blob() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path()).unwrap();
+
+        // 100KB of random-ish data (simulating a JPEG thumbnail)
+        let bytes: Vec<u8> = (0..100_000).map(|i| (i % 256) as u8).collect();
+
+        cache
+            .put("https://example.com/big.jpg", &bytes, "jpg")
+            .await;
+
+        let result = cache.get("https://example.com/big.jpg").await;
+        assert!(result.is_some());
+        let (got_bytes, _) = result.unwrap();
+        assert_eq!(got_bytes.len(), 100_000);
+        assert_eq!(got_bytes, bytes);
     }
 }

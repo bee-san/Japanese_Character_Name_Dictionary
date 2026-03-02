@@ -61,6 +61,9 @@ fn static_dir() -> std::path::PathBuf {
 /// Maps token to (zip_bytes, creation_time).
 type DownloadStore = Arc<Mutex<HashMap<String, (Vec<u8>, std::time::Instant)>>>;
 
+/// Result of fetching an image: the index into the character list, and optionally the image bytes + extension.
+type IndexedImageResult = (usize, Option<(Vec<u8>, String)>);
+
 /// Interval for cleaning up expired download tokens.
 const DOWNLOAD_CLEANUP_INTERVAL_SECS: u64 = 60;
 
@@ -539,7 +542,7 @@ async fn download_images_concurrent(
         .collect();
 
     // Download concurrently
-    let results: Vec<(usize, Option<(Vec<u8>, String)>)> = stream::iter(urls)
+    let results: Vec<IndexedImageResult> = stream::iter(urls)
         .map(|(idx, url)| {
             let client = http_client.clone();
             let cache = image_cache.clone();
