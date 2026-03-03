@@ -1,0 +1,239 @@
+Mar 03 04:07:15 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T04:07:15.891111Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 04:07:15 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T04:07:15.891159Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=3 path=/var/cache/yomitan
+Mar 03 04:07:15 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T04:07:15.894072Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.6" path=/var/cache/yomitan/media_cache.db
+Mar 03 04:07:16 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T04:07:16.011419Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 05:29:33 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:33.339989Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v1337"
+Mar 03 05:29:33 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:33.473109Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v1337" size_bytes=21340
+Mar 03 05:29:35 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:35.393359Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:183385:ANIME"
+Mar 03 05:29:36 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:36.291638Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:29:42 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:42.159540Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:20954:ANIME"
+Mar 03 05:29:42 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:42.405912Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:29:44 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:44.531277Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:29:45 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:45.301889Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:29:47 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:29:47.856165Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:30:47 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:30:47.161510Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v666"
+Mar 03 05:30:47 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:30:47.313250Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v666" size_bytes=39613
+Mar 03 05:30:49 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:30:49.105942Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:30:49 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:30:49.456733Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:30:50 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:30:50.713250Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:31:21 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:31:21.468247Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v666" size_bytes=39613
+Mar 03 05:31:23 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:31:23.669942Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:31:24 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:31:24.410316Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:35:16 character-dictionary bee_yomitan-dict-builder_1[56048]: 2026-03-03T05:35:16.425807Z  INFO yomitan_dict_builder: Download token cleanup removed=1 remaining=0
+Mar 03 05:38:10 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:38:10.081383Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 05:38:10 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:38:10.081986Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 05:38:10 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:38:10.089291Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.7" path=/var/cache/yomitan/media_cache.db
+Mar 03 05:38:10 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:38:10.215896Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 05:44:45 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:44:45.819615Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v666" size_bytes=39613
+Mar 03 05:44:50 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:44:50.217485Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:44:51 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:44:51.199772Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:44:53 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:44:53.952880Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:45:36 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:45:36.398511Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v666" size_bytes=39613
+Mar 03 05:45:38 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:45:38.502016Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:45:39 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:45:39.008208Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:45:40 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:45:40.527209Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:46:14 character-dictionary bee_yomitan-dict-builder_1[56629]: 2026-03-03T05:46:14.449488Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v666" size_bytes=39613
+Mar 03 05:46:44 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:46:44.845188Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 05:46:44 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:46:44.845963Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 05:46:44 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:46:44.854897Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.7" path=/var/cache/yomitan/media_cache.db
+Mar 03 05:46:44 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:46:44.979963Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 05:47:18 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:47:18.317665Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v5844"
+Mar 03 05:47:18 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:47:18.478932Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v5844" size_bytes=82415
+Mar 03 05:47:25 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:47:25.361625Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 05:47:26 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:47:26.220458Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 05:47:29 character-dictionary bee_yomitan-dict-builder_1[56688]: 2026-03-03T05:47:29.088884Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 05:47:36 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T05:47:36.558354Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 05:47:36 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T05:47:36.558896Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 05:47:36 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T05:47:36.569143Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.8" path=/var/cache/yomitan/media_cache.db
+Mar 03 05:47:36 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T05:47:36.692699Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 06:03:44 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T06:03:44.365478Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v5844" size_bytes=82415
+Mar 03 06:03:50 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T06:03:50.703662Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 06:03:51 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T06:03:51.532891Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 06:03:54 character-dictionary bee_yomitan-dict-builder_1[56717]: 2026-03-03T06:03:54.199920Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 06:09:27 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T06:09:27.178900Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 06:09:27 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T06:09:27.179547Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 06:09:27 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T06:09:27.189823Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.8" path=/var/cache/yomitan/media_cache.db
+Mar 03 06:09:27 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T06:09:27.316648Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 07:26:06 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T07:26:06.264215Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v5844" size_bytes=82415
+Mar 03 07:26:12 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T07:26:12.724150Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 07:26:13 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T07:26:13.630991Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 07:26:16 character-dictionary bee_yomitan-dict-builder_1[56831]: 2026-03-03T07:26:16.294587Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:20954:ANIME" size_bytes=21095
+Mar 03 07:31:45 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:31:45.724713Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 07:31:45 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:31:45.725325Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 07:31:45 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:31:45.735247Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.8" path=/var/cache/yomitan/media_cache.db
+Mar 03 07:31:45 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:31:45.882002Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 07:47:24 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:47:24.528453Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v5844" size_bytes=82415
+Mar 03 07:47:30 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:47:30.477481Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v1337" size_bytes=21340
+Mar 03 07:47:31 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:47:31.409398Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 07:54:10 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:54:10.832851Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v30724"
+Mar 03 07:54:10 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:54:10.937202Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v30724" size_bytes=5785
+Mar 03 07:54:11 character-dictionary bee_yomitan-dict-builder_1[57166]: 2026-03-03T07:54:11.654572Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v5844" size_bytes=82415
+Mar 03 07:57:23 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:57:23.458762Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 07:57:23 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:57:23.459405Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=4 path=/var/cache/yomitan
+Mar 03 07:57:23 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:57:23.472454Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.8" path=/var/cache/yomitan/media_cache.db
+Mar 03 07:57:23 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:57:23.592464Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 07:59:05 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:59:05.609647Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v30724" size_bytes=5785
+Mar 03 07:59:06 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:59:06.138147Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v5844" size_bytes=82415
+Mar 03 07:59:12 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T07:59:12.612210Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:183385:ANIME" size_bytes=21946
+Mar 03 08:20:42 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:42.593529Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v21852"
+Mar 03 08:20:42 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:42.728579Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v21852" size_bytes=24627
+Mar 03 08:20:44 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:44.914299Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:21202:ANIME"
+Mar 03 08:20:45 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:45.821449Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:21202:ANIME" size_bytes=22585
+Mar 03 08:20:48 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:48.757077Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:20031:ANIME"
+Mar 03 08:20:49 character-dictionary bee_yomitan-dict-builder_1[57380]: 2026-03-03T08:20:49.646835Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:20031:ANIME" size_bytes=19769
+Mar 03 08:27:20 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:27:20.863512Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 08:27:20 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:27:20.864146Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=5 path=/var/cache/yomitan
+Mar 03 08:27:20 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:27:20.874225Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.8" path=/var/cache/yomitan/media_cache.db
+Mar 03 08:27:20 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:27:20.996494Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 08:29:17 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:29:17.172670Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v50283"
+Mar 03 08:29:17 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:29:17.336913Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v50283" size_bytes=47020
+Mar 03 08:29:21 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:29:21.749991Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v56650"
+Mar 03 08:29:21 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:29:21.852273Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v56650" size_bytes=11258
+Mar 03 08:30:27 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:30:27.283838Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v50283" size_bytes=47020
+Mar 03 08:30:28 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:30:28.273955Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v56650" size_bytes=11258
+Mar 03 08:31:11 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:31:11.297087Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v50283" size_bytes=47020
+Mar 03 08:31:14 character-dictionary bee_yomitan-dict-builder_1[57586]: 2026-03-03T08:31:14.075979Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="vndb:v56650" size_bytes=11258
+Mar 03 08:42:38 character-dictionary bee_yomitan-dict-builder_1[57838]: 2026-03-03T08:42:38.682478Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 08:42:38 character-dictionary bee_yomitan-dict-builder_1[57838]: 2026-03-03T08:42:38.682591Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=5 path=/var/cache/yomitan
+Mar 03 08:42:38 character-dictionary bee_yomitan-dict-builder_1[57838]: 2026-03-03T08:42:38.689719Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.9" path=/var/cache/yomitan/media_cache.db
+Mar 03 08:42:38 character-dictionary bee_yomitan-dict-builder_1[57838]: 2026-03-03T08:42:38.789014Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 09:40:35 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T09:40:35.331869Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 09:40:35 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T09:40:35.331989Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=5 path=/var/cache/yomitan
+Mar 03 09:40:35 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T09:40:35.340969Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="0.9" path=/var/cache/yomitan/media_cache.db
+Mar 03 09:40:35 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T09:40:35.473935Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 11:07:52 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:52.314352Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:161645:ANIME"
+Mar 03 11:07:53 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:53.265134Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 11:07:54 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:54.352508Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:132126:ANIME"
+Mar 03 11:07:55 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:55.278582Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 11:07:58 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:58.444854Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:98263:MANGA"
+Mar 03 11:07:59 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:07:59.349662Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 11:08:05 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:05.254870Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 11:08:05 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:05.962873Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:171729:MANGA"
+Mar 03 11:08:06 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:06.118771Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 11:08:06 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:06.901861Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:149544:MANGA"
+Mar 03 11:08:07 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:07.053747Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 11:08:07 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:07.844060Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:101551:MANGA"
+Mar 03 11:08:08 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:08:08.005621Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:101551:MANGA" size_bytes=3532
+Mar 03 11:25:17 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:17.082839Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:877:ANIME"
+Mar 03 11:25:18 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:18.022892Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:877:ANIME" size_bytes=28315
+Mar 03 11:25:21 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:21.533519Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=32829 name=Matsuo
+Mar 03 11:25:23 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:23.197352Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:162804:ANIME"
+Mar 03 11:25:23 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:23.352252Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:162804:ANIME" size_bytes=10081
+Mar 03 11:25:26 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:26.248378Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:19:ANIME"
+Mar 03 11:25:27 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:27.962847Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:19:ANIME" size_bytes=57859
+Mar 03 11:25:34 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:34.567537Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:185:ANIME"
+Mar 03 11:25:35 character-dictionary bee_yomitan-dict-builder_1[58344]: 2026-03-03T11:25:35.473848Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:185:ANIME" size_bytes=26349
+Mar 03 11:27:12 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:12.548449Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 11:27:12 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:12.549203Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=7 path=/var/cache/yomitan
+Mar 03 11:27:12 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:12.565248Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.1" path=/var/cache/yomitan/media_cache.db
+Mar 03 11:27:12 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:12.688307Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 11:27:34 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:34.610824Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 11:27:34 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:34.667644Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 11:27:34 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:34.716067Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:101972:ANIME"
+Mar 03 11:27:35 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:35.624271Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:101972:ANIME" size_bytes=21617
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.522800Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.558802Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.565283Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.573303Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.585215Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101551:MANGA" size_bytes=3532
+Mar 03 11:27:39 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:39.589624Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:101563:MANGA"
+Mar 03 11:27:40 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:27:40.498368Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:101563:MANGA" size_bytes=27782
+Mar 03 11:28:29 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:29.802535Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:19:ANIME" size_bytes=57859
+Mar 03 11:28:34 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:34.368149Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:185:ANIME" size_bytes=26349
+Mar 03 11:28:37 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:37.760219Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:245:ANIME"
+Mar 03 11:28:40 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:40.648694Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:245:ANIME" size_bytes=76384
+Mar 03 11:28:52 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:52.680500Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33830 name=Mikan
+Mar 03 11:28:52 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:52.718144Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33878 name=Punk
+Mar 03 11:28:52 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:52.718206Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33882 name=Mayuko Asano
+Mar 03 11:28:55 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:55.369343Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33888 name=Nurse
+Mar 03 11:28:55 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:55.372092Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33889 name=Business Man
+Mar 03 11:28:58 character-dictionary bee_yomitan-dict-builder_1[59100]: 2026-03-03T11:28:57.954345Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33891 name=Mother Uehara
+Mar 03 11:33:08 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:33:08.451522Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 11:33:08 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:33:08.452103Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=8 path=/var/cache/yomitan
+Mar 03 11:33:08 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:33:08.466848Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.2" path=/var/cache/yomitan/media_cache.db
+Mar 03 11:33:08 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:33:08.603552Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.772822Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.867949Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.922425Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101972:ANIME" size_bytes=21617
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.963237Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.986892Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 11:35:03 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:03.996126Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 11:35:04 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:04.004375Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 11:35:04 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:35:04.017076Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101551:MANGA" size_bytes=3532
+Mar 03 11:40:14 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:40:14.101364Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:https://vndb.org/v548"
+Mar 03 11:40:19 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:40:19.940504Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="vndb:v548"
+Mar 03 11:40:20 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T11:40:20.101461Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="vndb:v548" size_bytes=59840
+Mar 03 12:08:13 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:13.043984Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:19:ANIME" size_bytes=57859
+Mar 03 12:08:17 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:17.066340Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:185:ANIME" size_bytes=26349
+Mar 03 12:08:20 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:20.435479Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:245:ANIME" size_bytes=76384
+Mar 03 12:08:25 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:25.124954Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33830 name=Mikan
+Mar 03 12:08:25 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:25.169914Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33878 name=Punk
+Mar 03 12:08:25 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:25.169968Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33882 name=Mayuko Asano
+Mar 03 12:08:25 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:25.837807Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33888 name=Nurse
+Mar 03 12:08:25 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:25.842090Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33889 name=Business Man
+Mar 03 12:08:28 character-dictionary bee_yomitan-dict-builder_1[59152]: 2026-03-03T12:08:28.502663Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=33891 name=Mother Uehara
+Mar 03 12:11:00 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:11:00.572702Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 12:11:00 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:11:00.573239Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=8 path=/var/cache/yomitan
+Mar 03 12:11:00 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:11:00.589134Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.2" path=/var/cache/yomitan/media_cache.db
+Mar 03 12:11:00 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:11:00.742630Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 12:13:34 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:34.229633Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:19:ANIME" size_bytes=57859
+Mar 03 12:13:38 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:38.656182Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:185:ANIME" size_bytes=26349
+Mar 03 12:13:42 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:42.241194Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:226:ANIME"
+Mar 03 12:13:42 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:42.497975Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:226:ANIME" size_bytes=22719
+Mar 03 12:13:45 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:45.724847Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:18679:ANIME"
+Mar 03 12:13:46 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:46.629506Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:18679:ANIME" size_bytes=27876
+Mar 03 12:13:52 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:52.129507Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=87617 name=Guts
+Mar 03 12:13:54 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:54.150460Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:21450:ANIME"
+Mar 03 12:13:55 character-dictionary bee_yomitan-dict-builder_1[59602]: 2026-03-03T12:13:55.838443Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:21450:ANIME" size_bytes=57745
+Mar 03 12:14:49 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:14:49.647455Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 12:14:49 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:14:49.648286Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=9 path=/var/cache/yomitan
+Mar 03 12:14:49 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:14:49.668875Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.4" path=/var/cache/yomitan/media_cache.db
+Mar 03 12:14:49 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:14:49.792101Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 12:16:26 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:26.369427Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:19:ANIME" size_bytes=57859
+Mar 03 12:16:30 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:30.498511Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:185:ANIME" size_bytes=26349
+Mar 03 12:16:34 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:34.428458Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:226:ANIME" size_bytes=22719
+Mar 03 12:16:35 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:35.563126Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:18679:ANIME" size_bytes=27876
+Mar 03 12:16:38 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:38.059471Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=87617 name=Guts
+Mar 03 12:16:39 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:39.440003Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:98014:MANGA"
+Mar 03 12:16:39 character-dictionary bee_yomitan-dict-builder_1[59671]: 2026-03-03T12:16:39.608614Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:98014:MANGA" size_bytes=10505
+Mar 03 12:20:27 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:20:27.225721Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 12:20:27 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:20:27.226243Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=9 path=/var/cache/yomitan
+Mar 03 12:20:27 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:20:27.242852Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.4" path=/var/cache/yomitan/media_cache.db
+Mar 03 12:20:27 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:20:27.407109Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 12:22:22 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:22.882629Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:19:ANIME" size_bytes=57859
+Mar 03 12:22:27 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:27.332231Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:185:ANIME" size_bytes=26349
+Mar 03 12:22:31 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:31.063935Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:226:ANIME" size_bytes=22719
+Mar 03 12:22:32 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:32.319662Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:18679:ANIME" size_bytes=27876
+Mar 03 12:22:35 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:35.307571Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=87617 name=Guts
+Mar 03 12:22:37 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:37.073859Z  INFO yomitan_dict_builder::media_cache: Media cache miss key="anilist:74347:MANGA"
+Mar 03 12:22:41 character-dictionary bee_yomitan-dict-builder_1[59753]: 2026-03-03T12:22:41.035534Z  INFO yomitan_dict_builder::media_cache: Media cache stored key="anilist:74347:MANGA" size_bytes=107747
+Mar 03 12:23:32 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:23:32.324049Z  INFO yomitan_dict_builder::image_cache: Old image cache directory found at images/, it can be safely deleted
+Mar 03 12:23:32 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:23:32.324737Z  INFO yomitan_dict_builder::image_cache: Image cache opened total_mb=10 path=/var/cache/yomitan
+Mar 03 12:23:32 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:23:32.343294Z  INFO yomitan_dict_builder::media_cache: Media cache opened total_mb="1.5" path=/var/cache/yomitan/media_cache.db
+Mar 03 12:23:32 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:23:32.513028Z  INFO yomitan_dict_builder: Server running on http://127.0.0.1:3000
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.176134Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.235471Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.276221Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101972:ANIME" size_bytes=21617
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.343055Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.387716Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.396790Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.405807Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.417302Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101551:MANGA" size_bytes=3532
+Mar 03 12:36:29 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:29.425693Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101563:MANGA" size_bytes=27782
+Mar 03 12:36:44 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:44.991692Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.056648Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.090111Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101972:ANIME" size_bytes=21617
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.130214Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.163613Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.167472Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.173200Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.181513Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101551:MANGA" size_bytes=3532
+Mar 03 12:36:45 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:36:45.186492Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101563:MANGA" size_bytes=27782
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.326222Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:161645:ANIME" size_bytes=26350
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.361097Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:132126:ANIME" size_bytes=14941
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.382788Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101972:ANIME" size_bytes=21617
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.414187Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:98263:MANGA" size_bytes=27957
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.445588Z  WARN yomitan_dict_builder::dict_builder: Skipping character with no Japanese name (name_original is empty) id=255935 name=Ininia
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.451977Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:171729:MANGA" size_bytes=3180
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.459184Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:149544:MANGA" size_bytes=5006
+Mar 03 12:43:05 character-dictionary bee_yomitan-dict-builder_1[59928]: 2026-03-03T12:43:05.468556Z  INFO yomitan_dict_builder::media_cache: Media cache hit key="anilist:101551:MANGA" size_bytes=3532

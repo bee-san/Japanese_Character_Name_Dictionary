@@ -470,4 +470,106 @@ mod tests {
         assert_eq!(got_bytes.len(), 100_000);
         assert_eq!(got_bytes, bytes);
     }
+
+    // ===== Additional comprehensive tests =====
+
+    #[tokio::test]
+    async fn test_put_overwrite_different_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path()).unwrap();
+
+        let url = "https://example.com/img";
+        cache.put(url, &[1, 2, 3], "jpg").await;
+        cache.put(url, &[4, 5, 6], "webp").await;
+
+        let (bytes, ext) = cache.get(url).await.unwrap();
+        assert_eq!(bytes, vec![4, 5, 6]);
+        assert_eq!(ext, "webp");
+    }
+
+    #[tokio::test]
+    async fn test_multiple_urls_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path()).unwrap();
+
+        cache.put("https://a.com/1.jpg", &[1], "jpg").await;
+        cache.put("https://b.com/2.png", &[2], "png").await;
+        cache.put("https://c.com/3.webp", &[3], "webp").await;
+
+        let (b1, e1) = cache.get("https://a.com/1.jpg").await.unwrap();
+        let (b2, e2) = cache.get("https://b.com/2.png").await.unwrap();
+        let (b3, e3) = cache.get("https://c.com/3.webp").await.unwrap();
+
+        assert_eq!(b1, vec![1]);
+        assert_eq!(e1, "jpg");
+        assert_eq!(b2, vec![2]);
+        assert_eq!(e2, "png");
+        assert_eq!(b3, vec![3]);
+        assert_eq!(e3, "webp");
+    }
+
+    #[tokio::test]
+    async fn test_empty_bytes_stored_and_retrieved() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = ImageCache::open(dir.path()).unwrap();
+
+        cache.put("https://example.com/empty", &[], "jpg").await;
+        let result = cache.get("https://example.com/empty").await;
+        assert!(result.is_some());
+        let (bytes, _) = result.unwrap();
+        assert!(bytes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_url_hash_is_deterministic() {
+        let h1 = url_hash("https://example.com/test.jpg");
+        let h2 = url_hash("https://example.com/test.jpg");
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64); // SHA-256 hex
+    }
+
+    #[tokio::test]
+    async fn test_different_urls_different_hashes() {
+        let h1 = url_hash("https://a.com/1");
+        let h2 = url_hash("https://a.com/2");
+        assert_ne!(h1, h2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_reopen_preserves_data() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Write data
+        {
+            let cache = ImageCache::open(dir.path()).unwrap();
+            cache.put("https://example.com/persist.jpg", &[10, 20, 30], "jpg").await;
+        }
+
+        // Reopen and verify
+        {
+            let cache = ImageCache::open(dir.path()).unwrap();
+            let result = cache.get("https://example.com/persist.jpg").await;
+            assert!(result.is_some());
+            let (bytes, ext) = result.unwrap();
+            assert_eq!(bytes, vec![10, 20, 30]);
+            assert_eq!(ext, "jpg");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_total_bytes_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+
+        {
+            let cache = ImageCache::open(dir.path()).unwrap();
+            cache.put("https://a.com/1", &vec![0u8; 500], "jpg").await;
+            cache.put("https://a.com/2", &vec![0u8; 300], "jpg").await;
+            assert_eq!(cache.total_bytes(), 800);
+        }
+
+        {
+            let cache = ImageCache::open(dir.path()).unwrap();
+            assert_eq!(cache.total_bytes(), 800);
+        }
+    }
 }

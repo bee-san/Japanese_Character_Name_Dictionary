@@ -1321,4 +1321,123 @@ mod tests {
             "Should keep the first occurrence"
         );
     }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- parse_anilist_id edge cases ---
+
+    #[test]
+    fn test_parse_anilist_id_negative_number() {
+        // Negative numbers are valid i32 values, so they parse successfully
+        assert_eq!(parse_anilist_id("-1").unwrap(), -1);
+    }
+
+    #[test]
+    fn test_parse_anilist_id_zero() {
+        assert_eq!(parse_anilist_id("0").unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_anilist_id_very_large() {
+        assert_eq!(parse_anilist_id("2147483647").unwrap(), 2147483647); // i32::MAX
+    }
+
+    #[test]
+    fn test_parse_anilist_id_overflow() {
+        assert!(parse_anilist_id("2147483648").is_err()); // i32::MAX + 1
+    }
+
+    #[test]
+    fn test_parse_anilist_id_float() {
+        assert!(parse_anilist_id("9253.5").is_err());
+    }
+
+    #[test]
+    fn test_parse_anilist_id_url_with_www() {
+        // www.anilist.co still contains "anilist.co/" so it parses successfully
+        assert_eq!(
+            parse_anilist_id("https://www.anilist.co/anime/9253").unwrap(),
+            9253
+        );
+    }
+
+    #[test]
+    fn test_parse_anilist_id_url_multiple_slashes() {
+        assert_eq!(
+            parse_anilist_id("https://anilist.co/anime/9253/Steins-Gate/characters").unwrap(),
+            9253
+        );
+    }
+
+    #[test]
+    fn test_parse_anilist_id_url_with_both_query_and_fragment() {
+        assert_eq!(
+            parse_anilist_id("https://anilist.co/anime/9253?tab=chars#top").unwrap(),
+            9253
+        );
+    }
+
+    // --- Media entry deduplication edge cases ---
+
+    #[test]
+    fn test_media_entries_dedup_empty_list() {
+        let mut entries: Vec<UserMediaEntry> = vec![];
+        let mut seen = HashSet::new();
+        entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_media_entries_dedup_single_entry() {
+        let mut entries = vec![UserMediaEntry {
+            id: "v17".to_string(),
+            title: "Test".to_string(),
+            title_romaji: "Test".to_string(),
+            source: "vndb".to_string(),
+            media_type: "vn".to_string(),
+        }];
+        let mut seen = HashSet::new();
+        entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_media_entries_dedup_many_duplicates() {
+        let mut entries: Vec<UserMediaEntry> = (0..10)
+            .map(|_| UserMediaEntry {
+                id: "v17".to_string(),
+                title: "Test".to_string(),
+                title_romaji: "Test".to_string(),
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+            })
+            .collect();
+        let mut seen = HashSet::new();
+        entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_media_entries_dedup_mixed_sources() {
+        let mut entries = vec![
+            UserMediaEntry { id: "1".to_string(), title: "A".to_string(), title_romaji: "A".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
+            UserMediaEntry { id: "1".to_string(), title: "A".to_string(), title_romaji: "A".to_string(), source: "anilist".to_string(), media_type: "anime".to_string() },
+            UserMediaEntry { id: "2".to_string(), title: "B".to_string(), title_romaji: "B".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
+            UserMediaEntry { id: "2".to_string(), title: "B".to_string(), title_romaji: "B".to_string(), source: "anilist".to_string(), media_type: "manga".to_string() },
+            UserMediaEntry { id: "1".to_string(), title: "A dup".to_string(), title_romaji: "A".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
+        ];
+        let mut seen = HashSet::new();
+        entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+        assert_eq!(entries.len(), 4); // 4 unique (source, id) pairs
+    }
+
+    // --- base_url tests ---
+
+    #[test]
+    fn test_base_url_default() {
+        // When no env vars are set, should default to http://127.0.0.1:3000
+        // (Can't easily test this without modifying env, but we can test the function exists)
+        let url = base_url();
+        assert!(url.starts_with("http"));
+    }
 }

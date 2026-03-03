@@ -1374,4 +1374,260 @@ mod tests {
         assert_eq!(r.given, "まもる", "Given reading should be まもる");
         assert_eq!(r.full, "いしいまもる");
     }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- split_japanese_name_all_candidates edge cases ---
+
+    #[test]
+    fn test_all_candidates_empty_name() {
+        let candidates = split_japanese_name_all_candidates("", Some("A"), Some("B"));
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].family.is_none());
+    }
+
+    #[test]
+    fn test_all_candidates_no_hints() {
+        let candidates = split_japanese_name_all_candidates("田中太郎", None, None);
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].family.is_none()); // no space, no hints → unsplit
+    }
+
+    #[test]
+    fn test_all_candidates_with_space() {
+        let candidates = split_japanese_name_all_candidates("田中 太郎", Some("Tarou"), Some("Tanaka"));
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].has_space);
+        assert_eq!(candidates[0].family.as_deref(), Some("田中"));
+        assert_eq!(candidates[0].given.as_deref(), Some("太郎"));
+    }
+
+    #[test]
+    fn test_all_candidates_middledot() {
+        let candidates = split_japanese_name_all_candidates("ルルーシュ・ランペルージ", Some("Lelouch"), Some("Lamperouge"));
+        assert_eq!(candidates.len(), 1);
+        assert!(!candidates[0].has_space);
+    }
+
+    #[test]
+    fn test_all_candidates_only_first_hint() {
+        let candidates = split_japanese_name_all_candidates("ヒミコ", Some("Himiko"), None);
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].family.is_none());
+    }
+
+    #[test]
+    fn test_all_candidates_only_last_hint() {
+        let candidates = split_japanese_name_all_candidates("田中", None, Some("Tanaka"));
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].family.is_none());
+    }
+
+    #[test]
+    fn test_all_candidates_single_char_name() {
+        let candidates = split_japanese_name_all_candidates("守", Some("Mamoru"), Some(""));
+        assert_eq!(candidates.len(), 1);
+    }
+
+    // --- generate_name_readings: comprehensive scenarios ---
+
+    #[test]
+    fn test_readings_vndb_two_part_kanji() {
+        // VNDB style: no hints, romanized name in Western order
+        let r = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", None, None);
+        assert_eq!(r.family, "おかべ");
+        assert_eq!(r.given, "りんたろう");
+        assert_eq!(r.full, "おかべりんたろう");
+    }
+
+    #[test]
+    fn test_readings_vndb_mixed_kanji_kana() {
+        // Family is kanji, given is kana
+        let r = generate_name_readings("千俵 おりえ", "Senpyou Orie", None, None);
+        assert_eq!(r.family, "せんぴょう");
+        assert_eq!(r.given, "おりえ"); // kana → kata_to_hira (already hiragana)
+    }
+
+    #[test]
+    fn test_readings_vndb_pure_katakana() {
+        let r = generate_name_readings("セイバー", "Saber", None, None);
+        assert_eq!(r.full, "せいばー");
+    }
+
+    #[test]
+    fn test_readings_anilist_with_hints_spaced() {
+        let r = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some("Rintarou"), Some("Okabe"));
+        assert_eq!(r.family, "おかべ");
+        assert_eq!(r.given, "りんたろう");
+    }
+
+    #[test]
+    fn test_readings_anilist_with_hints_no_space() {
+        let r = generate_name_readings("幸平創真", "Souma Yukihira", Some("Souma"), Some("Yukihira"));
+        assert_eq!(r.family, "ゆきひら");
+        assert_eq!(r.given, "そうま");
+        assert_eq!(r.full, "ゆきひらそうま");
+    }
+
+    #[test]
+    fn test_readings_katakana_middledot_with_hints() {
+        // Foreign name with middle dot — should not split, just convert to hiragana
+        let r = generate_name_readings("ルルーシュ・ランペルージ", "Lelouch Lamperouge", Some("Lelouch"), Some("Lamperouge"));
+        assert_eq!(r.full, "るるーしゅ・らんぺるーじ");
+    }
+
+    #[test]
+    fn test_readings_single_name_with_first_hint_only() {
+        let r = generate_name_readings("ヒミコ", "Himiko", Some("Himiko"), None);
+        assert_eq!(r.full, "ひみこ");
+    }
+
+    #[test]
+    fn test_readings_single_kanji_with_first_hint_only() {
+        let r = generate_name_readings("守", "Mamoru", Some("Mamoru"), None);
+        assert_eq!(r.full, "まもる");
+    }
+
+    #[test]
+    fn test_readings_empty_hints_treated_as_none() {
+        let r = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some(""), Some(""));
+        // Empty hints → treated as None → falls back to VNDB behavior
+        assert_eq!(r.family, "おかべ");
+        assert_eq!(r.given, "りんたろう");
+    }
+
+    #[test]
+    fn test_readings_whitespace_only_hints_treated_as_none() {
+        let r = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some("  "), Some("  "));
+        assert_eq!(r.family, "おかべ");
+        assert_eq!(r.given, "りんたろう");
+    }
+
+    // --- split_japanese_name_with_hints: more edge cases ---
+
+    #[test]
+    fn test_split_hints_three_kanji_name() {
+        // 3 kanji, family=2 kanji, given=1 kanji
+        let parts = split_japanese_name_with_hints("田中太", Some("Futo"), Some("Tanaka"));
+        assert_eq!(parts.combined, "田中太");
+        // Should attempt to split based on kana lengths
+    }
+
+    #[test]
+    fn test_split_hints_all_hiragana_no_space() {
+        let parts = split_japanese_name_with_hints("たなかたろう", Some("Tarou"), Some("Tanaka"));
+        // Hiragana names can still be split using kana length hints
+        assert_eq!(parts.combined, "たなかたろう");
+    }
+
+    #[test]
+    fn test_split_hints_katakana_no_middledot() {
+        // Katakana without middle dot — should attempt split
+        let parts = split_japanese_name_with_hints("セイバーアルトリア", Some("Artoria"), Some("Saber"));
+        assert_eq!(parts.combined, "セイバーアルトリア");
+    }
+
+    // --- Honorific suffixes data validation ---
+
+    #[test]
+    fn test_honorific_suffixes_all_have_three_fields() {
+        for (display, reading, desc) in HONORIFIC_SUFFIXES {
+            assert!(!display.is_empty(), "Display form should not be empty");
+            assert!(!reading.is_empty(), "Reading should not be empty");
+            assert!(!desc.is_empty(), "Description should not be empty");
+        }
+    }
+
+    #[test]
+    fn test_honorific_suffixes_contain_san_kun_chan() {
+        let displays: Vec<&str> = HONORIFIC_SUFFIXES.iter().map(|(d, _, _)| *d).collect();
+        assert!(displays.contains(&"さん"), "Missing さん");
+        assert!(displays.contains(&"君"), "Missing 君");
+        assert!(displays.contains(&"ちゃん"), "Missing ちゃん");
+        assert!(displays.contains(&"様"), "Missing 様");
+        assert!(displays.contains(&"先生"), "Missing 先生");
+        assert!(displays.contains(&"先輩"), "Missing 先輩");
+    }
+
+    #[test]
+    fn test_honorific_suffixes_unique_display_reading_desc_triple() {
+        // Some honorifics share display+reading but have different descriptions
+        // (e.g., 長官 appears in multiple categories). Verify the full triple is unique.
+        let mut seen = std::collections::HashSet::new();
+        for (display, reading, desc) in HONORIFIC_SUFFIXES {
+            let key = format!("{}:{}:{}", display, reading, desc);
+            assert!(seen.insert(key.clone()), "Duplicate honorific triple: {}", key);
+        }
+    }
+
+    #[test]
+    fn test_honorific_count_is_substantial() {
+        // AGENTS.md says 257 entries across 14 categories
+        assert!(
+            HONORIFIC_SUFFIXES.len() > 200,
+            "Expected 200+ honorifics, got {}",
+            HONORIFIC_SUFFIXES.len()
+        );
+    }
+
+    // --- Real-world AniList character name scenarios ---
+
+    #[test]
+    fn test_readings_anilist_emiya_shirou() {
+        let r = generate_name_readings("衛宮士郎", "Shirou Emiya", Some("Shirou"), Some("Emiya"));
+        assert_eq!(r.family, "えみや");
+        assert_eq!(r.given, "しろう");
+    }
+
+    #[test]
+    fn test_readings_anilist_toosaka_rin() {
+        let r = generate_name_readings("遠坂 凛", "Rin Toosaka", Some("Rin"), Some("Toosaka"));
+        assert_eq!(r.family, "とおさか");
+        assert_eq!(r.given, "りん");
+    }
+
+    #[test]
+    fn test_readings_anilist_matou_sakura() {
+        let r = generate_name_readings("間桐 桜", "Sakura Matou", Some("Sakura"), Some("Matou"));
+        assert_eq!(r.family, "まとう");
+        assert_eq!(r.given, "さくら");
+    }
+
+    #[test]
+    fn test_readings_vndb_apostrophe_name() {
+        // VNDB romanized name with apostrophe for n-disambiguation
+        let r = generate_name_readings("須々木 心一", "Suzuki Shin'ichi", None, None);
+        assert_eq!(r.family, "すずき");
+        assert_eq!(r.given, "しんいち");
+    }
+
+    #[test]
+    fn test_split_preserves_original_text() {
+        let parts = split_japanese_name_with_hints("岡部 倫太郎", None, None);
+        assert_eq!(parts.original, "岡部 倫太郎");
+        assert_eq!(parts.combined, "岡部倫太郎");
+        assert!(parts.has_space);
+    }
+
+    #[test]
+    fn test_split_no_space_no_hints_returns_unsplit() {
+        let parts = split_japanese_name_with_hints("岡部倫太郎", None, None);
+        assert!(!parts.has_space);
+        assert!(parts.family.is_none());
+        assert!(parts.given.is_none());
+        assert_eq!(parts.original, "岡部倫太郎");
+        assert_eq!(parts.combined, "岡部倫太郎");
+    }
+
+    #[test]
+    fn test_readings_consistency_with_and_without_space() {
+        // With space (VNDB style)
+        let r1 = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", None, None);
+        // With hints (AniList style)
+        let r2 = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some("Rintarou"), Some("Okabe"));
+        // Both should produce the same readings
+        assert_eq!(r1.family, r2.family);
+        assert_eq!(r1.given, r2.given);
+        assert_eq!(r1.full, r2.full);
+    }
 }

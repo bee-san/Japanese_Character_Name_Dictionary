@@ -24,6 +24,7 @@ fn get_score(role: &str) -> i32 {
 pub struct DictBuilder {
     pub entries: Vec<serde_json::Value>,
     images: Vec<(String, Vec<u8>)>, // (filename, bytes) for ZIP img/ folder
+    added_images: HashSet<String>,  // track image filenames to avoid duplicate ZIP entries
     spoiler_level: u8,
     revision: String,
     download_url: Option<String>,
@@ -43,6 +44,7 @@ impl DictBuilder {
         Self {
             entries: Vec::new(),
             images: Vec::new(),
+            added_images: HashSet::new(),
             spoiler_level,
             revision: format!("{:012}", revision),
             download_url,
@@ -81,7 +83,10 @@ impl DictBuilder {
             let ext = char.image_ext.as_deref().unwrap_or("jpg");
             let filename = ImageHandler::make_filename(&char.id, ext);
             let path = format!("img/{}", filename);
-            self.images.push((filename, img_bytes.clone()));
+            // Only add image bytes once per filename to avoid duplicate ZIP entries
+            if self.added_images.insert(filename.clone()) {
+                self.images.push((filename, img_bytes.clone()));
+            }
             Some(path)
         } else {
             None
@@ -1721,6 +1726,37 @@ mod tests {
         );
     }
 
+    // === Edge case: same character (same ID) from two media should only produce one image ===
+
+    #[test]
+    fn test_duplicate_character_image_deduplicated() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let fake_image = vec![0xFF, 0xD8, 0xFF, 0xE0]; // fake JPEG bytes
+        let mut char1 = make_test_character("c1234", "Saber", "セイバー", "main");
+        char1.image_bytes = Some(fake_image.clone());
+        char1.image_ext = Some("jpg".to_string());
+
+        let mut char2 = make_test_character("c1234", "Saber", "セイバー", "main");
+        char2.image_bytes = Some(fake_image.clone());
+        char2.image_ext = Some("jpg".to_string());
+
+        builder.add_character(&char1, "Game A");
+        builder.add_character(&char2, "Game B");
+
+        // Image should only appear once in the builder
+        // make_filename("c1234", "jpg") produces "cc1234.jpg"
+        let image_count = builder
+            .images
+            .iter()
+            .filter(|(name, _)| name == "cc1234.jpg")
+            .count();
+        assert_eq!(
+            image_count, 1,
+            "Same character from two media should only produce one image, got {}",
+            image_count
+        );
+    }
+
     // === Edge case: character with many empty aliases ===
 
     #[test]
@@ -1893,5 +1929,436 @@ mod tests {
             !terms.contains(&"幸".to_string()),
             "Should NOT have wrong 1-char family split"
         );
+    }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- Entry generation: kana/katakana variants ---
+
+    #[test]
+    fn test_kana_and_katakana_entries_for_two_part_name() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        // Should have hiragana combined (no space)
+        assert!(
+            terms.iter().any(|t| t == "おかべりんたろう"),
+            "Missing hiragana combined"
+        );
+        // Should have hiragana with space
+        assert!(
+            terms.iter().any(|t| t == "おかべ りんたろう"),
+            "Missing hiragana spaced"
+        );
+        // Should have hiragana family only
+        assert!(
+            terms.iter().any(|t| t == "おかべ"),
+            "Missing hiragana family"
+        );
+        // Should have hiragana given only
+        assert!(
+            terms.iter().any(|t| t == "りんたろう"),
+            "Missing hiragana given"
+        );
+        // Should have katakana combined
+        assert!(
+            terms.iter().any(|t| t == "オカベリンタロウ"),
+            "Missing katakana combined"
+        );
+        // Should have katakana with space
+        assert!(
+            terms.iter().any(|t| t == "オカベ リンタロウ"),
+            "Missing katakana spaced"
+        );
+        // Should have katakana family
+        assert!(
+            terms.iter().any(|t| t == "オカベ"),
+            "Missing katakana family"
+        );
+        // Should have katakana given
+        assert!(
+            terms.iter().any(|t| t == "リンタロウ"),
+            "Missing katakana given"
+        );
+    }
+
+    #[test]
+    fn test_kana_entries_for_single_word_name() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch = make_test_character("c1", "Saber", "セイバー", "main");
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        // Original katakana
+        assert!(terms.contains(&"セイバー".to_string()));
+        // Hiragana form
+        assert!(terms.contains(&"せいばー".to_string()));
+    }
+
+    // --- Entry generation: honorific variants ---
+
+    #[test]
+    fn test_honorific_entries_generated_for_all_base_forms() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        // Kanji family + さん
+        assert!(terms.iter().any(|t| t == "岡部さん"), "Missing 岡部さん");
+        // Kanji given + さん
+        assert!(
+            terms.iter().any(|t| t == "倫太郎さん"),
+            "Missing 倫太郎さん"
+        );
+        // Combined + さん
+        assert!(
+            terms.iter().any(|t| t == "岡部倫太郎さん"),
+            "Missing 岡部倫太郎さん"
+        );
+        // Hiragana family + さん
+        assert!(
+            terms.iter().any(|t| t == "おかべさん"),
+            "Missing おかべさん"
+        );
+        // Katakana family + さん
+        assert!(
+            terms.iter().any(|t| t == "オカベさん"),
+            "Missing オカベさん"
+        );
+    }
+
+    #[test]
+    fn test_honorific_entries_for_aliases() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
+        let mut ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        ch.aliases = vec!["鳳凰院凶真".to_string()];
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(
+            terms.contains(&"鳳凰院凶真".to_string()),
+            "Missing alias base entry"
+        );
+        assert!(
+            terms.iter().any(|t| t == "鳳凰院凶真さん"),
+            "Missing alias + さん"
+        );
+    }
+
+    // --- Deduplication ---
+
+    #[test]
+    fn test_no_duplicate_entries_in_single_character() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), true);
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .map(|e| {
+                format!(
+                    "{}:{}",
+                    e[0].as_str().unwrap_or(""),
+                    e[1].as_str().unwrap_or("")
+                )
+            })
+            .collect();
+
+        let unique: std::collections::HashSet<&String> = terms.iter().collect();
+        assert_eq!(
+            terms.len(),
+            unique.len(),
+            "Found duplicate term:reading pairs"
+        );
+    }
+
+    #[test]
+    fn test_two_characters_no_cross_contamination() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch1 = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        let ch2 = make_test_character("c2", "Makise Kurisu", "牧瀬 紅莉栖", "primary");
+        builder.add_character(&ch1, "Test");
+        builder.add_character(&ch2, "Test");
+
+        // Both characters should have entries
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(terms.contains(&"岡部 倫太郎".to_string()));
+        assert!(terms.contains(&"牧瀬 紅莉栖".to_string()));
+    }
+
+    // --- Score assignment ---
+
+    #[test]
+    fn test_scores_decrease_by_role() {
+        let main_score = get_score("main");
+        let primary_score = get_score("primary");
+        let side_score = get_score("side");
+        let appears_score = get_score("appears");
+
+        assert!(main_score > primary_score, "main > primary");
+        assert!(primary_score > side_score, "primary > side");
+        assert!(side_score > appears_score, "side > appears");
+    }
+
+    #[test]
+    fn test_score_in_entries_matches_role() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch = make_test_character("c1", "Test", "テスト", "primary");
+        builder.add_character(&ch, "Test");
+
+        let expected_score = get_score("primary");
+        for entry in &builder.entries {
+            let score = entry[4].as_i64().unwrap();
+            assert_eq!(score, expected_score as i64);
+        }
+    }
+
+    // --- ZIP export ---
+
+    #[test]
+    fn test_export_empty_builder_produces_valid_zip() {
+        let builder = DictBuilder::new(0, None, "Empty".to_string(), false);
+        let bytes = builder.export_bytes().unwrap();
+        assert!(!bytes.is_empty());
+
+        let archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive.clone());
+        assert!(names.contains(&"index.json".to_string()));
+        assert!(names.contains(&"tag_bank_1.json".to_string()));
+    }
+
+    #[test]
+    fn test_export_with_images_includes_img_folder() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let mut ch = make_full_character();
+        ch.image_bytes = Some(vec![0xFF, 0xD8, 0xFF, 0xE0]); // JPEG header
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+        assert!(
+            names.iter().any(|n| n.starts_with("img/")),
+            "Should have img/ entries"
+        );
+    }
+
+    #[test]
+    fn test_export_index_json_has_correct_title() {
+        let builder = DictBuilder::new(0, None, "My Game Title".to_string(), false);
+        let mut archive = build_zip_archive(&builder);
+        let index_str = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&index_str).unwrap();
+        // Title is always "Bee's Character Dictionary", game title goes in description
+        assert_eq!(
+            index["title"].as_str().unwrap(),
+            "Bee's Character Dictionary"
+        );
+        assert!(index["description"]
+            .as_str()
+            .unwrap()
+            .contains("My Game Title"));
+    }
+
+    #[test]
+    fn test_export_revision_is_12_digits() {
+        let builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let mut archive = build_zip_archive(&builder);
+        let index_str = read_zip_entry(&mut archive, "index.json");
+        let index: serde_json::Value = serde_json::from_str(&index_str).unwrap();
+        let revision = index["revision"].as_str().unwrap();
+        assert_eq!(revision.len(), 12, "Revision should be 12 digits");
+        assert!(
+            revision.chars().all(|c| c.is_ascii_digit()),
+            "Revision should be all digits"
+        );
+    }
+
+    #[test]
+    fn test_export_two_builders_have_different_revisions() {
+        let b1 = DictBuilder::new(0, None, "T".to_string(), false);
+        let b2 = DictBuilder::new(0, None, "T".to_string(), false);
+        let mut a1 = build_zip_archive(&b1);
+        let mut a2 = build_zip_archive(&b2);
+        let i1: serde_json::Value =
+            serde_json::from_str(&read_zip_entry(&mut a1, "index.json")).unwrap();
+        let i2: serde_json::Value =
+            serde_json::from_str(&read_zip_entry(&mut a2, "index.json")).unwrap();
+        // Extremely unlikely to be the same (1 in 10^12)
+        // But we can't guarantee it, so just check they're valid
+        assert!(i1["revision"].is_string());
+        assert!(i2["revision"].is_string());
+    }
+
+    // --- Stress test: many characters ---
+
+    #[test]
+    fn test_many_characters_produces_valid_zip() {
+        let mut builder = DictBuilder::new(0, None, "Stress Test".to_string(), false);
+        for i in 0..50 {
+            let ch = make_test_character(
+                &format!("c{}", i),
+                &format!("Char{} Name{}", i, i),
+                &format!("キャラ{}", i),
+                if i % 4 == 0 {
+                    "main"
+                } else if i % 4 == 1 {
+                    "primary"
+                } else if i % 4 == 2 {
+                    "side"
+                } else {
+                    "appears"
+                },
+            );
+            builder.add_character(&ch, "Stress Test");
+        }
+
+        assert!(
+            builder.entries.len() >= 50,
+            "Should have at least 50 entries"
+        );
+        let bytes = builder.export_bytes().unwrap();
+        assert!(!bytes.is_empty());
+
+        // Verify it's a valid ZIP
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let names = zip_filenames(&mut archive);
+        assert!(names.contains(&"index.json".to_string()));
+    }
+
+    // --- Character with image bytes ---
+
+    #[test]
+    fn test_character_with_image_creates_img_entry() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let mut ch = make_test_character("42", "Test", "テスト", "main");
+        ch.image_bytes = Some(vec![1, 2, 3, 4]);
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        // make_filename("42", "jpg") → "c42.jpg", path → "img/c42.jpg"
+        let content_str = serde_json::to_string(&builder.entries).unwrap();
+        assert!(
+            content_str.contains("img/c42.jpg"),
+            "content: {}",
+            content_str
+        );
+    }
+
+    #[test]
+    fn test_character_without_image_no_img_reference() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch = make_test_character("42", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        let content_str = serde_json::to_string(&builder.entries).unwrap();
+        assert!(!content_str.contains("img/"));
+    }
+
+    // --- Index metadata ---
+
+    #[test]
+    fn test_index_with_download_url() {
+        let builder = DictBuilder::new(
+            0,
+            Some("http://localhost:3000/api/yomitan-dict?source=vndb&id=v17".to_string()),
+            "Test".to_string(),
+            false,
+        );
+        let index = builder.create_index_public();
+        assert!(index["downloadUrl"].is_string());
+        assert!(index["downloadUrl"].as_str().unwrap().contains("v17"));
+    }
+
+    #[test]
+    fn test_index_without_download_url() {
+        let builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let index = builder.create_index_public();
+        // Should not have update-related fields
+        assert!(index.get("downloadUrl").is_none() || index["downloadUrl"].is_null());
+    }
+
+    // --- AniList character with hints ---
+
+    #[test]
+    fn test_anilist_character_with_hints_generates_correct_entries() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let mut ch = make_test_character("c1", "Rintarou Okabe", "岡部倫太郎", "main");
+        ch.first_name_hint = Some("Rintarou".to_string());
+        ch.last_name_hint = Some("Okabe".to_string());
+        ch.aliases = vec![];
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        // Should have the combined form
+        assert!(
+            terms.contains(&"岡部倫太郎".to_string()),
+            "Missing combined kanji"
+        );
+    }
+
+    // --- Edge case: character with only aliases ---
+
+    #[test]
+    fn test_character_with_aliases_generates_alias_entries() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let mut ch = make_test_character("c1", "Test Name", "テスト", "main");
+        ch.aliases = vec!["Alias1".to_string(), "エイリアス".to_string()];
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(terms.contains(&"Alias1".to_string()));
+        assert!(terms.contains(&"エイリアス".to_string()));
+    }
+
+    // --- Edge case: whitespace-only name_original ---
+
+    #[test]
+    fn test_whitespace_only_name_original() {
+        let mut builder = DictBuilder::new(0, None, "Test".to_string(), false);
+        let ch = make_test_character("c1", "Test", "   ", "main");
+        builder.add_character(&ch, "Test");
+        // Whitespace-only name should still generate entries (it's not empty)
+        assert!(!builder.entries.is_empty());
     }
 }

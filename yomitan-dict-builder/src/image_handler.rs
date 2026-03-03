@@ -290,4 +290,160 @@ mod tests {
     fn test_make_filename_empty_ext() {
         assert_eq!(ImageHandler::make_filename("42", ""), "c42.");
     }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- detect_extension: more magic byte patterns ---
+
+    #[test]
+    fn test_detect_extension_jpeg_with_exif() {
+        // JPEG with EXIF marker (FF D8 FF E1)
+        assert_eq!(
+            ImageHandler::detect_extension(&[0xFF, 0xD8, 0xFF, 0xE1]),
+            "jpg"
+        );
+    }
+
+    #[test]
+    fn test_detect_extension_jpeg_with_jfif() {
+        // JPEG with JFIF marker (FF D8 FF E0)
+        assert_eq!(
+            ImageHandler::detect_extension(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            "jpg"
+        );
+    }
+
+    #[test]
+    fn test_detect_extension_png_full_header() {
+        // Full PNG header: 89 50 4E 47 0D 0A 1A 0A
+        assert_eq!(
+            ImageHandler::detect_extension(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            "png"
+        );
+    }
+
+    #[test]
+    fn test_detect_extension_gif87a() {
+        assert_eq!(
+            ImageHandler::detect_extension(&[0x47, 0x49, 0x46, 0x38, 0x37, 0x61]),
+            "gif"
+        );
+    }
+
+    #[test]
+    fn test_detect_extension_gif89a() {
+        assert_eq!(
+            ImageHandler::detect_extension(&[0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
+            "gif"
+        );
+    }
+
+    #[test]
+    fn test_detect_extension_webp_with_size() {
+        let mut webp = vec![0x52, 0x49, 0x46, 0x46];
+        webp.extend_from_slice(&[0x24, 0x08, 0x00, 0x00]); // file size
+        webp.extend_from_slice(&[0x57, 0x45, 0x42, 0x50]); // WEBP
+        assert_eq!(ImageHandler::detect_extension(&webp), "webp");
+    }
+
+    // --- resize_image: boundary dimensions ---
+
+    #[test]
+    fn test_resize_exact_max_dimensions() {
+        // Image exactly at MAX_WIDTH × MAX_HEIGHT (160×200) — should NOT resize
+        let img = image::RgbImage::from_pixel(160, 200, image::Rgb([100, 100, 100]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Jpeg).unwrap();
+        let jpeg_bytes = buf.into_inner();
+
+        let (_, _, w, h) = ImageHandler::resize_image(&jpeg_bytes);
+        assert_eq!(w, 160);
+        assert_eq!(h, 200);
+    }
+
+    #[test]
+    fn test_resize_one_pixel_over_width() {
+        // 161×200 — just over width limit, should resize
+        let img = image::RgbImage::from_pixel(161, 200, image::Rgb([100, 100, 100]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Jpeg).unwrap();
+        let jpeg_bytes = buf.into_inner();
+
+        let (_, _, w, h) = ImageHandler::resize_image(&jpeg_bytes);
+        assert!(w <= 160);
+        assert!(h <= 200);
+    }
+
+    #[test]
+    fn test_resize_one_pixel_over_height() {
+        // 160×201 — just over height limit, should resize
+        let img = image::RgbImage::from_pixel(160, 201, image::Rgb([100, 100, 100]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Jpeg).unwrap();
+        let jpeg_bytes = buf.into_inner();
+
+        let (_, _, w, h) = ImageHandler::resize_image(&jpeg_bytes);
+        assert!(w <= 160);
+        assert!(h <= 200);
+    }
+
+    #[test]
+    fn test_resize_very_wide_image() {
+        // 1000×100 — very wide, should scale down to fit width
+        let img = image::RgbImage::from_pixel(1000, 100, image::Rgb([0, 0, 0]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Png).unwrap();
+        let png_bytes = buf.into_inner();
+
+        let (resized, ext, w, h) = ImageHandler::resize_image(&png_bytes);
+        assert_eq!(ext, "jpg");
+        assert!(w <= 160);
+        assert!(h <= 200);
+        assert!(!resized.is_empty());
+    }
+
+    #[test]
+    fn test_resize_very_tall_image() {
+        // 50×2000 — very tall, should scale down to fit height
+        let img = image::RgbImage::from_pixel(50, 2000, image::Rgb([0, 0, 0]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Png).unwrap();
+        let png_bytes = buf.into_inner();
+
+        let (_, _, w, h) = ImageHandler::resize_image(&png_bytes);
+        assert!(w <= 160);
+        assert!(h <= 200);
+    }
+
+    #[test]
+    fn test_resize_output_is_always_jpeg() {
+        // Input is PNG, output should be JPEG
+        let img = image::RgbImage::from_pixel(10, 10, image::Rgb([255, 0, 0]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, ImageFormat::Png).unwrap();
+        let png_bytes = buf.into_inner();
+
+        let (resized, ext, _, _) = ImageHandler::resize_image(&png_bytes);
+        assert_eq!(ext, "jpg");
+        // Verify output starts with JPEG magic bytes
+        assert_eq!(&resized[0..3], &[0xFF, 0xD8, 0xFF]);
+    }
+
+    // --- make_filename: various IDs ---
+
+    #[test]
+    fn test_make_filename_numeric_id() {
+        assert_eq!(ImageHandler::make_filename("12345", "jpg"), "c12345.jpg");
+    }
+
+    #[test]
+    fn test_make_filename_with_prefix() {
+        // Some IDs might already have a prefix
+        assert_eq!(ImageHandler::make_filename("v17", "png"), "cv17.png");
+    }
+
+    #[test]
+    fn test_make_filename_unicode_id() {
+        assert_eq!(ImageHandler::make_filename("テスト", "jpg"), "cテスト.jpg");
+    }
 }

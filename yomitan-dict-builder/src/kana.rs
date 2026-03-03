@@ -687,4 +687,256 @@ mod tests {
         assert_eq!(alphabet_to_kana("lo"), "ろ");
         assert_eq!(alphabet_to_kana("lain"), "らいん");
     }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- Kanji detection: extended Unicode ranges ---
+
+    #[test]
+    fn test_contains_kanji_extension_b() {
+        // U+20000 — CJK Unified Ideographs Extension B
+        assert!(contains_kanji("\u{20000}"));
+    }
+
+    #[test]
+    fn test_contains_kanji_extension_g() {
+        // U+30000 — CJK Unified Ideographs Extension G
+        assert!(contains_kanji("\u{30000}"));
+    }
+
+    #[test]
+    fn test_contains_kanji_compatibility_supplement() {
+        // U+2F800 — CJK Compatibility Ideographs Supplement
+        assert!(contains_kanji("\u{2F800}"));
+    }
+
+    #[test]
+    fn test_contains_kanji_just_outside_range() {
+        // U+4DFF is just before CJK Unified Ideographs (U+4E00)
+        assert!(!contains_kanji("\u{4DFF}"));
+        // U+A000 is just after CJK Unified Ideographs (U+9FFF)
+        assert!(!contains_kanji("\u{A000}"));
+    }
+
+    #[test]
+    fn test_contains_kanji_mixed_with_punctuation() {
+        assert!(contains_kanji("「漢字」"));
+        assert!(!contains_kanji("「ひらがな」"));
+    }
+
+    #[test]
+    fn test_contains_kanji_only_numbers_and_symbols() {
+        assert!(!contains_kanji("123!@#$%"));
+        assert!(!contains_kanji("①②③"));
+    }
+
+    // --- Katakana ↔ Hiragana: edge cases ---
+
+    #[test]
+    fn test_kata_to_hira_small_kana() {
+        // Small katakana ァ (U+30A1) → small hiragana ぁ (U+3041)
+        assert_eq!(kata_to_hira("ァィゥェォ"), "ぁぃぅぇぉ");
+    }
+
+    #[test]
+    fn test_kata_to_hira_full_dakuten_range() {
+        assert_eq!(kata_to_hira("ダヂヅデド"), "だぢづでど");
+        assert_eq!(kata_to_hira("バビブベボ"), "ばびぶべぼ");
+    }
+
+    #[test]
+    fn test_hira_to_kata_small_kana() {
+        assert_eq!(hira_to_kata("ぁぃぅぇぉ"), "ァィゥェォ");
+    }
+
+    #[test]
+    fn test_hira_to_kata_full_range() {
+        // Test the entire basic hiragana set
+        let hira = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
+        let kata = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン";
+        assert_eq!(hira_to_kata(hira), kata);
+        assert_eq!(kata_to_hira(kata), hira);
+    }
+
+    #[test]
+    fn test_kata_to_hira_preserves_non_kana() {
+        assert_eq!(kata_to_hira("Hello World 123"), "Hello World 123");
+        assert_eq!(kata_to_hira("漢字テスト"), "漢字てすと");
+    }
+
+    #[test]
+    fn test_hira_kata_roundtrip_with_mixed() {
+        let mixed = "あいうカキク漢字abc";
+        // kata_to_hira first, then hira_to_kata won't roundtrip perfectly
+        // because kanji and ascii pass through both
+        let hira = kata_to_hira(mixed);
+        assert_eq!(hira, "あいうかきく漢字abc");
+    }
+
+    // --- Romaji to Kana: comprehensive syllable coverage ---
+
+    #[test]
+    fn test_alphabet_to_kana_all_basic_consonant_rows() {
+        assert_eq!(alphabet_to_kana("kakikukeko"), "かきくけこ");
+        assert_eq!(alphabet_to_kana("sasisuseso"), "さしすせそ");
+        assert_eq!(alphabet_to_kana("tatituteto"), "たちつてと");
+        assert_eq!(alphabet_to_kana("naninuneno"), "なにぬねの");
+        assert_eq!(alphabet_to_kana("hahihuheho"), "はひふへほ");
+        assert_eq!(alphabet_to_kana("mamimumemo"), "まみむめも");
+        assert_eq!(alphabet_to_kana("rarirurero"), "らりるれろ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_voiced_consonants() {
+        assert_eq!(alphabet_to_kana("gagigugego"), "がぎぐげご");
+        assert_eq!(alphabet_to_kana("zazizuzezo"), "ざじずぜぞ");
+        assert_eq!(alphabet_to_kana("dadidudedo"), "だぢづでど");
+        assert_eq!(alphabet_to_kana("babibubebo"), "ばびぶべぼ");
+        assert_eq!(alphabet_to_kana("papipupepo"), "ぱぴぷぺぽ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_compound_syllables_full() {
+        assert_eq!(alphabet_to_kana("kyakyukyoshashusho"), "きゃきゅきょしゃしゅしょ");
+        assert_eq!(alphabet_to_kana("chachuchonyanyunyo"), "ちゃちゅちょにゃにゅにょ");
+        assert_eq!(alphabet_to_kana("hyahyuhyomyamyumyo"), "ひゃひゅひょみゃみゅみょ");
+        assert_eq!(alphabet_to_kana("ryaryuryogyagyugyo"), "りゃりゅりょぎゃぎゅぎょ");
+        assert_eq!(alphabet_to_kana("byabyubyopyapyupyo"), "びゃびゅびょぴゃぴゅぴょ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_foreign_sounds() {
+        assert_eq!(alphabet_to_kana("fa"), "ふぁ");
+        assert_eq!(alphabet_to_kana("fi"), "ふぃ");
+        assert_eq!(alphabet_to_kana("fe"), "ふぇ");
+        assert_eq!(alphabet_to_kana("fo"), "ふぉ");
+        assert_eq!(alphabet_to_kana("je"), "じぇ");
+        assert_eq!(alphabet_to_kana("she"), "しぇ");
+        assert_eq!(alphabet_to_kana("che"), "ちぇ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_tsa_series() {
+        assert_eq!(alphabet_to_kana("tsa"), "つぁ");
+        assert_eq!(alphabet_to_kana("tsi"), "つぃ");
+        assert_eq!(alphabet_to_kana("tse"), "つぇ");
+        assert_eq!(alphabet_to_kana("tso"), "つぉ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_double_consonants_all_types() {
+        assert_eq!(alphabet_to_kana("kka"), "っか");
+        assert_eq!(alphabet_to_kana("ssa"), "っさ");
+        assert_eq!(alphabet_to_kana("tta"), "った");
+        assert_eq!(alphabet_to_kana("ppa"), "っぱ");
+        assert_eq!(alphabet_to_kana("cchi"), "っち");
+        assert_eq!(alphabet_to_kana("sshi"), "っし");
+        assert_eq!(alphabet_to_kana("ttsu"), "っつ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_n_before_various_consonants() {
+        assert_eq!(alphabet_to_kana("nba"), "んば");
+        assert_eq!(alphabet_to_kana("npa"), "んぱ");
+        assert_eq!(alphabet_to_kana("nda"), "んだ");
+        assert_eq!(alphabet_to_kana("nga"), "んが");
+        assert_eq!(alphabet_to_kana("nka"), "んか");
+        assert_eq!(alphabet_to_kana("nsa"), "んさ");
+        assert_eq!(alphabet_to_kana("nta"), "んた");
+        assert_eq!(alphabet_to_kana("nma"), "んま");
+        assert_eq!(alphabet_to_kana("nra"), "んら");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_n_at_end_of_word() {
+        assert_eq!(alphabet_to_kana("n"), "ん");
+        assert_eq!(alphabet_to_kana("kin"), "きん");
+        assert_eq!(alphabet_to_kana("shin"), "しん");
+        assert_eq!(alphabet_to_kana("hon"), "ほん");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_wi_we_wo() {
+        assert_eq!(alphabet_to_kana("wi"), "ゐ");
+        assert_eq!(alphabet_to_kana("we"), "ゑ");
+        assert_eq!(alphabet_to_kana("wo"), "を");
+    }
+
+    // --- Real character names from VNs/anime ---
+
+    #[test]
+    fn test_real_name_shibuya_rinku() {
+        assert_eq!(alphabet_to_kana("shibuya"), "しぶや");
+        assert_eq!(alphabet_to_kana("rinku"), "りんく");
+    }
+
+    #[test]
+    fn test_real_name_fujiwara_chika() {
+        assert_eq!(alphabet_to_kana("fujiwara"), "ふじわら");
+        assert_eq!(alphabet_to_kana("chika"), "ちか");
+    }
+
+    #[test]
+    fn test_real_name_suzumiya_haruhi() {
+        assert_eq!(alphabet_to_kana("suzumiya"), "すずみや");
+        assert_eq!(alphabet_to_kana("haruhi"), "はるひ");
+    }
+
+    #[test]
+    fn test_real_name_toosaka_rin() {
+        assert_eq!(alphabet_to_kana("toosaka"), "とおさか");
+        assert_eq!(alphabet_to_kana("rin"), "りん");
+    }
+
+    #[test]
+    fn test_real_name_emiya_shirou() {
+        assert_eq!(alphabet_to_kana("emiya"), "えみや");
+        assert_eq!(alphabet_to_kana("shirou"), "しろう");
+    }
+
+    #[test]
+    fn test_real_name_matou_sakura() {
+        assert_eq!(alphabet_to_kana("matou"), "まとう");
+        assert_eq!(alphabet_to_kana("sakura"), "さくら");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_ja_ju_jo() {
+        assert_eq!(alphabet_to_kana("ja"), "じゃ");
+        assert_eq!(alphabet_to_kana("ju"), "じゅ");
+        assert_eq!(alphabet_to_kana("jo"), "じょ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_jya_jyu_jyo() {
+        assert_eq!(alphabet_to_kana("jya"), "じゃ");
+        assert_eq!(alphabet_to_kana("jyu"), "じゅ");
+        assert_eq!(alphabet_to_kana("jyo"), "じょ");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_only_consonants_passthrough() {
+        // Lone consonants that can't form syllables pass through as-is
+        let result_x = alphabet_to_kana("x");
+        assert_eq!(result_x, "x");
+        let result_q = alphabet_to_kana("q");
+        assert_eq!(result_q, "q");
+    }
+
+    #[test]
+    fn test_alphabet_to_kana_very_long_name() {
+        // Stress test with a long romanized name
+        let long = "suzumiyaharuhikyonnagatoyukiasahinamikurukoizumiitsuki";
+        let result = alphabet_to_kana(long);
+        assert!(!result.is_empty());
+        // Should contain only hiragana and no latin chars
+        for c in result.chars() {
+            assert!(
+                (0x3040..=0x309F).contains(&(c as u32)) || c == 'ん',
+                "Unexpected char: {} (U+{:04X})",
+                c,
+                c as u32
+            );
+        }
+    }
 }

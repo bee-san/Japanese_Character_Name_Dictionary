@@ -1177,4 +1177,400 @@ mod tests {
             ContentBuilder::strip_spoilers("[spoiler][b]hidden bold[/b][/spoiler] visible");
         assert_eq!(stripped, "visible");
     }
+
+    // ===== Additional comprehensive tests =====
+
+    // --- Spoiler stripping edge cases ---
+
+    #[test]
+    fn test_strip_spoilers_empty_spoiler_tags() {
+        assert_eq!(ContentBuilder::strip_spoilers("[spoiler][/spoiler]"), "");
+        assert_eq!(ContentBuilder::strip_spoilers("~!!~"), "");
+    }
+
+    #[test]
+    fn test_strip_spoilers_adjacent_spoilers() {
+        let result = ContentBuilder::strip_spoilers("[spoiler]a[/spoiler][spoiler]b[/spoiler]");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_strip_spoilers_preserves_surrounding_whitespace() {
+        let result = ContentBuilder::strip_spoilers("before  [spoiler]hidden[/spoiler]  after");
+        assert_eq!(result, "before    after");
+    }
+
+    #[test]
+    fn test_strip_spoilers_case_insensitive_vndb() {
+        // VNDB spoiler tags should be case-insensitive
+        let result = ContentBuilder::strip_spoilers("[SPOILER]hidden[/SPOILER]");
+        assert_eq!(result, "");
+    }
+
+    // --- VNDB markup parsing ---
+
+    #[test]
+    fn test_parse_vndb_markup_nested_url() {
+        let result = ContentBuilder::parse_vndb_markup("[url=https://example.com]Click here[/url]");
+        assert_eq!(result, "Click here");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_multiple_urls() {
+        let result = ContentBuilder::parse_vndb_markup(
+            "[url=https://a.com]A[/url] and [url=https://b.com]B[/url]",
+        );
+        assert_eq!(result, "A and B");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_all_tags_combined() {
+        let input = "[url=x]link[/url] [quote]quoted[/quote] [code]code[/code] [raw]raw[/raw] [u]under[/u] [s]strike[/s]";
+        let result = ContentBuilder::parse_vndb_markup(input);
+        assert_eq!(result, "link quoted code raw under strike");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_empty_tags() {
+        assert_eq!(ContentBuilder::parse_vndb_markup("[quote][/quote]"), "");
+        assert_eq!(ContentBuilder::parse_vndb_markup("[code][/code]"), "");
+    }
+
+    #[test]
+    fn test_parse_vndb_markup_no_tags() {
+        let text = "Just plain text with no markup at all.";
+        assert_eq!(ContentBuilder::parse_vndb_markup(text), text);
+    }
+
+    // --- BBCode parsing ---
+
+    #[test]
+    fn test_parse_bbcode_bold_and_italic_combined() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[b]bold[/b] and [i]italic[/i]");
+        assert!(result.is_array());
+        let arr = result.as_array().unwrap();
+        // Should have: bold node, " and ", italic node
+        assert!(arr.len() >= 3);
+    }
+
+    #[test]
+    fn test_parse_bbcode_deeply_nested() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[b][i]bold italic[/i][/b]");
+        // Should produce nested structure
+        assert!(!result.is_null());
+    }
+
+    #[test]
+    fn test_parse_bbcode_adjacent_same_tags() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[b]first[/b][b]second[/b]");
+        assert!(result.is_array());
+    }
+
+    #[test]
+    fn test_parse_bbcode_with_special_chars() {
+        let result = ContentBuilder::parse_bbcode_to_structured("[b]<>&\"'[/b]");
+        // Should handle special chars without issues
+        assert!(!result.is_null());
+    }
+
+    #[test]
+    fn test_parse_bbcode_plain_text_returns_string() {
+        let result = ContentBuilder::parse_bbcode_to_structured("no tags here");
+        assert!(result.is_string());
+        assert_eq!(result.as_str().unwrap(), "no tags here");
+    }
+
+    // --- Birthday formatting ---
+
+    #[test]
+    fn test_format_birthday_all_months() {
+        let months = [
+            (1, "January"), (2, "February"), (3, "March"), (4, "April"),
+            (5, "May"), (6, "June"), (7, "July"), (8, "August"),
+            (9, "September"), (10, "October"), (11, "November"), (12, "December"),
+        ];
+        for (month, name) in months {
+            let result = ContentBuilder::format_birthday(&[month, 15]);
+            assert_eq!(result, format!("{} 15", name));
+        }
+    }
+
+    #[test]
+    fn test_format_birthday_month_13() {
+        let result = ContentBuilder::format_birthday(&[13, 1]);
+        assert_eq!(result, "Unknown 1");
+    }
+
+    #[test]
+    fn test_format_birthday_empty_array() {
+        assert_eq!(ContentBuilder::format_birthday(&[]), "");
+    }
+
+    #[test]
+    fn test_format_birthday_single_element() {
+        assert_eq!(ContentBuilder::format_birthday(&[5]), "");
+    }
+
+    #[test]
+    fn test_format_birthday_extra_elements_ignored() {
+        // Only first two elements matter
+        let result = ContentBuilder::format_birthday(&[3, 14, 1999]);
+        assert_eq!(result, "March 14");
+    }
+
+    // --- Stats formatting ---
+
+    #[test]
+    fn test_format_stats_all_fields() {
+        let cb = ContentBuilder::new(0);
+        let mut char = make_test_character();
+        char.sex = Some("m".to_string());
+        char.age = Some("25".to_string());
+        char.height = Some(180);
+        char.weight = Some(75);
+        char.blood_type = Some("AB".to_string());
+        char.birthday = Some(vec![7, 4]);
+        let stats = cb.format_stats(&char);
+        assert!(stats.contains("♂ Male"));
+        assert!(stats.contains("25 years"));
+        assert!(stats.contains("180cm"));
+        assert!(stats.contains("75kg"));
+        assert!(stats.contains("Blood Type AB"));
+        assert!(stats.contains("Birthday: July 4"));
+    }
+
+    #[test]
+    fn test_format_stats_no_fields() {
+        let cb = ContentBuilder::new(0);
+        let mut char = make_test_character();
+        char.sex = None;
+        char.age = None;
+        char.height = None;
+        char.weight = None;
+        char.blood_type = None;
+        char.birthday = None;
+        assert_eq!(cb.format_stats(&char), "");
+    }
+
+    #[test]
+    fn test_format_stats_separator() {
+        let cb = ContentBuilder::new(0);
+        let mut char = make_test_character();
+        char.sex = Some("f".to_string());
+        char.age = Some("17".to_string());
+        char.height = None;
+        char.weight = None;
+        char.blood_type = None;
+        char.birthday = None;
+        let stats = cb.format_stats(&char);
+        assert!(stats.contains(" • "), "Stats should be separated by bullet");
+    }
+
+    // --- Structured content validation ---
+
+    #[test]
+    fn test_build_content_has_required_structure() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Test Game");
+        assert_eq!(content["type"], "structured-content");
+        assert!(content["content"].is_array());
+    }
+
+    #[test]
+    fn test_build_content_includes_japanese_name() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Test Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains(&char.name_original));
+    }
+
+    #[test]
+    fn test_build_content_includes_romanized_name() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Test Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains(&char.name));
+    }
+
+    #[test]
+    fn test_build_content_includes_game_title() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Steins;Gate");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("Steins;Gate"));
+    }
+
+    #[test]
+    fn test_build_content_includes_role_badge() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Test");
+        let content_str = serde_json::to_string(&content).unwrap();
+        // Should contain a role label
+        assert!(
+            content_str.contains("Protagonist")
+                || content_str.contains("Main Character")
+                || content_str.contains("Side Character")
+                || content_str.contains("Minor Role"),
+            "Should contain a role label"
+        );
+    }
+
+    #[test]
+    fn test_build_content_level0_no_description() {
+        let cb = ContentBuilder::new(0);
+        let mut char = make_test_character();
+        char.description = Some("A detailed description".to_string());
+        let content = cb.build_content(&char, None, None, "Test");
+        let content_str = serde_json::to_string(&content).unwrap();
+        // Level 0 should NOT include description
+        assert!(!content_str.contains("A detailed description"));
+    }
+
+    #[test]
+    fn test_build_content_level1_includes_description() {
+        let cb = ContentBuilder::new(1);
+        let mut char = make_test_character();
+        char.description = Some("A detailed description".to_string());
+        let content = cb.build_content(&char, None, None, "Test");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("A detailed description"));
+    }
+
+    #[test]
+    fn test_build_content_with_image_includes_img_tag() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 150)), "Test");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("img/c1.jpg"));
+        assert!(content_str.contains("\"tag\":\"img\""));
+    }
+
+    #[test]
+    fn test_build_content_image_dimensions_calculated() {
+        let cb = ContentBuilder::new(0);
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Test");
+        let content_str = serde_json::to_string(&content).unwrap();
+        // Should contain width and height attributes
+        assert!(content_str.contains("\"width\""));
+        assert!(content_str.contains("\"height\""));
+    }
+
+    // --- Term entry format ---
+
+    #[test]
+    fn test_create_term_entry_is_8_element_array() {
+        let content = json!({"type": "structured-content", "content": []});
+        let entry = ContentBuilder::create_term_entry("田中", "たなか", "main", 100, &content);
+        assert!(entry.is_array());
+        assert_eq!(entry.as_array().unwrap().len(), 8);
+    }
+
+    #[test]
+    fn test_create_term_entry_fields() {
+        let content = json!({"type": "structured-content", "content": []});
+        let entry = ContentBuilder::create_term_entry("田中", "たなか", "main", 100, &content);
+        let arr = entry.as_array().unwrap();
+        assert_eq!(arr[0], "田中");       // term
+        assert_eq!(arr[1], "たなか");     // reading
+        assert_eq!(arr[2], "name main");  // definition tags
+        assert_eq!(arr[3], "");           // rules
+        assert_eq!(arr[4], 100);          // score
+        assert!(arr[5].is_array());       // definitions array
+        assert_eq!(arr[6], 0);            // sequence
+        assert_eq!(arr[7], "");           // term tags
+    }
+
+    #[test]
+    fn test_create_term_entry_empty_role_uses_name_only() {
+        let content = json!({"type": "structured-content", "content": []});
+        let entry = ContentBuilder::create_term_entry("田中", "たなか", "", 0, &content);
+        let arr = entry.as_array().unwrap();
+        assert_eq!(arr[2], "name"); // just "name" without role
+    }
+
+    // --- Honorific content ---
+
+    #[test]
+    fn test_build_honorific_content_structure() {
+        let base = json!({
+            "type": "structured-content",
+            "content": [
+                {"tag": "div", "content": "test"}
+            ]
+        });
+        let result = ContentBuilder::build_honorific_content(&base, "さん", "Generic polite suffix");
+        assert_eq!(result["type"], "structured-content");
+        let content = result["content"].as_array().unwrap();
+        // First element should be the honorific banner
+        assert!(content.len() >= 2);
+        let banner = &content[0];
+        assert_eq!(banner["tag"], "div");
+        let banner_str = serde_json::to_string(banner).unwrap();
+        assert!(banner_str.contains("さん"));
+        assert!(banner_str.contains("Generic polite suffix"));
+    }
+
+    #[test]
+    fn test_build_honorific_content_non_array_base() {
+        // If base content is not an array, should return base unchanged
+        let base = json!({"type": "structured-content", "content": "just a string"});
+        let result = ContentBuilder::build_honorific_content(&base, "さん", "test");
+        assert_eq!(result, base);
+    }
+
+    // --- Trait filtering ---
+
+    #[test]
+    fn test_traits_level0_filters_all_spoilers() {
+        let cb = ContentBuilder::new(0);
+        let mut char = make_test_character();
+        char.personality = vec![
+            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
+            CharacterTrait { name: "Secret".to_string(), spoiler: 1 },
+            CharacterTrait { name: "Big Secret".to_string(), spoiler: 2 },
+        ];
+        let traits = cb.build_traits_by_category(&char);
+        let traits_str = serde_json::to_string(&traits).unwrap();
+        assert!(traits_str.contains("Kind"));
+        assert!(!traits_str.contains("Secret"));
+    }
+
+    #[test]
+    fn test_traits_level1_shows_minor_spoilers() {
+        let cb = ContentBuilder::new(1);
+        let mut char = make_test_character();
+        char.personality = vec![
+            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
+            CharacterTrait { name: "Minor".to_string(), spoiler: 1 },
+            CharacterTrait { name: "Major".to_string(), spoiler: 2 },
+        ];
+        let traits = cb.build_traits_by_category(&char);
+        let traits_str = serde_json::to_string(&traits).unwrap();
+        assert!(traits_str.contains("Kind"));
+        assert!(traits_str.contains("Minor"));
+        assert!(!traits_str.contains("Major"));
+    }
+
+    #[test]
+    fn test_traits_level2_shows_all() {
+        let cb = ContentBuilder::new(2);
+        let mut char = make_test_character();
+        char.personality = vec![
+            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
+            CharacterTrait { name: "Minor".to_string(), spoiler: 1 },
+            CharacterTrait { name: "Major".to_string(), spoiler: 2 },
+        ];
+        let traits = cb.build_traits_by_category(&char);
+        let traits_str = serde_json::to_string(&traits).unwrap();
+        assert!(traits_str.contains("Kind"));
+        assert!(traits_str.contains("Minor"));
+        assert!(traits_str.contains("Major"));
+    }
 }

@@ -641,4 +641,111 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
     }
+
+    // ===== Additional comprehensive tests =====
+
+    #[test]
+    fn test_multiple_entries_independent() {
+        let (cache, _dir) = open_temp_cache();
+        let data1 = make_test_char_data();
+        let mut data2 = CharacterData::new();
+        data2.main.push(Character {
+            id: "c10".to_string(), name: "Other".to_string(), name_original: "その他".to_string(),
+            role: "main".to_string(), sex: None, age: None, height: None, weight: None,
+            blood_type: None, birthday: None, description: None, aliases: vec![],
+            personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
+            image_url: None, image_bytes: None, image_ext: None, image_width: None,
+            image_height: None, first_name_hint: None, last_name_hint: None,
+        });
+
+        cache.put("vndb:v17", "Title 1", &data1);
+        cache.put("anilist:9253:ANIME", "Title 2", &data2);
+
+        let e1 = cache.get("vndb:v17").unwrap();
+        let e2 = cache.get("anilist:9253:ANIME").unwrap();
+
+        assert_eq!(e1.title, "Title 1");
+        assert_eq!(e1.char_data.all_characters().count(), 2);
+        assert_eq!(e2.title, "Title 2");
+        assert_eq!(e2.char_data.all_characters().count(), 1);
+    }
+
+    #[test]
+    fn test_cache_reopen_preserves_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = make_test_char_data();
+
+        {
+            let cache = MediaCache::open(dir.path()).unwrap();
+            cache.put("vndb:v17", "Persistent", &data);
+        }
+
+        {
+            let cache = MediaCache::open(dir.path()).unwrap();
+            let entry = cache.get("vndb:v17").unwrap();
+            assert_eq!(entry.title, "Persistent");
+            assert_eq!(entry.char_data.main[0].id, "c1");
+        }
+    }
+
+    #[test]
+    fn test_total_bytes_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = make_test_char_data();
+        let expected_size = serde_json::to_vec(&data).unwrap().len() as u64;
+
+        {
+            let cache = MediaCache::open(dir.path()).unwrap();
+            cache.put("vndb:v17", "T", &data);
+            assert_eq!(cache.total_bytes(), expected_size);
+        }
+
+        {
+            let cache = MediaCache::open(dir.path()).unwrap();
+            assert_eq!(cache.total_bytes(), expected_size);
+        }
+    }
+
+    #[test]
+    fn test_empty_character_data_cached() {
+        let (cache, _dir) = open_temp_cache();
+        let empty = CharacterData::new();
+
+        cache.put("vndb:v999", "Empty Game", &empty);
+        let entry = cache.get("vndb:v999").unwrap();
+        assert_eq!(entry.title, "Empty Game");
+        assert_eq!(entry.char_data.all_characters().count(), 0);
+    }
+
+    #[test]
+    fn test_unicode_title_preserved() {
+        let (cache, _dir) = open_temp_cache();
+        let data = make_test_char_data();
+
+        cache.put("vndb:v17", "シュタインズ・ゲート", &data);
+        let entry = cache.get("vndb:v17").unwrap();
+        assert_eq!(entry.title, "シュタインズ・ゲート");
+    }
+
+    #[test]
+    fn test_cache_key_with_special_chars() {
+        let (cache, _dir) = open_temp_cache();
+        let data = make_test_char_data();
+
+        cache.put("anilist:9253:ANIME", "Test", &data);
+        assert!(cache.get("anilist:9253:ANIME").is_some());
+        assert!(cache.get("anilist:9253:MANGA").is_none());
+    }
+
+    #[test]
+    fn test_fresh_entry_not_expired() {
+        let (cache, _dir) = open_temp_cache();
+        let data = make_test_char_data();
+
+        cache.put("vndb:v17", "Fresh", &data);
+        // Should be retrievable immediately (not expired)
+        assert!(cache.get("vndb:v17").is_some());
+        assert!(cache.get("vndb:v17").is_some());
+        assert!(cache.get("vndb:v17").is_some());
+    }
 }
