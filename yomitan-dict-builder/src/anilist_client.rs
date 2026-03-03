@@ -88,7 +88,7 @@ impl AnilistClient {
 
     const USER_LIST_QUERY: &'static str = r#"
     query ($username: String, $type: MediaType) {
-        MediaListCollection(userName: $username, type: $type, status: CURRENT) {
+        MediaListCollection(userName: $username, type: $type, status_in: [CURRENT, REPEATING]) {
             lists {
                 name
                 status
@@ -108,7 +108,7 @@ impl AnilistClient {
     "#;
 
     /// Fetch a user's currently watching/reading media from AniList.
-    /// Queries both ANIME and MANGA with status CURRENT.
+    /// Queries separately for both ANIME and MANGA types of media.
     pub async fn fetch_user_current_list(
         &self,
         username: &str,
@@ -945,7 +945,7 @@ mod tests {
         let query = AnilistClient::USER_LIST_QUERY;
         assert!(query.contains("MediaListCollection"));
         assert!(query.contains("userName"));
-        assert!(query.contains("status: CURRENT"));
+        assert!(query.contains("status_in: [CURRENT, REPEATING]"));
         assert!(query.contains("$type: MediaType"));
         assert!(query.contains("title"));
         assert!(query.contains("romaji"));
