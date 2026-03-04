@@ -18,7 +18,7 @@ use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
 use tower_http::services::ServeDir;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 mod anilist_client;
 mod content_builder;
@@ -119,9 +119,9 @@ impl AppState {
             }
         });
         let image_cache = ImageCache::open(std::path::Path::new(&cache_dir))
-            .expect("Failed to initialize image cache");
+            .unwrap_or_else(|e| { error!("Image cache initialization failed: {}", e); std::process::exit(1) });
         let media_cache = MediaCache::open(std::path::Path::new(&cache_dir))
-            .expect("Failed to initialize media cache");
+            .unwrap_or_else(|e| { error!("Media cache initialization failed: {}", e); std::process::exit(1) });
 
         Self {
             downloads,

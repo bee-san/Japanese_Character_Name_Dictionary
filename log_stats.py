@@ -6,6 +6,7 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 DEFAULT_LOG = Path(__file__).resolve().parent / "access.log"
 
@@ -80,6 +81,18 @@ def main():
     sizes = []
     referers = Counter()
 
+    anilist_reqs = 0
+    vndb_reqs = 0
+    anilist_ips: set[str] = set()
+    vndb_ips: set[str] = set()
+    either_ips: set[str] = set()
+
+    # Manual dict download: source+id without a username
+    manual_reqs = 0
+    manual_ips: set[str] = set()
+    manual_sources = Counter()  # vndb vs anilist manual
+    manual_ids = Counter()      # which media IDs are requested
+
     for e in entries:
         req = e.get("request", {})
         headers = req.get("headers", {})
@@ -90,6 +103,40 @@ def main():
         ips[req.get("remote_ip", "?")] += 1
         hosts[req.get("host", "?")] += 1
         protos[req.get("proto", "?")] += 1
+
+        # ── Query param source tracking ──────────────────────────
+        uri = req.get("uri", "")
+        remote_ip = req.get("remote_ip", "")
+        parsed = urlparse(uri)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+
+        has_anilist_user = "anilist_user" in qs
+        has_vndb_user = "vndb_user" in qs
+        has_source = "source" in qs
+        has_id = "id" in qs
+
+        # Manual dict download: source+id without any username
+        is_manual = has_source and has_id and not has_anilist_user and not has_vndb_user
+        # User-based: has a username param
+        is_user_anilist = has_anilist_user
+        is_user_vndb = has_vndb_user
+
+        if is_manual:
+            manual_reqs += 1
+            manual_ips.add(remote_ip)
+            src = qs.get("source", ["?"])[0]
+            mid = qs.get("id", ["?"])[0]
+            manual_sources[src] += 1
+            manual_ids[f"{src}:{mid}"] += 1
+        if is_user_anilist:
+            anilist_reqs += 1
+            anilist_ips.add(remote_ip)
+        if is_user_vndb:
+            vndb_reqs += 1
+            vndb_ips.add(remote_ip)
+        if is_user_anilist or is_user_vndb:
+            either_ips.add(remote_ip)
 
         tls = req.get("tls", {})
         if tls:
@@ -180,9 +227,44 @@ def main():
     print_section("REFERERS")
     print_counter(referers)
 
-    print_section("REQUESTS BY HOUR")
-    for hour in sorted(hours):
-        print(f"  {hour}  {hours[hour]:>6}")
+    # ── Source usage ─────────────────────────────────────────────
+    print_section("SOURCE USAGE (query params)")
+    total_ips = len(ips)
+    unique_ips = len([ip for ip, cnt in ips.items() if cnt == 1])
+    repeat_ips = total_ips - unique_ips
+
+    print("  --- User-based (username) ---")
+    print(f"  Requests with anilist_user param : {anilist_reqs}")
+    print(f"  Requests with vndb_user param    : {vndb_reqs}")
+    print(f"  Requests with either username    : {anilist_reqs + vndb_reqs}")
+    print(f"  Unique IPs using AniList         : {len(anilist_ips)}")
+    print(f"  Unique IPs using VNDB            : {len(vndb_ips)}")
+    print(f"  Unique IPs using either          : {len(either_ips)}")
+    print()
+    print("  --- Manual dict download (source+id, no username) ---")
+    print(f"  Total manual download requests   : {manual_reqs}")
+    print(f"  Unique IPs using manual download : {len(manual_ips)}")
+    if manual_sources:
+        print(f"  By source:")
+        for src, cnt in manual_sources.most_common():
+            print(f"    {src:<10} : {cnt}")
+    if manual_ids:
+        print(f"  Top requested media IDs:")
+        for mid, cnt in manual_ids.most_common(20):
+            print(f"    {mid:<20} : {cnt}")
+    print()
+    # IPs that ONLY used manual download (never used a username)
+    manual_only_ips = manual_ips - either_ips
+    user_only_ips = either_ips - manual_ips
+    both_ips = manual_ips & either_ips
+    print("  --- User vs Manual overlap ---")
+    print(f"  IPs using only username-based    : {len(user_only_ips)}")
+    print(f"  IPs using only manual download   : {len(manual_only_ips)}")
+    print(f"  IPs using both                   : {len(both_ips)}")
+    print()
+    print(f"  Total unique IPs (all requests)  : {total_ips}")
+    print(f"    One-time visitors              : {unique_ips}")
+    print(f"    Repeat visitors (2+ requests)  : {repeat_ips}")
 
     if durations:
         durations.sort()

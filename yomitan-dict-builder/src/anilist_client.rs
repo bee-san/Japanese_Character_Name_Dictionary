@@ -310,7 +310,7 @@ impl AnilistClient {
 
             let edges = media["characters"]["edges"]
                 .as_array()
-                .ok_or("Invalid response format")?;
+                .ok_or(format!("Invalid character response format for AniList media ID {}", media_id))?;
 
             for edge in edges {
                 if let Some(character) = self.process_character(edge) {

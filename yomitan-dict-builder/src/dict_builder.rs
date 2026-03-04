@@ -39,8 +39,11 @@ impl DictBuilder {
         game_title: String,
         honorifics: bool,
     ) -> Self {
-        // Random 12-digit revision string
-        let revision: u64 = rand::random::<u64>() % 1_000_000_000_000;
+        // Unix timestamp as revision string (triggers Yomitan update detection)
+        let revision: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         Self {
             entries: Vec::new(),
             images: Vec::new(),
@@ -1029,13 +1032,20 @@ mod tests {
     }
 
     #[test]
-    fn test_yomitan_revision_is_unique_per_build() {
-        let b1 = DictBuilder::new(0, None, "T".to_string(), true);
-        let b2 = DictBuilder::new(0, None, "T".to_string(), true);
-        // Revisions should differ (random). Extremely unlikely to collide.
-        assert_ne!(
-            b1.revision, b2.revision,
-            "Each build must have a unique revision"
+    fn test_yomitan_revision_is_unix_timestamp() {
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let b = DictBuilder::new(0, None, "T".to_string(), true);
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let rev: u64 = b.revision.parse().expect("revision must be numeric");
+        assert!(
+            rev >= before && rev <= after,
+            "Revision {rev} should be a Unix timestamp between {before} and {after}"
         );
     }
 
@@ -2213,8 +2223,7 @@ mod tests {
             serde_json::from_str(&read_zip_entry(&mut a1, "index.json")).unwrap();
         let i2: serde_json::Value =
             serde_json::from_str(&read_zip_entry(&mut a2, "index.json")).unwrap();
-        // Extremely unlikely to be the same (1 in 10^12)
-        // But we can't guarantee it, so just check they're valid
+        // Both are Unix timestamps — may be equal if built in the same second; just check they're valid strings
         assert!(i1["revision"].is_string());
         assert!(i2["revision"].is_string());
     }
