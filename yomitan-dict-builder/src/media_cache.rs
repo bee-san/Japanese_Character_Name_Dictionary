@@ -356,7 +356,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None,
+            last_name_hint: None, seiyuu: None,
         });
         data.side.push(Character {
             id: "c2".to_string(),
@@ -381,7 +381,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None,
+            last_name_hint: None, seiyuu: None,
         });
         data
     }
@@ -445,7 +445,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None,
+            last_name_hint: None, seiyuu: None,
         });
 
         cache.put("vndb:v1", "Title 1", &data1);
@@ -545,7 +545,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None,
+            last_name_hint: None, seiyuu: None,
         });
 
         cache.put("vndb:v1", "T", &small);
@@ -655,7 +655,7 @@ mod tests {
             blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
         });
 
         cache.put("vndb:v17", "Title 1", &data1);

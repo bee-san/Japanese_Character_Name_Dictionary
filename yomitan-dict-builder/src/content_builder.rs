@@ -76,6 +76,7 @@ pub struct DictSettings {
     pub show_traits: bool,
     pub show_spoilers: bool,
     pub honorifics: bool,
+    pub show_seiyuu: bool,
 }
 
 impl Default for DictSettings {
@@ -87,6 +88,7 @@ impl Default for DictSettings {
             show_traits: true,
             show_spoilers: true,
             honorifics: true,
+            show_seiyuu: true,
         }
     }
 }
@@ -468,6 +470,25 @@ impl ContentBuilder {
             }
         }
 
+        // ===== Seiyuu section (gated by show_seiyuu) =====
+        if self.settings.show_seiyuu {
+            if let Some(ref va) = char.seiyuu {
+                if !va.is_empty() {
+                    content.push(json!({
+                        "tag": "details",
+                        "content": [
+                            { "tag": "summary", "content": "Seiyuu" },
+                            {
+                                "tag": "div",
+                                "style": { "fontSize": "0.9em", "marginTop": "4px" },
+                                "content": va.as_str()
+                            }
+                        ]
+                    }));
+                }
+            }
+        }
+
         json!({
             "type": "structured-content",
             "content": content
@@ -560,6 +581,7 @@ mod tests {
             show_traits: false,
             show_spoilers: false,
             honorifics: true,
+            show_seiyuu: true,
         }
     }
 
@@ -572,6 +594,7 @@ mod tests {
             show_traits: true,
             show_spoilers: false,
             honorifics: true,
+            show_seiyuu: true,
         }
     }
 
@@ -617,6 +640,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
+            seiyuu: None,
         }
     }
 
@@ -1701,6 +1725,7 @@ mod tests {
             show_traits: true,
             show_spoilers: false,
             honorifics: false,
+            show_seiyuu: true,
         };
         let cloned = s.clone();
         assert_eq!(cloned.show_image, false);
@@ -1994,6 +2019,7 @@ mod tests {
             show_traits: false,
             show_spoilers: false,
             honorifics: false,
+            show_seiyuu: false,
         });
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game Title");
@@ -2058,6 +2084,7 @@ mod tests {
             show_traits: false,
             show_spoilers: false,
             honorifics: false,
+            show_seiyuu: false,
         });
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Game");

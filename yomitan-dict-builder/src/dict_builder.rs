@@ -586,6 +586,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
+            seiyuu: None,
         }
     }
 
@@ -984,6 +985,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
+            seiyuu: None,
         }
     }
 
@@ -1364,6 +1366,7 @@ mod tests {
                 image_height: None,
                 first_name_hint: None,
                 last_name_hint: None,
+                seiyuu: None,
             };
             builder.add_character(&ch, "Test");
         }
@@ -2716,6 +2719,7 @@ mod tests {
             show_traits: false,
             show_spoilers: false,
             honorifics: false,
+            show_seiyuu: false,
         };
         let mut builder = DictBuilder::new(settings, None, "Test".to_string());
         let mut ch = make_full_character();
@@ -2800,6 +2804,7 @@ mod tests {
             show_description: true,
             show_traits: true,
             show_spoilers: true,
+            show_seiyuu: true,
         };
         let settings_without = DictSettings {
             honorifics: true,
@@ -2808,6 +2813,7 @@ mod tests {
             show_description: false,
             show_traits: false,
             show_spoilers: false,
+            show_seiyuu: false,
         };
 
         let mut b1 = DictBuilder::new(settings_with, None, "T".to_string());
@@ -2861,6 +2867,7 @@ mod tests {
             show_traits: false,
             show_spoilers: false,
             honorifics: false,
+            show_seiyuu: false,
         };
         let mut builder = DictBuilder::new(settings, None, "Test".to_string());
         let ch = make_full_character();

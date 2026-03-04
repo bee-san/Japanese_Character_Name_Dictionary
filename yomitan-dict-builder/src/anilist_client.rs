@@ -224,6 +224,12 @@ impl AnilistClient {
                 }
                 edges {
                     role
+                    voiceActors(language: JAPANESE) {
+                        name {
+                            full
+                            native
+                        }
+                    }
                     node {
                         id
                         name {
@@ -403,6 +409,18 @@ impl AnilistClient {
                 .or_else(|| v.as_u64().map(|n| n.to_string()))
         });
 
+        // Voice actor: prefer native (Japanese) name, fall back to full (romanized)
+        let seiyuu = edge["voiceActors"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|va| {
+                va["name"]["native"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| va["name"]["full"].as_str())
+            })
+            .map(|s| s.to_string());
+
         Some(Character {
             id: node
                 .get("id")
@@ -437,6 +455,7 @@ impl AnilistClient {
             image_height: None,
             first_name_hint: name_first,
             last_name_hint: name_last,
+            seiyuu,
         })
     }
 }

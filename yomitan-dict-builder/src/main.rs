@@ -159,6 +159,8 @@ struct DictQuery {
     traits: bool,
     #[serde(default = "default_true")]
     spoilers: bool,
+    #[serde(default = "default_true")]
+    seiyuu: bool,
 }
 
 impl DictQuery {
@@ -170,6 +172,7 @@ impl DictQuery {
             show_traits: self.traits,
             show_spoilers: self.spoilers,
             honorifics: self.honorifics,
+            show_seiyuu: self.seiyuu,
         }
     }
 
@@ -192,6 +195,9 @@ impl DictQuery {
         }
         if !self.spoilers {
             parts.push("spoilers=false".to_string());
+        }
+        if !self.seiyuu {
+            parts.push("seiyuu=false".to_string());
         }
     }
 }
@@ -227,6 +233,8 @@ struct GenerateStreamQuery {
     traits: bool,
     #[serde(default = "default_true")]
     spoilers: bool,
+    #[serde(default = "default_true")]
+    seiyuu: bool,
 }
 
 impl GenerateStreamQuery {
@@ -238,6 +246,7 @@ impl GenerateStreamQuery {
             show_traits: self.traits,
             show_spoilers: self.spoilers,
             honorifics: self.honorifics,
+            show_seiyuu: self.seiyuu,
         }
     }
 }
@@ -732,6 +741,9 @@ async fn generate_dict_from_usernames(
     if !settings.show_spoilers {
         url_parts.push("spoilers=false".to_string());
     }
+    if !settings.show_seiyuu {
+        url_parts.push("seiyuu=false".to_string());
+    }
     let download_url = format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"));
 
     let description = format!("Character Dictionary ({} titles)", total);
@@ -897,6 +909,9 @@ async fn generate_dict_from_entries(
     }
     if !settings.show_spoilers {
         url_parts.push("spoilers=false".to_string());
+    }
+    if !settings.show_seiyuu {
+        url_parts.push("seiyuu=false".to_string());
     }
     let download_url = format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"));
 
@@ -1243,17 +1258,28 @@ async fn fetch_vndb_cached(
     // Cache miss — fetch from API.
     let client = VndbClient::with_client(state.http_client.clone());
 
-    let (romaji_title, original_title) = client
-        .fetch_vn_title(vn_id)
+    let vn_info = client
+        .fetch_vn_info(vn_id)
         .await
-        .unwrap_or_else(|_| ("Unknown VN".to_string(), String::new()));
-    let title = if !original_title.is_empty() {
-        original_title
+        .unwrap_or_else(|_| vndb_client::VnInfo {
+            title: "Unknown VN".to_string(),
+            alttitle: String::new(),
+            va_map: std::collections::HashMap::new(),
+        });
+    let title = if !vn_info.alttitle.is_empty() {
+        vn_info.alttitle
     } else {
-        romaji_title
+        vn_info.title
     };
 
     let mut char_data = client.fetch_characters(vn_id).await?;
+
+    // Apply voice actor data from VN endpoint to characters
+    for c in char_data.all_characters_mut() {
+        if let Some(va_name) = vn_info.va_map.get(&c.id) {
+            c.seiyuu = Some(va_name.clone());
+        }
+    }
 
     // Clear image bytes before caching (images handled by ImageCache).
     for c in char_data.all_characters_mut() {
@@ -1719,6 +1745,7 @@ mod tests {
             description: true,
             traits: true,
             spoilers: true,
+            seiyuu: true,
         }
     }
 
@@ -1921,6 +1948,7 @@ mod tests {
             description: true,
             traits: true,
             spoilers: true,
+            seiyuu: true,
         }
     }
 

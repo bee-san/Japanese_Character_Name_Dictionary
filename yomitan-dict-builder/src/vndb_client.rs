@@ -1,4 +1,5 @@
 use reqwest::Client;
+use std::collections::HashMap;
 
 use crate::models::*;
 
@@ -47,6 +48,13 @@ enum ParsedUserInput {
 
 pub struct VndbClient {
     client: Client,
+}
+
+/// Information returned from the VNDB VN endpoint, including title and voice actor mapping.
+pub struct VnInfo {
+    pub title: String,                    // romanized
+    pub alttitle: String,                 // Japanese
+    pub va_map: HashMap<String, String>,  // character_id → VA display name
 }
 
 impl VndbClient {
@@ -241,12 +249,12 @@ impl VndbClient {
         }
     }
 
-    /// Fetch the VN's title. Returns (romaji_title, original_japanese_title).
-    pub async fn fetch_vn_title(&self, vn_id: &str) -> Result<(String, String), String> {
+    /// Fetch VN info including title and voice actor mapping.
+    pub async fn fetch_vn_info(&self, vn_id: &str) -> Result<VnInfo, String> {
         let vn_id = Self::normalize_id(vn_id);
         let payload = serde_json::json!({
             "filters": ["id", "=", &vn_id],
-            "fields": "title, alttitle"
+            "fields": "title, alttitle, va.staff.name, va.staff.original, va.character.id"
         });
 
         let response = send_with_retry(
@@ -273,9 +281,32 @@ impl VndbClient {
         }
 
         let vn = &results[0];
-        let title = vn["title"].as_str().unwrap_or("").to_string(); // Romanized
-        let alttitle = vn["alttitle"].as_str().unwrap_or("").to_string(); // Japanese original
-        Ok((title, alttitle))
+        let title = vn["title"].as_str().unwrap_or("").to_string();
+        let alttitle = vn["alttitle"].as_str().unwrap_or("").to_string();
+
+        // Build VA map: character_id → voice actor display name
+        let mut va_map = HashMap::new();
+        if let Some(va_arr) = vn["va"].as_array() {
+            for entry in va_arr {
+                let char_id = entry["character"]["id"].as_str().unwrap_or("");
+                let va_name = entry["staff"]["original"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| entry["staff"]["name"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !char_id.is_empty() && !va_name.is_empty() {
+                    // First VA wins (don't overwrite if character has multiple VAs)
+                    va_map.entry(char_id.to_string()).or_insert(va_name);
+                }
+            }
+        }
+
+        Ok(VnInfo {
+            title,
+            alttitle,
+            va_map,
+        })
     }
 
     /// Fetch all characters for a VN, with automatic pagination.
@@ -430,6 +461,7 @@ impl VndbClient {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
+            seiyuu: None,
         })
     }
 }

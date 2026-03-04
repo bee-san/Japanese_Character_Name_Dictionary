@@ -6,6 +6,7 @@ const settings = {
     description: true,
     traits: true,
     spoilers: true,
+    seiyuu: true,
 };
 
 function toggleSetting(key) {
@@ -26,6 +27,7 @@ function updatePreviewCard() {
         tag: document.getElementById('preview-tag'),
         description: document.getElementById('preview-description'),
         traits: document.getElementById('preview-traits'),
+        seiyuu: document.getElementById('preview-seiyuu'),
     };
 
     for (const [key, el] of Object.entries(sections)) {
@@ -79,6 +81,7 @@ function settingsParams() {
     if (!settings.description) parts.push('description=false');
     if (!settings.traits) parts.push('traits=false');
     if (!settings.spoilers) parts.push('spoilers=false');
+    if (!settings.seiyuu) parts.push('seiyuu=false');
     return parts.join('&');
 }
 
