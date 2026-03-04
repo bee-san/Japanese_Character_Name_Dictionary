@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rand::Rng;
 use reqwest::Client;
 
@@ -107,6 +109,63 @@ impl AnilistClient {
     }
     "#;
 
+    /// Process a user list response's list contents into media entries.
+    fn parse_user_lists(
+        data: &serde_json::Value,
+        media_type_label: &str,
+        seen: &mut HashSet<(String, String)>,
+    ) -> Vec<UserMediaEntry> {
+        let mut entries = Vec::new();
+        let lists = data["data"]["MediaListCollection"]["lists"].as_array();
+
+        if let Some(lists) = lists {
+            for list in lists {
+                let list_entries = list["entries"].as_array();
+                if let Some(list_entries) = list_entries {
+                    for entry in list_entries {
+                        let media = &entry["media"];
+                        let id = media["id"].as_u64().unwrap_or(0);
+                        if id == 0 {
+                            continue;
+                        }
+
+                        let media_type_str = media_type_label.to_string();
+                        let id_str = id.to_string();
+
+                        if !seen.insert((media_type_str.clone(), id_str.clone())) {
+                            continue;
+                        }
+
+                        let title_data = &media["title"];
+                        let title_native = title_data["native"].as_str().unwrap_or("").to_string();
+                        let title_romaji = title_data["romaji"].as_str().unwrap_or("").to_string();
+                        let title_english =
+                            title_data["english"].as_str().unwrap_or("").to_string();
+
+                        // Prefer native (Japanese), fall back to romaji, then english
+                        let title = if !title_native.is_empty() {
+                            title_native
+                        } else if !title_romaji.is_empty() {
+                            title_romaji.clone()
+                        } else {
+                            title_english
+                        };
+
+                        entries.push(UserMediaEntry {
+                            id: id_str,
+                            title,
+                            title_romaji,
+                            source: "anilist".to_string(),
+                            media_type: media_type_str,
+                        });
+                    }
+                }
+            }
+        }
+
+        return entries;
+    }
+
     /// Fetch a user's currently watching/reading media from AniList.
     /// Queries separately for both ANIME and MANGA types of media.
     pub async fn fetch_user_current_list(
@@ -115,6 +174,8 @@ impl AnilistClient {
     ) -> Result<Vec<UserMediaEntry>, String> {
         let username = Self::parse_user_input(username);
         let mut entries = Vec::new();
+        // Duplicates can exist across custom user lists, so we filter by unique media type + ID pairs
+        let mut seen: HashSet<(String, String)> = HashSet::new();
 
         for (media_type_gql, media_type_label) in &[("ANIME", "anime"), ("MANGA", "manga")] {
             let variables = serde_json::json!({
@@ -159,47 +220,8 @@ impl AnilistClient {
                 return Err(format!("GraphQL error: {:?}", errors));
             }
 
-            let lists = data["data"]["MediaListCollection"]["lists"].as_array();
-
-            if let Some(lists) = lists {
-                for list in lists {
-                    let list_entries = list["entries"].as_array();
-                    if let Some(list_entries) = list_entries {
-                        for entry in list_entries {
-                            let media = &entry["media"];
-                            let id = media["id"].as_u64().unwrap_or(0);
-                            if id == 0 {
-                                continue;
-                            }
-
-                            let title_data = &media["title"];
-                            let title_native =
-                                title_data["native"].as_str().unwrap_or("").to_string();
-                            let title_romaji =
-                                title_data["romaji"].as_str().unwrap_or("").to_string();
-                            let title_english =
-                                title_data["english"].as_str().unwrap_or("").to_string();
-
-                            // Prefer native (Japanese), fall back to romaji, then english
-                            let title = if !title_native.is_empty() {
-                                title_native
-                            } else if !title_romaji.is_empty() {
-                                title_romaji.clone()
-                            } else {
-                                title_english
-                            };
-
-                            entries.push(UserMediaEntry {
-                                id: id.to_string(),
-                                title,
-                                title_romaji,
-                                source: "anilist".to_string(),
-                                media_type: media_type_label.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
+            let media_type_entries = Self::parse_user_lists(&data, media_type_label, &mut seen);
+            entries.extend(media_type_entries);
 
             // Rate limit delay between ANIME and MANGA queries
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -1051,12 +1073,11 @@ mod tests {
                         "name": "Watching",
                         "status": "CURRENT",
                         "entries": [
-
                             {
                                 "media": {
                                     "id": 9253,
                                     "title": {
-                                        "romaji": "Steins;Gate",
+                                        "romaji": "Steins;Gate Romaji",
                                         "english": "Steins;Gate",
                                         "native": "シュタインズ・ゲート"
                                     }
@@ -1066,7 +1087,7 @@ mod tests {
                                 "media": {
                                     "id": 1535,
                                     "title": {
-                                        "romaji": "Death Note",
+                                        "romaji": "Death Note Romaji",
                                         "english": "Death Note",
                                         "native": null
                                     }
@@ -1079,48 +1100,24 @@ mod tests {
         });
 
         // Parse entries the same way the client does
-        let mut entries = Vec::new();
-        let lists = response_json["data"]["MediaListCollection"]["lists"]
-            .as_array()
-            .unwrap();
-        for list in lists {
-            let list_entries = list["entries"].as_array().unwrap();
-            for entry in list_entries {
-                let media = &entry["media"];
-                let id = media["id"].as_u64().unwrap_or(0);
-                if id == 0 {
-                    continue;
-                }
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let media_type_label = "anime";
 
-                let title_data = &media["title"];
-                let title_native = title_data["native"].as_str().unwrap_or("").to_string();
-                let title_romaji = title_data["romaji"].as_str().unwrap_or("").to_string();
-                let title_english = title_data["english"].as_str().unwrap_or("").to_string();
-                let title = if !title_native.is_empty() {
-                    title_native
-                } else if !title_romaji.is_empty() {
-                    title_romaji.clone()
-                } else {
-                    title_english
-                };
-                entries.push(UserMediaEntry {
-                    id: id.to_string(),
-                    title,
-                    title_romaji,
-                    source: "anilist".to_string(),
-                    media_type: "anime".to_string(),
-                });
-            }
-        }
+        let entries = AnilistClient::parse_user_lists(&response_json, media_type_label, &mut seen);
 
         assert_eq!(entries.len(), 2);
         // First entry has native title → should prefer it
         assert_eq!(entries[0].id, "9253");
         assert_eq!(entries[0].title, "シュタインズ・ゲート");
-        assert_eq!(entries[0].title_romaji, "Steins;Gate");
+        assert_eq!(entries[0].title_romaji, "Steins;Gate Romaji");
+        assert_eq!(entries[0].source, "anilist");
+        assert_eq!(entries[0].media_type, media_type_label);
         // Second entry has null native → falls back to romaji
         assert_eq!(entries[1].id, "1535");
-        assert_eq!(entries[1].title, "Death Note");
+        assert_eq!(entries[1].title, "Death Note Romaji");
+        assert_eq!(entries[1].title_romaji, "Death Note Romaji");
+        assert_eq!(entries[0].source, "anilist");
+        assert_eq!(entries[0].media_type, media_type_label);
     }
 
     #[test]
@@ -1133,8 +1130,14 @@ mod tests {
                 }
             }
         });
-        let lists = response_json["data"]["MediaListCollection"]["lists"].as_array();
-        assert!(lists.unwrap().is_empty());
+
+        // Parse entries the same way the client does
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let media_type_label = "anime";
+
+        let entries = AnilistClient::parse_user_lists(&response_json, media_type_label, &mut seen);
+
+        assert!(entries.is_empty());
     }
 
     #[test]
@@ -1145,8 +1148,14 @@ mod tests {
                 "MediaListCollection": null
             }
         });
-        let lists = response_json["data"]["MediaListCollection"]["lists"].as_array();
-        assert!(lists.is_none());
+
+        // Parse entries the same way the client does
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let media_type_label = "anime";
+
+        let entries = AnilistClient::parse_user_lists(&response_json, media_type_label, &mut seen);
+
+        assert!(entries.is_empty());
     }
 
     #[test]
@@ -1165,20 +1174,70 @@ mod tests {
                 }
             }
         });
-        let lists = response_json["data"]["MediaListCollection"]["lists"]
-            .as_array()
-            .unwrap();
-        let mut entries = Vec::new();
-        for list in lists {
-            for entry in list["entries"].as_array().unwrap() {
-                let id = entry["media"]["id"].as_u64().unwrap_or(0);
-                if id == 0 {
-                    continue;
-                }
-                entries.push(id);
-            }
-        }
+
+        // Parse entries the same way the client does
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let media_type_label = "anime";
+
+        let entries = AnilistClient::parse_user_lists(&response_json, media_type_label, &mut seen);
+
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_user_list_duplicate_entries() {
+        // When a user has custom lists, they can have duplicate entries across them that get deduplicated
+        let response_json = serde_json::json!({
+            "data": {
+                "MediaListCollection": {
+                    "lists": [
+                        {
+                            "name": "Reading",
+                            "entries": [
+                                {
+                                    "media": {
+                                        "id": 86218,
+                                        "title": {
+                                            "romaji": "Yagate Kimi ni Naru",
+                                            "english": "Bloom Into You",
+                                            "native": "やがて君になる"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Custom List",
+                            "entries": [
+                                {
+                                    "media": {
+                                        "id": 86218,
+                                        "title": {
+                                            "romaji": "Yagate Kimi ni Naru",
+                                            "english": "Bloom Into You",
+                                            "native": "やがて君になる"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        });
+
+        // Parse entries the same way the client does
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let media_type_label = "manga";
+
+        let entries = AnilistClient::parse_user_lists(&response_json, media_type_label, &mut seen);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "86218");
+        assert_eq!(entries[0].title, "やがて君になる");
+        assert_eq!(entries[0].title_romaji, "Yagate Kimi ni Naru");
+        assert_eq!(entries[0].source, "anilist");
+        assert_eq!(entries[0].media_type, media_type_label);
     }
 
     // ── Error response parsing simulation ──
