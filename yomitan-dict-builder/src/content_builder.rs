@@ -66,13 +66,38 @@ const SEX_DISPLAY: &[(&str, &str)] = &[
     ("female", "♀ Female"),
 ];
 
+/// Per-dictionary display settings that control which sections appear in
+/// the generated Yomitan structured-content cards.
+#[derive(Clone, Debug)]
+pub struct DictSettings {
+    pub show_image: bool,
+    pub show_tag: bool,
+    pub show_description: bool,
+    pub show_traits: bool,
+    pub show_spoilers: bool,
+    pub honorifics: bool,
+}
+
+impl Default for DictSettings {
+    fn default() -> Self {
+        Self {
+            show_image: true,
+            show_tag: true,
+            show_description: true,
+            show_traits: true,
+            show_spoilers: true,
+            honorifics: true,
+        }
+    }
+}
+
 pub struct ContentBuilder {
-    spoiler_level: u8,
+    settings: DictSettings,
 }
 
 impl ContentBuilder {
-    pub fn new(spoiler_level: u8) -> Self {
-        Self { spoiler_level }
+    pub fn new(settings: DictSettings) -> Self {
+        Self { settings }
     }
 
     /// Remove spoiler content from text. Both VNDB and AniList formats.
@@ -267,10 +292,10 @@ impl ContentBuilder {
                 continue;
             }
 
-            // Filter traits by spoiler level
+            // Filter traits: when spoilers are hidden, only include non-spoiler traits (spoiler == 0)
             let filtered: Vec<&str> = traits
                 .iter()
-                .filter(|t| t.spoiler <= self.spoiler_level && !t.name.is_empty())
+                .filter(|t| !t.name.is_empty() && (self.settings.show_spoilers || t.spoiler == 0))
                 .map(|t| t.name.as_str())
                 .collect();
 
@@ -300,7 +325,7 @@ impl ContentBuilder {
     ) -> serde_json::Value {
         let mut content: Vec<serde_json::Value> = Vec::new();
 
-        // ===== LEVEL 0: Always shown =====
+        // ===== Always shown: Name block =====
 
         // Japanese name (large, bold)
         if !char.name_original.is_empty() {
@@ -320,31 +345,31 @@ impl ContentBuilder {
             }));
         }
 
-        // Character portrait image
-        if let Some(path) = image_path {
-            // Compute display dimensions that preserve aspect ratio.
-            // Target: max height of MAX_DISPLAY_HEIGHT px, width scaled proportionally.
-            let (display_w, display_h) = match image_dims {
-                Some((w, h)) if w > 0 && h > 0 => {
-                    let dh = Self::MAX_DISPLAY_HEIGHT;
-                    let dw = (w * dh + h / 2) / h; // rounded integer division
-                    (dw, dh)
-                }
-                _ => (Self::FALLBACK_DISPLAY_WIDTH, Self::MAX_DISPLAY_HEIGHT),
-            };
-            content.push(json!({
-                "tag": "img",
-                "path": path,
-                "width": display_w,
-                "height": display_h,
-                "sizeUnits": "px",
-                "collapsible": false,
-                "collapsed": false,
-                "background": false
-            }));
+        // ===== Character portrait image (gated by show_image) =====
+        if self.settings.show_image {
+            if let Some(path) = image_path {
+                let (display_w, display_h) = match image_dims {
+                    Some((w, h)) if w > 0 && h > 0 => {
+                        let dh = Self::MAX_DISPLAY_HEIGHT;
+                        let dw = (w * dh + h / 2) / h;
+                        (dw, dh)
+                    }
+                    _ => (Self::FALLBACK_DISPLAY_WIDTH, Self::MAX_DISPLAY_HEIGHT),
+                };
+                content.push(json!({
+                    "tag": "img",
+                    "path": path,
+                    "width": display_w,
+                    "height": display_h,
+                    "sizeUnits": "px",
+                    "collapsible": false,
+                    "collapsed": false,
+                    "background": false
+                }));
+            }
         }
 
-        // Game/media title
+        // Game/media title (always shown)
         if !game_title.is_empty() {
             content.push(json!({
                 "tag": "div",
@@ -353,42 +378,42 @@ impl ContentBuilder {
             }));
         }
 
-        // Role badge with color
-        let role = char.role.as_str();
-        let role_color = ROLE_COLORS
-            .iter()
-            .find(|(r, _)| *r == role)
-            .map(|(_, c)| *c)
-            .unwrap_or("#9E9E9E");
-        let role_label = ROLE_LABELS
-            .iter()
-            .find(|(r, _)| *r == role)
-            .map(|(_, l)| *l)
-            .unwrap_or("Unknown");
+        // ===== Role badge (gated by show_tag) =====
+        if self.settings.show_tag {
+            let role = char.role.as_str();
+            let role_color = ROLE_COLORS
+                .iter()
+                .find(|(r, _)| *r == role)
+                .map(|(_, c)| *c)
+                .unwrap_or("#9E9E9E");
+            let role_label = ROLE_LABELS
+                .iter()
+                .find(|(r, _)| *r == role)
+                .map(|(_, l)| *l)
+                .unwrap_or("Unknown");
 
-        content.push(json!({
-            "tag": "span",
-            "style": {
-                "background": role_color,
-                "color": "white",
-                "padding": "2px 6px",
-                "borderRadius": "3px",
-                "fontSize": "0.85em",
-                "marginTop": "4px"
-            },
-            "content": role_label
-        }));
+            content.push(json!({
+                "tag": "span",
+                "style": {
+                    "background": role_color,
+                    "color": "white",
+                    "padding": "2px 6px",
+                    "borderRadius": "3px",
+                    "fontSize": "0.85em",
+                    "marginTop": "4px"
+                },
+                "content": role_label
+            }));
+        }
 
-        // ===== LEVEL 1+: Description and Character Information =====
-
-        if self.spoiler_level >= 1 {
-            // Description section (collapsible <details>)
+        // ===== Description section (gated by show_description) =====
+        if self.settings.show_description {
             if let Some(ref desc) = char.description {
                 if !desc.trim().is_empty() {
-                    let display_desc = if self.spoiler_level == 1 {
+                    let display_desc = if !self.settings.show_spoilers {
                         Self::strip_spoilers(desc)
                     } else {
-                        desc.clone() // Level 2: full description
+                        desc.clone()
                     };
 
                     if !display_desc.is_empty() {
@@ -408,8 +433,10 @@ impl ContentBuilder {
                     }
                 }
             }
+        }
 
-            // Character Information section (collapsible <details>)
+        // ===== Character Information / Traits section (gated by show_traits) =====
+        if self.settings.show_traits {
             let mut info_items: Vec<serde_json::Value> = Vec::new();
 
             // Physical stats as compact line
@@ -422,7 +449,7 @@ impl ContentBuilder {
                 }));
             }
 
-            // Traits organized by category (filtered by spoiler level)
+            // Traits organized by category (filtered by spoiler setting)
             let trait_items = self.build_traits_by_category(char);
             info_items.extend(trait_items);
 
@@ -523,6 +550,35 @@ impl ContentBuilder {
 mod tests {
     use super::*;
     use crate::models::{Character, CharacterTrait};
+
+    /// Helper: settings with nothing shown (equivalent to old spoiler_level 0)
+    fn settings_minimal() -> DictSettings {
+        DictSettings {
+            show_image: true,
+            show_tag: true,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+            honorifics: true,
+        }
+    }
+
+    /// Helper: settings with description+traits but spoilers stripped (old level 1)
+    fn settings_no_spoilers() -> DictSettings {
+        DictSettings {
+            show_image: true,
+            show_tag: true,
+            show_description: true,
+            show_traits: true,
+            show_spoilers: false,
+            honorifics: true,
+        }
+    }
+
+    /// Helper: settings with everything shown (old spoiler_level 2)
+    fn settings_full() -> DictSettings {
+        DictSettings::default()
+    }
 
     fn make_test_character() -> Character {
         Character {
@@ -721,7 +777,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_full() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let char = make_test_character();
         let stats = cb.format_stats(&char);
         assert!(stats.contains("Male"));
@@ -734,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_partial() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.height = None;
         char.weight = None;
@@ -749,7 +805,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_empty() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.sex = None;
         char.age = None;
@@ -764,13 +820,11 @@ mod tests {
     // === Trait filtering tests ===
 
     #[test]
-    fn test_traits_spoiler_level_0() {
-        let cb = ContentBuilder::new(0);
+    fn test_traits_spoilers_hidden() {
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let items = cb.build_traits_by_category(&char);
-        // At level 0, only traits with spoiler=0 pass
-        // But level 0 means the content section isn't shown anyway
-        // The function itself should still filter correctly
+        // With show_spoilers=false, only traits with spoiler=0 pass
         for item in &items {
             let content = item["content"].as_str().unwrap();
             assert!(!content.contains("Secret trait"));
@@ -778,8 +832,8 @@ mod tests {
     }
 
     #[test]
-    fn test_traits_spoiler_level_1() {
-        let cb = ContentBuilder::new(1);
+    fn test_traits_spoilers_hidden_includes_nonspoiler() {
+        let cb = ContentBuilder::new(settings_no_spoilers());
         let char = make_test_character();
         let items = cb.build_traits_by_category(&char);
         // spoiler=0 traits included, spoiler=2 excluded
@@ -794,8 +848,8 @@ mod tests {
     }
 
     #[test]
-    fn test_traits_spoiler_level_2() {
-        let cb = ContentBuilder::new(2);
+    fn test_traits_spoilers_shown() {
+        let cb = ContentBuilder::new(settings_full());
         let char = make_test_character();
         let items = cb.build_traits_by_category(&char);
         let all_text: String = items
@@ -810,36 +864,42 @@ mod tests {
     // === Structured content tests ===
 
     #[test]
-    fn test_build_content_level_0() {
-        let cb = ContentBuilder::new(0);
+    fn test_build_content_minimal() {
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
-        // Level 0: should NOT contain <details> tags
+        // Minimal settings: should NOT contain <details> tags (no description/traits)
         let has_details = items.iter().any(|v| v["tag"].as_str() == Some("details"));
-        assert!(!has_details, "Level 0 should not contain details sections");
+        assert!(
+            !has_details,
+            "Minimal settings should not contain details sections"
+        );
         // Should contain name and role
         let has_span = items.iter().any(|v| v["tag"].as_str() == Some("span"));
         assert!(has_span, "Should contain role badge span");
     }
 
     #[test]
-    fn test_build_content_level_1() {
-        let cb = ContentBuilder::new(1);
+    fn test_build_content_no_spoilers() {
+        let cb = ContentBuilder::new(settings_no_spoilers());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
-        // Level 1: should contain <details> tags (Description + Character Information)
+        // Should contain <details> tags (Description + Character Information)
         let details_count = items
             .iter()
             .filter(|v| v["tag"].as_str() == Some("details"))
             .count();
-        assert!(details_count >= 1, "Level 1 should have details sections");
+        assert!(
+            details_count >= 1,
+            "No-spoilers settings should have details sections"
+        );
     }
 
     #[test]
-    fn test_build_content_level_2() {
-        let cb = ContentBuilder::new(2);
+    fn test_build_content_full() {
+        let cb = ContentBuilder::new(settings_full());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
@@ -847,12 +907,15 @@ mod tests {
             .iter()
             .filter(|v| v["tag"].as_str() == Some("details"))
             .count();
-        assert!(details_count >= 1, "Level 2 should have details sections");
+        assert!(
+            details_count >= 1,
+            "Full settings should have details sections"
+        );
     }
 
     #[test]
     fn test_build_content_with_image() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c123.jpg"), None, "Test Game");
         let items = content["content"].as_array().unwrap();
@@ -1021,7 +1084,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_unknown_sex() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.sex = Some("X".to_string());
         char.age = None;
@@ -1036,7 +1099,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_zero_height_weight() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.sex = None;
         char.age = None;
@@ -1051,7 +1114,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_female() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.sex = Some("f".to_string());
         char.age = None;
@@ -1065,7 +1128,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_female_full_word() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.sex = Some("female".to_string());
         char.age = None;
@@ -1081,7 +1144,7 @@ mod tests {
 
     #[test]
     fn test_build_content_unknown_role() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.role = "custom_role".to_string();
         let content = cb.build_content(&char, None, None, "Test");
@@ -1098,7 +1161,7 @@ mod tests {
 
     #[test]
     fn test_build_content_empty_game_title() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1110,7 +1173,7 @@ mod tests {
 
     #[test]
     fn test_build_content_description_only_spoilers() {
-        let cb = ContentBuilder::new(1);
+        let cb = ContentBuilder::new(settings_no_spoilers());
         let mut char = make_test_character();
         char.description = Some("[spoiler]everything is hidden[/spoiler]".to_string());
         let content = cb.build_content(&char, None, None, "Test");
@@ -1134,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_traits_empty_name_filtered() {
-        let cb = ContentBuilder::new(2);
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.personality = vec![
             CharacterTrait {
@@ -1285,9 +1348,18 @@ mod tests {
     #[test]
     fn test_format_birthday_all_months() {
         let months = [
-            (1, "January"), (2, "February"), (3, "March"), (4, "April"),
-            (5, "May"), (6, "June"), (7, "July"), (8, "August"),
-            (9, "September"), (10, "October"), (11, "November"), (12, "December"),
+            (1, "January"),
+            (2, "February"),
+            (3, "March"),
+            (4, "April"),
+            (5, "May"),
+            (6, "June"),
+            (7, "July"),
+            (8, "August"),
+            (9, "September"),
+            (10, "October"),
+            (11, "November"),
+            (12, "December"),
         ];
         for (month, name) in months {
             let result = ContentBuilder::format_birthday(&[month, 15]);
@@ -1322,7 +1394,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_all_fields() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.sex = Some("m".to_string());
         char.age = Some("25".to_string());
@@ -1341,7 +1413,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_no_fields() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.sex = None;
         char.age = None;
@@ -1354,7 +1426,7 @@ mod tests {
 
     #[test]
     fn test_format_stats_separator() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.sex = Some("f".to_string());
         char.age = Some("17".to_string());
@@ -1370,7 +1442,7 @@ mod tests {
 
     #[test]
     fn test_build_content_has_required_structure() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         assert_eq!(content["type"], "structured-content");
@@ -1379,7 +1451,7 @@ mod tests {
 
     #[test]
     fn test_build_content_includes_japanese_name() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1388,7 +1460,7 @@ mod tests {
 
     #[test]
     fn test_build_content_includes_romanized_name() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test Game");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1397,7 +1469,7 @@ mod tests {
 
     #[test]
     fn test_build_content_includes_game_title() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Steins;Gate");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1406,7 +1478,7 @@ mod tests {
 
     #[test]
     fn test_build_content_includes_role_badge() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1421,19 +1493,19 @@ mod tests {
     }
 
     #[test]
-    fn test_build_content_level0_no_description() {
-        let cb = ContentBuilder::new(0);
+    fn test_build_content_description_disabled() {
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.description = Some("A detailed description".to_string());
         let content = cb.build_content(&char, None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
-        // Level 0 should NOT include description
+        // With show_description=false, description should NOT be included
         assert!(!content_str.contains("A detailed description"));
     }
 
     #[test]
-    fn test_build_content_level1_includes_description() {
-        let cb = ContentBuilder::new(1);
+    fn test_build_content_description_enabled() {
+        let cb = ContentBuilder::new(settings_no_spoilers());
         let mut char = make_test_character();
         char.description = Some("A detailed description".to_string());
         let content = cb.build_content(&char, None, None, "Test");
@@ -1443,7 +1515,7 @@ mod tests {
 
     #[test]
     fn test_build_content_with_image_includes_img_tag() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 150)), "Test");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1453,7 +1525,7 @@ mod tests {
 
     #[test]
     fn test_build_content_image_dimensions_calculated() {
-        let cb = ContentBuilder::new(0);
+        let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Test");
         let content_str = serde_json::to_string(&content).unwrap();
@@ -1477,14 +1549,14 @@ mod tests {
         let content = json!({"type": "structured-content", "content": []});
         let entry = ContentBuilder::create_term_entry("田中", "たなか", "main", 100, &content);
         let arr = entry.as_array().unwrap();
-        assert_eq!(arr[0], "田中");       // term
-        assert_eq!(arr[1], "たなか");     // reading
-        assert_eq!(arr[2], "name main");  // definition tags
-        assert_eq!(arr[3], "");           // rules
-        assert_eq!(arr[4], 100);          // score
-        assert!(arr[5].is_array());       // definitions array
-        assert_eq!(arr[6], 0);            // sequence
-        assert_eq!(arr[7], "");           // term tags
+        assert_eq!(arr[0], "田中"); // term
+        assert_eq!(arr[1], "たなか"); // reading
+        assert_eq!(arr[2], "name main"); // definition tags
+        assert_eq!(arr[3], ""); // rules
+        assert_eq!(arr[4], 100); // score
+        assert!(arr[5].is_array()); // definitions array
+        assert_eq!(arr[6], 0); // sequence
+        assert_eq!(arr[7], ""); // term tags
     }
 
     #[test]
@@ -1505,7 +1577,8 @@ mod tests {
                 {"tag": "div", "content": "test"}
             ]
         });
-        let result = ContentBuilder::build_honorific_content(&base, "さん", "Generic polite suffix");
+        let result =
+            ContentBuilder::build_honorific_content(&base, "さん", "Generic polite suffix");
         assert_eq!(result["type"], "structured-content");
         let content = result["content"].as_array().unwrap();
         // First element should be the honorific banner
@@ -1528,13 +1601,22 @@ mod tests {
     // --- Trait filtering ---
 
     #[test]
-    fn test_traits_level0_filters_all_spoilers() {
-        let cb = ContentBuilder::new(0);
+    fn test_traits_spoilers_off_filters_all_spoilers() {
+        let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.personality = vec![
-            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
-            CharacterTrait { name: "Secret".to_string(), spoiler: 1 },
-            CharacterTrait { name: "Big Secret".to_string(), spoiler: 2 },
+            CharacterTrait {
+                name: "Kind".to_string(),
+                spoiler: 0,
+            },
+            CharacterTrait {
+                name: "Secret".to_string(),
+                spoiler: 1,
+            },
+            CharacterTrait {
+                name: "Big Secret".to_string(),
+                spoiler: 2,
+            },
         ];
         let traits = cb.build_traits_by_category(&char);
         let traits_str = serde_json::to_string(&traits).unwrap();
@@ -1543,29 +1625,47 @@ mod tests {
     }
 
     #[test]
-    fn test_traits_level1_shows_minor_spoilers() {
-        let cb = ContentBuilder::new(1);
+    fn test_traits_spoilers_off_excludes_all_spoiler_levels() {
+        let cb = ContentBuilder::new(settings_no_spoilers());
         let mut char = make_test_character();
         char.personality = vec![
-            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
-            CharacterTrait { name: "Minor".to_string(), spoiler: 1 },
-            CharacterTrait { name: "Major".to_string(), spoiler: 2 },
+            CharacterTrait {
+                name: "Kind".to_string(),
+                spoiler: 0,
+            },
+            CharacterTrait {
+                name: "Minor".to_string(),
+                spoiler: 1,
+            },
+            CharacterTrait {
+                name: "Major".to_string(),
+                spoiler: 2,
+            },
         ];
         let traits = cb.build_traits_by_category(&char);
         let traits_str = serde_json::to_string(&traits).unwrap();
         assert!(traits_str.contains("Kind"));
-        assert!(traits_str.contains("Minor"));
+        assert!(!traits_str.contains("Minor"));
         assert!(!traits_str.contains("Major"));
     }
 
     #[test]
-    fn test_traits_level2_shows_all() {
-        let cb = ContentBuilder::new(2);
+    fn test_traits_spoilers_on_shows_all() {
+        let cb = ContentBuilder::new(settings_full());
         let mut char = make_test_character();
         char.personality = vec![
-            CharacterTrait { name: "Kind".to_string(), spoiler: 0 },
-            CharacterTrait { name: "Minor".to_string(), spoiler: 1 },
-            CharacterTrait { name: "Major".to_string(), spoiler: 2 },
+            CharacterTrait {
+                name: "Kind".to_string(),
+                spoiler: 0,
+            },
+            CharacterTrait {
+                name: "Minor".to_string(),
+                spoiler: 1,
+            },
+            CharacterTrait {
+                name: "Major".to_string(),
+                spoiler: 2,
+            },
         ];
         let traits = cb.build_traits_by_category(&char);
         let traits_str = serde_json::to_string(&traits).unwrap();

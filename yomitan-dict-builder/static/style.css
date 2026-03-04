@@ -1,0 +1,505 @@
+/* === Reset & Base === */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 30%, #ff9a9e 60%, #fecfef 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 20px;
+}
+
+/* === Single-column layout === */
+.page-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 700px;
+    width: 100%;
+}
+.main-col {
+    width: 100%;
+}
+
+/* === Card containers === */
+.container {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(255, 105, 135, 0.2);
+    width: 100%;
+    padding: 40px;
+}
+h1 { color: #e84393; margin-bottom: 8px; text-align: center; }
+.subtitle { color: #555; text-align: center; margin-bottom: 24px; font-size: 0.9em; }
+
+/* === Dictionary preview header image === */
+.dict-preview {
+    margin-bottom: 36px;
+    border-radius: 12px;
+    overflow: hidden;
+    text-align: center;
+    background: #fff5f7;
+}
+.dict-preview img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 12px;
+}
+
+/* === Tabs === */
+.tabs {
+    display: flex;
+    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 32px;
+}
+.tab {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    color: #bbb;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+}
+.tab.active { color: #e84393; border-bottom-color: #e84393; }
+.tab:hover:not(.active) { color: #777; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* === Form elements === */
+.form-group { margin-bottom: 28px; }
+.form-group.inline { display: flex; gap: 12px; }
+.form-group.inline > div { flex: 1; }
+label { display: block; margin-bottom: 8px; color: #555; font-weight: 500; font-size: 0.95em; }
+.label-hint { color: #ccc; font-weight: 400; font-size: 0.85em; }
+input, select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #eee;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s;
+}
+input:focus, select:focus { outline: none; border-color: #f78fb3; }
+button {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, opacity 0.2s;
+}
+button:hover { transform: translateY(-2px); }
+button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* === Status & Progress === */
+.status { margin-top: 20px; padding: 12px; border-radius: 8px; display: none; font-size: 0.95em; }
+.status.show { display: block; }
+.status.success { background: #d4edda; color: #155724; }
+.status.error { background: #f8d7da; color: #721c24; }
+.status.loading { background: #fce4ec; color: #880e4f; }
+.progress-bar-container {
+    margin-top: 12px;
+    display: none;
+    background: #fce4ec;
+    border-radius: 8px;
+    overflow: hidden;
+    height: 24px;
+}
+.progress-bar-container.show { display: block; }
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.8em;
+    font-weight: 600;
+    min-width: 40px;
+}
+
+/* === Media preview list === */
+.media-preview {
+    margin-top: 16px;
+    display: none;
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+}
+.media-preview.show { display: block; }
+.media-preview-header {
+    padding: 10px 14px;
+    background: #fff5f7;
+    font-weight: 600;
+    color: #e84393;
+    font-size: 0.9em;
+    border-bottom: 1px solid #f0f0f0;
+    position: sticky;
+    top: 0;
+}
+.media-item {
+    padding: 8px 14px;
+    border-bottom: 1px solid #fafafa;
+    font-size: 0.9em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.media-item:last-child { border-bottom: none; }
+.media-item .title { color: #333; flex: 1; }
+.media-item .romaji { color: #aaa; font-size: 0.85em; margin-left: 8px; }
+.media-item .badge {
+    font-size: 0.75em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: white;
+    font-weight: 600;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+.badge.vndb { background: #4a90d9; }
+.badge.anime { background: #e74c3c; }
+.badge.manga { background: #2ecc71; }
+#mediaTypeGroup { display: none; }
+
+/* === Tooltip === */
+.tooltip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    color: #e84393;
+    cursor: help;
+    vertical-align: middle;
+    margin-left: 4px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+.tooltip-icon:hover { opacity: 1; }
+.or-divider {
+    text-align: center;
+    color: #ccc;
+    margin: 4px 0;
+    font-size: 0.85em;
+}
+
+/* === Info cards (below main content) === */
+.info-cards {
+    max-width: 700px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.info-card {
+    background: white;
+    border-radius: 14px;
+    padding: 24px 28px;
+    box-shadow: 0 8px 30px rgba(255, 105, 135, 0.12);
+}
+.info-card h3 { color: #e84393; margin-bottom: 8px; font-size: 1.05em; }
+.info-card p { color: #666; font-size: 0.92em; line-height: 1.6; }
+.info-card a { color: #e84393; text-decoration: none; font-weight: 500; }
+.info-card a:hover { text-decoration: underline; }
+.footer-links {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+.footer-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
+    color: white;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9em;
+    text-decoration: none;
+    transition: transform 0.2s;
+}
+.footer-links a:hover { transform: translateY(-2px); text-decoration: none; color: white; }
+
+/* ===========================================================
+   Fake Yomitan Dictionary Card
+   =========================================================== */
+.yomitan-preview-section {
+    margin-top: 24px;
+    margin-bottom: 8px;
+}
+.yomitan-card {
+    background: #fafafa;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.yomitan-card-header {
+    padding: 14px 16px 10px;
+    background: #fafafa;
+    border-bottom: 1px solid #e0e0e0;
+}
+.yomitan-card-title {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #e84393;
+    margin-bottom: 8px;
+}
+.yomitan-ruby {
+    display: block;
+    font-size: 0.65em;
+    color: #999;
+    letter-spacing: 0.3em;
+    margin-bottom: 1px;
+}
+.yomitan-term {
+    font-size: 1.6em;
+    font-weight: bold;
+    color: #333;
+    line-height: 1.3;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #ccc;
+    margin-bottom: 6px;
+}
+.yomitan-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+.yomitan-tag {
+    display: inline-block;
+    font-size: 0.7em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    color: white;
+}
+.yomitan-tag.tag-name { background: #777; }
+.yomitan-tag.tag-primary { background: #e74c8b; }
+.yomitan-tag.tag-dict { background: #8e44ad; }
+
+/* Card body: our structured content */
+.yomitan-card-body {
+    padding: 14px 16px;
+    background: white;
+}
+
+/* === Toggleable sections === */
+.toggle-section {
+    position: relative;
+    margin-bottom: 8px;
+    padding-right: 28px;
+    transition: opacity 0.25s, filter 0.25s;
+}
+.toggle-section.disabled {
+    opacity: 0.2;
+    filter: grayscale(1);
+    pointer-events: none;
+}
+.toggle-section.disabled .toggle-btn {
+    pointer-events: auto;
+}
+.toggle-btn {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1.5px solid #e84393;
+    background: white;
+    color: #e84393;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+.toggle-btn:hover {
+    border-color: #c0392b;
+    color: #c0392b;
+    background: #fff5f7;
+}
+.toggle-section.disabled .toggle-btn {
+    background: #4CAF50;
+    border-color: #4CAF50;
+    color: white;
+    filter: none;
+    opacity: 1;
+}
+.toggle-section.disabled .toggle-btn:hover {
+    background: #45a049;
+    border-color: #45a049;
+}
+
+/* Honorific banner */
+.yomitan-honorific {
+    border-left: 3px solid #5b9bd5;
+    padding: 4px 0 4px 10px;
+    margin-bottom: 10px;
+    font-size: 0.88em;
+    color: #5b9bd5;
+    line-height: 1.5;
+}
+.yomitan-honorific strong { font-weight: bold; }
+
+/* Name block (not toggleable) */
+.yomitan-name-jp {
+    font-weight: bold;
+    font-size: 1.15em;
+    color: #333;
+    margin-bottom: 2px;
+}
+.yomitan-name-romaji {
+    font-style: italic;
+    color: #777;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+
+/* Character portrait */
+.yomitan-portrait {
+    margin-bottom: 8px;
+}
+.yomitan-portrait img {
+    max-height: 200px;
+    width: auto;
+    display: block;
+    border-radius: 2px;
+}
+
+/* Media source */
+.yomitan-source {
+    font-size: 0.88em;
+    color: #888;
+    margin-bottom: 8px;
+}
+
+/* Role badge */
+.yomitan-role-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-size: 0.85em;
+    font-weight: 500;
+    color: white;
+    margin-bottom: 8px;
+}
+.yomitan-role-badge.role-main { background: #4CAF50; }
+.yomitan-role-badge.role-primary { background: #4CAF50; }
+
+/* Collapsible sections (Description, Traits) */
+.yomitan-details {
+    margin-bottom: 6px;
+}
+.yomitan-details-summary {
+    font-weight: 600;
+    font-size: 0.95em;
+    color: #333;
+    cursor: default;
+    margin-bottom: 6px;
+    user-select: none;
+}
+.yomitan-details-content {
+    font-size: 0.9em;
+    color: #444;
+    line-height: 1.7;
+    padding-left: 14px;
+}
+.yomitan-details-content p { margin-bottom: 6px; }
+.yomitan-details-content strong { font-weight: bold; }
+.yomitan-details-content em { font-style: italic; }
+
+/* Spoiler block inside description */
+.yomitan-spoiler-block {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px dashed #e0c050;
+    background: #fffde7;
+    border-radius: 6px;
+    font-size: 0.9em;
+    color: #6d5800;
+    position: relative;
+    padding-right: 28px;
+}
+
+/* Traits list */
+.yomitan-traits-list {
+    list-style: disc;
+    padding-left: 20px;
+    margin-top: 4px;
+    font-size: 0.88em;
+    color: #555;
+    line-height: 1.8;
+}
+
+/* === Mobile === */
+@media (max-width: 850px) {
+    body {
+        padding: 12px;
+    }
+    .page-layout {
+        gap: 16px;
+    }
+    .main-col .container {
+        padding: 24px 18px;
+    }
+    .form-group.inline {
+        flex-direction: column;
+        gap: 0;
+    }
+    .media-item {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .media-item .title {
+        min-width: 0;
+        flex-basis: calc(100% - 70px);
+    }
+    .media-item .romaji {
+        margin-left: 0;
+        flex-basis: 100%;
+        order: 3;
+    }
+    .media-item .badge { margin-left: auto; }
+    .yomitan-card-body {
+        padding: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 8px;
+    }
+    .main-col .container {
+        padding: 18px 14px;
+    }
+    .yomitan-term {
+        font-size: 1.3em;
+    }
+    .info-card {
+        padding: 18px 16px;
+    }
+}

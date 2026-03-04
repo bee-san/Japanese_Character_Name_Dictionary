@@ -21,8 +21,8 @@ async fn test_index_page_accessible() {
         assert_eq!(response.status(), 200);
         let body = response.text().await.unwrap();
         assert!(body.contains("Bee's Character Dictionary"));
-        assert!(body.contains("From Username"));
-        assert!(body.contains("From Media ID"));
+        assert!(body.contains("From VNDB / AniList Username"));
+        assert!(body.contains("From VNDB / AniList Media ID"));
     }
     // If server is not running, test is silently skipped
 }
@@ -85,7 +85,7 @@ async fn test_dict_endpoint_missing_params() {
 async fn test_index_endpoint_returns_json() {
     let client = reqwest::Client::new();
     let result = client
-        .get("http://localhost:3000/api/yomitan-index?source=vndb&id=v17&spoiler_level=0")
+        .get("http://localhost:3000/api/yomitan-index?source=vndb&id=v17")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -107,7 +107,7 @@ async fn test_index_endpoint_returns_json() {
 async fn test_index_endpoint_username_based() {
     let client = reqwest::Client::new();
     let result = client
-        .get("http://localhost:3000/api/yomitan-index?vndb_user=test&anilist_user=test2&spoiler_level=1")
+        .get("http://localhost:3000/api/yomitan-index?vndb_user=test&anilist_user=test2&spoilers=false")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -118,7 +118,7 @@ async fn test_index_endpoint_username_based() {
         let download_url = body["downloadUrl"].as_str().unwrap();
         assert!(download_url.contains("vndb_user=test"));
         assert!(download_url.contains("anilist_user=test2"));
-        assert!(download_url.contains("spoiler_level=1"));
+        assert!(download_url.contains("spoilers=false"));
     }
 }
 

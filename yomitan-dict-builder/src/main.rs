@@ -35,6 +35,7 @@ mod vndb_client;
 mod anilist_name_test_data;
 
 use anilist_client::AnilistClient;
+use content_builder::DictSettings;
 use dict_builder::DictBuilder;
 use image_cache::ImageCache;
 use image_handler::ImageHandler;
@@ -141,14 +142,57 @@ impl AppState {
 struct DictQuery {
     source: Option<String>, // "vndb" or "anilist" (for single-media mode)
     id: Option<String>,     // VN ID like "v17" or AniList media ID (for single-media mode)
-    #[serde(default)]
-    spoiler_level: u8,
     #[serde(default = "default_media_type")]
     media_type: String, // "ANIME" or "MANGA" (for AniList single-media)
     vndb_user: Option<String>,    // VNDB username (for username mode)
     anilist_user: Option<String>, // AniList username (for username mode)
-    #[serde(default = "default_honorifics")]
-    honorifics: bool, // Generate honorific suffix entries (default true)
+    #[serde(default = "default_true")]
+    honorifics: bool,
+    #[serde(default = "default_true")]
+    image: bool,
+    #[serde(default = "default_true")]
+    tag: bool,
+    #[serde(default = "default_true")]
+    description: bool,
+    #[serde(default = "default_true")]
+    traits: bool,
+    #[serde(default = "default_true")]
+    spoilers: bool,
+}
+
+impl DictQuery {
+    fn to_settings(&self) -> DictSettings {
+        DictSettings {
+            show_image: self.image,
+            show_tag: self.tag,
+            show_description: self.description,
+            show_traits: self.traits,
+            show_spoilers: self.spoilers,
+            honorifics: self.honorifics,
+        }
+    }
+
+    /// Append non-default settings as query parameters to a URL parts list.
+    fn append_settings_params(&self, parts: &mut Vec<String>) {
+        if !self.honorifics {
+            parts.push("honorifics=false".to_string());
+        }
+        if !self.image {
+            parts.push("image=false".to_string());
+        }
+        if !self.tag {
+            parts.push("tag=false".to_string());
+        }
+        if !self.description {
+            parts.push("description=false".to_string());
+        }
+        if !self.traits {
+            parts.push("traits=false".to_string());
+        }
+        if !self.spoilers {
+            parts.push("spoilers=false".to_string());
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -161,10 +205,31 @@ struct UserListQuery {
 struct GenerateStreamQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
-    #[serde(default)]
-    spoiler_level: u8,
-    #[serde(default = "default_honorifics")]
+    #[serde(default = "default_true")]
     honorifics: bool,
+    #[serde(default = "default_true")]
+    image: bool,
+    #[serde(default = "default_true")]
+    tag: bool,
+    #[serde(default = "default_true")]
+    description: bool,
+    #[serde(default = "default_true")]
+    traits: bool,
+    #[serde(default = "default_true")]
+    spoilers: bool,
+}
+
+impl GenerateStreamQuery {
+    fn to_settings(&self) -> DictSettings {
+        DictSettings {
+            show_image: self.image,
+            show_tag: self.tag,
+            show_description: self.description,
+            show_traits: self.traits,
+            show_spoilers: self.spoilers,
+            honorifics: self.honorifics,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -176,7 +241,7 @@ fn default_media_type() -> String {
     "ANIME".to_string()
 }
 
-fn default_honorifics() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -412,17 +477,15 @@ async fn generate_stream(
     State(state): State<AppState>,
 ) -> Sse<ReceiverStream<Result<Event, std::convert::Infallible>>> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(100);
-    let spoiler_level = params.spoiler_level.min(2);
+    let settings = params.to_settings();
     let vndb_user = params.vndb_user.unwrap_or_default().trim().to_string();
     let anilist_user = params.anilist_user.unwrap_or_default().trim().to_string();
-    let honorifics = params.honorifics;
 
     tokio::spawn(async move {
         let result = generate_dict_from_usernames(
             &vndb_user,
             &anilist_user,
-            spoiler_level,
-            honorifics,
+            settings,
             Some(&tx),
             &state,
         )
@@ -580,12 +643,10 @@ async fn download_images_concurrent(
 async fn generate_dict_from_usernames(
     vndb_user: &str,
     anilist_user: &str,
-    spoiler_level: u8,
-    honorifics: bool,
+    settings: DictSettings,
     progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    let spoiler_level = spoiler_level.min(2);
 
     // Step 1: Collect all media entries from user lists
     let mut media_entries: Vec<UserMediaEntry> = Vec::new();
@@ -642,15 +703,30 @@ async fn generate_dict_from_usernames(
             urlencoding::encode(anilist_user)
         ));
     }
-    url_parts.push(format!("spoiler_level={}", spoiler_level));
-    if !honorifics {
+    // Append non-default settings
+    if !settings.honorifics {
         url_parts.push("honorifics=false".to_string());
+    }
+    if !settings.show_image {
+        url_parts.push("image=false".to_string());
+    }
+    if !settings.show_tag {
+        url_parts.push("tag=false".to_string());
+    }
+    if !settings.show_description {
+        url_parts.push("description=false".to_string());
+    }
+    if !settings.show_traits {
+        url_parts.push("traits=false".to_string());
+    }
+    if !settings.show_spoilers {
+        url_parts.push("spoilers=false".to_string());
     }
     let download_url = format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"));
 
     let description = format!("Character Dictionary ({} titles)", total);
 
-    let mut builder = DictBuilder::new(spoiler_level, Some(download_url), description, honorifics);
+    let mut builder = DictBuilder::new(settings, Some(download_url), description);
 
     // Step 2: For each media, fetch characters and add to dictionary
     for (i, entry) in media_entries.iter().enumerate() {
@@ -761,7 +837,7 @@ async fn generate_dict(
     Query(params): Query<DictQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let spoiler_level = params.spoiler_level.min(2);
+    let settings = params.to_settings();
 
     let vndb_user = params.vndb_user.as_deref().unwrap_or("").trim().to_string();
     let anilist_user = params
@@ -775,8 +851,7 @@ async fn generate_dict(
         match generate_dict_from_usernames(
             &vndb_user,
             &anilist_user,
-            spoiler_level,
-            params.honorifics,
+            settings,
             None,
             &state,
         )
@@ -817,24 +892,20 @@ async fn generate_dict(
 
     let download_url = {
         let base = base_url();
-        format!(
-            "{}/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
-            base,
-            urlencoding::encode(source),
-            urlencoding::encode(id),
-            spoiler_level,
-            urlencoding::encode(&params.media_type),
-            if !params.honorifics {
-                "&honorifics=false"
-            } else {
-                ""
-            }
-        )
+        let mut parts = vec![
+            format!("source={}", urlencoding::encode(source)),
+            format!("id={}", urlencoding::encode(id)),
+            format!("media_type={}", urlencoding::encode(&params.media_type)),
+        ];
+        params.append_settings_params(&mut parts);
+        format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
     };
+
+    let settings = params.to_settings();
 
     let result = match source.to_lowercase().as_str() {
         "vndb" => {
-            generate_vndb_dict(id, spoiler_level, params.honorifics, &download_url, &state).await
+            generate_vndb_dict(id, settings, &download_url, &state).await
         }
         "anilist" => {
             let media_id: i32 = match parse_anilist_id(id) {
@@ -851,8 +922,7 @@ async fn generate_dict(
             generate_anilist_dict(
                 media_id,
                 &media_type,
-                spoiler_level,
-                params.honorifics,
+                settings,
                 &download_url,
                 &state,
             )
@@ -887,8 +957,6 @@ async fn generate_dict(
 
 /// Lightweight endpoint: returns just the index.json metadata as JSON.
 async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
-    let spoiler_level = params.spoiler_level.min(2);
-
     let vndb_user = params.vndb_user.as_deref().unwrap_or("").trim().to_string();
     let anilist_user = params
         .anilist_user
@@ -909,35 +977,26 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
                 urlencoding::encode(&anilist_user)
             ));
         }
-        url_parts.push(format!("spoiler_level={}", spoiler_level));
-        if !params.honorifics {
-            url_parts.push("honorifics=false".to_string());
-        }
+        params.append_settings_params(&mut url_parts);
         format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"))
     } else {
         let base = base_url();
         let source = params.source.as_deref().unwrap_or("");
         let id = params.id.as_deref().unwrap_or("");
-        format!(
-            "{}/api/yomitan-dict?source={}&id={}&spoiler_level={}&media_type={}{}",
-            base,
-            urlencoding::encode(source),
-            urlencoding::encode(id),
-            spoiler_level,
-            urlencoding::encode(&params.media_type),
-            if !params.honorifics {
-                "&honorifics=false"
-            } else {
-                ""
-            }
-        )
+        let mut parts = vec![
+            format!("source={}", urlencoding::encode(source)),
+            format!("id={}", urlencoding::encode(id)),
+            format!("media_type={}", urlencoding::encode(&params.media_type)),
+        ];
+        params.append_settings_params(&mut parts);
+        format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
     };
 
+    let settings = params.to_settings();
     let builder = DictBuilder::new(
-        spoiler_level,
+        settings,
         Some(download_url),
         String::new(),
-        params.honorifics,
     );
     let index = builder.create_index_public();
 
@@ -1066,8 +1125,7 @@ async fn fetch_anilist_cached(
 
 async fn generate_vndb_dict(
     vn_id: &str,
-    spoiler_level: u8,
-    honorifics: bool,
+    settings: DictSettings,
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
@@ -1077,10 +1135,9 @@ async fn generate_vndb_dict(
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 8).await;
 
     let mut builder = DictBuilder::new(
-        spoiler_level,
+        settings,
         Some(download_url.to_string()),
         game_title.clone(),
-        honorifics,
     );
 
     for character in char_data.all_characters() {
@@ -1097,8 +1154,7 @@ async fn generate_vndb_dict(
 async fn generate_anilist_dict(
     media_id: i32,
     media_type: &str,
-    spoiler_level: u8,
-    honorifics: bool,
+    settings: DictSettings,
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
@@ -1109,10 +1165,9 @@ async fn generate_anilist_dict(
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 6).await;
 
     let mut builder = DictBuilder::new(
-        spoiler_level,
+        settings,
         Some(download_url.to_string()),
         game_title.clone(),
-        honorifics,
     );
 
     for character in char_data.all_characters() {

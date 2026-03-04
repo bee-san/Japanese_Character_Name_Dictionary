@@ -30,13 +30,16 @@ yomitan-dict-builder/
 │   ├── anilist_client.rs    # AniList GraphQL client (user list, character fetch, image download)
 │   ├── kana.rs              # Low-level kana utilities: kanji detection, romaji→hiragana, katakana↔hiragana, syllable boundary handling
 │   ├── name_parser.rs       # Name handling: unified split/reading API with optional romaji hints, honorific suffixes data
-│   ├── content_builder.rs   # Yomitan structured content JSON (character popup cards), spoiler stripping
+│   ├── content_builder.rs   # Yomitan structured content JSON (character popup cards), spoiler stripping, DictSettings struct
 │   ├── image_handler.rs     # Base64 data URI → raw bytes + file extension detection
-│   ├── disk_cache.rs        # On-disk caching for images (DiskImageCache) and API data (DiskDataCache) with TTL + cleanup
+│   ├── image_cache.rs       # SQLite-backed image cache (blob storage, hit counts, eviction)
+│   ├── media_cache.rs       # SQLite-backed media/character data cache with TTL expiry
 │   ├── anilist_name_test_data.rs # Bulk integration tests for name splitting/reading with real AniList character data
 │   └── dict_builder.rs      # ZIP assembly: index.json, tag_bank, term_banks (chunked at 10k), img/ folder
 ├── static/
-│   └── index.html           # Single-file frontend (embedded CSS+JS)
+│   ├── index.html           # Frontend HTML (two-column layout with interactive Yomitan preview card)
+│   ├── style.css            # Frontend styles (Yomitan card mimicry, responsive layout)
+│   └── app.js               # Frontend logic (settings toggles, SSE progress, form handling)
 └── tests/
     └── integration_tests.rs # HTTP endpoint tests (require running server)
 ```
@@ -55,7 +58,7 @@ cargo run --release          # Serves on http://localhost:3000
 # Docker
 docker compose up -d         # Serves on http://localhost:9721
 
-# Tests (77+ unit tests inline, integration tests need running server)
+# Tests (549+ unit tests inline, integration tests need running server)
 cargo test
 ```
 
@@ -73,7 +76,8 @@ name_parser.rs     ← uses kana (unified name splitting + reading generation wi
     ↓
 content_builder.rs ← uses models, name_parser
 image_handler.rs   ← uses base64
-disk_cache.rs      ← standalone (tokio fs, sha2 hashing, TTL-based expiry)
+image_cache.rs     ← SQLite-backed (tokio, sha2 hashing)
+media_cache.rs     ← SQLite-backed (tokio, serde_json, TTL-based expiry)
     ↓
 dict_builder.rs    ← uses models, kana, name_parser, content_builder, image_handler, zip
     ↓
@@ -100,8 +104,8 @@ Username/Media ID
 | `GET /api/user-lists?vndb_user=X&anilist_user=Y` | Preview user's in-progress media |
 | `GET /api/generate-stream?vndb_user=X&...` | SSE progress + download token |
 | `GET /api/download?token=UUID` | Download ZIP by token (single-use, 5min expiry) |
-| `GET /api/yomitan-dict?source=vndb&id=v17&spoiler_level=0` | Direct ZIP generation (blocks until done) |
-| `GET /api/yomitan-dict?vndb_user=X&anilist_user=Y&spoiler_level=0` | Username-based ZIP generation |
+| `GET /api/yomitan-dict?source=vndb&id=v17` | Direct ZIP generation (blocks until done) |
+| `GET /api/yomitan-dict?vndb_user=X&anilist_user=Y` | Username-based ZIP generation |
 | `GET /api/yomitan-index?...` | Lightweight index.json metadata (for Yomitan update checks) |
 
 ### Query Parameters
@@ -112,20 +116,24 @@ Username/Media ID
 | `anilist_user` | string | — | AniList username |
 | `source` | string | — | `"vndb"` or `"anilist"` (single-media mode) |
 | `id` | string | — | Media ID, e.g. `v17` or `9253` (single-media mode) |
-| `spoiler_level` | u8 | `0` | 0 = none, 1 = minor, 2 = full |
 | `media_type` | string | `"ANIME"` | `"ANIME"` or `"MANGA"` (AniList only) |
 | `honorifics` | bool | `true` | Generate honorific suffix entries (さん, ちゃん, 先生, etc.) |
+| `image` | bool | `true` | Include character portrait images in the dictionary |
+| `tag` | bool | `true` | Include role badges (Main Character, etc.) |
+| `description` | bool | `true` | Include character descriptions |
+| `traits` | bool | `true` | Include character traits/information |
+| `spoilers` | bool | `true` | Include spoiler content in descriptions and traits |
 
 ### URL-as-Settings Pattern
 
 All dictionary options (usernames, spoiler level, source, media type) are encoded as query parameters in the URL. This is intentional — the URLs themselves act as persistent settings for Yomitan's update mechanism:
 
-1. User imports a dictionary via the index URL, e.g. `http://host/api/yomitan-index?vndb_user=foo&spoiler_level=1`
+1. User imports a dictionary via the index URL, e.g. `http://host/api/yomitan-index?vndb_user=foo&spoilers=false`
 2. Yomitan stores that full index URL internally
 3. On update check, Yomitan re-fetches the index URL → the `generate_index` handler reconstructs a `downloadUrl` with all the same query params baked in
 4. Yomitan downloads the fresh ZIP from that URL → dictionary is regenerated with the original settings
 
-This means changing a setting (e.g. spoiler level) requires re-importing with a new URL. There is no server-side state or user accounts — the URL IS the configuration. When adding new options, they must be added to the `DictQuery` struct and threaded through `generate_index`'s `downloadUrl` construction so they survive the update cycle.
+This means changing a setting (e.g. toggling spoilers) requires re-importing with a new URL. There is no server-side state or user accounts — the URL IS the configuration. When adding new options, they must be added to the `DictQuery` struct and threaded through `generate_index`'s `downloadUrl` construction so they survive the update cycle.
 
 ## Critical Implementation Details
 
