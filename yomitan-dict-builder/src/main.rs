@@ -142,6 +142,7 @@ impl AppState {
 struct DictQuery {
     source: Option<String>, // "vndb" or "anilist" (for single-media mode)
     id: Option<String>,     // VN ID like "v17" or AniList media ID (for single-media mode)
+    entries: Option<String>, // JSON array of {source, id, media_type?} for multi-entry mode
     #[serde(default = "default_media_type")]
     media_type: String, // "ANIME" or "MANGA" (for AniList single-media)
     vndb_user: Option<String>,    // VNDB username (for username mode)
@@ -193,6 +194,15 @@ impl DictQuery {
             parts.push("spoilers=false".to_string());
         }
     }
+}
+
+/// A single entry in the `entries` JSON array for multi-entry manual mode.
+#[derive(Deserialize)]
+struct ManualEntry {
+    source: String,
+    id: String,
+    #[serde(default = "default_media_type")]
+    media_type: String,
 }
 
 #[derive(Deserialize)]
@@ -831,7 +841,152 @@ async fn generate_dict_from_usernames(
     Ok(zip_bytes)
 }
 
-// === Generate dictionary (single media OR username-based) ===
+// === Generate dictionary from multiple manual media entries ===
+
+async fn generate_dict_from_entries(
+    entries: &[ManualEntry],
+    settings: DictSettings,
+    state: &AppState,
+) -> Result<Vec<u8>, String> {
+    // Deduplicate entries by (source, id)
+    let mut seen = HashSet::new();
+    let unique_entries: Vec<&ManualEntry> = entries
+        .iter()
+        .filter(|e| seen.insert((e.source.to_lowercase(), e.id.clone())))
+        .collect();
+
+    if unique_entries.is_empty() {
+        return Err("No valid entries provided".to_string());
+    }
+
+    let total = unique_entries.len();
+
+    // Build download URL with entries JSON for auto-update
+    let base = base_url();
+    let entries_json: Vec<serde_json::Value> = unique_entries
+        .iter()
+        .map(|e| {
+            let mut obj = serde_json::json!({
+                "source": e.source,
+                "id": e.id,
+            });
+            if e.source.to_lowercase() == "anilist" {
+                obj["media_type"] = serde_json::json!(e.media_type);
+            }
+            obj
+        })
+        .collect();
+    let mut url_parts = vec![format!(
+        "entries={}",
+        urlencoding::encode(&serde_json::to_string(&entries_json).unwrap_or_default())
+    )];
+    if !settings.honorifics {
+        url_parts.push("honorifics=false".to_string());
+    }
+    if !settings.show_image {
+        url_parts.push("image=false".to_string());
+    }
+    if !settings.show_tag {
+        url_parts.push("tag=false".to_string());
+    }
+    if !settings.show_description {
+        url_parts.push("description=false".to_string());
+    }
+    if !settings.show_traits {
+        url_parts.push("traits=false".to_string());
+    }
+    if !settings.show_spoilers {
+        url_parts.push("spoilers=false".to_string());
+    }
+    let download_url = format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"));
+
+    let description = format!("Character Dictionary ({} titles)", total);
+    let mut builder = DictBuilder::new(settings, Some(download_url), description);
+
+    for entry in &unique_entries {
+        match entry.source.to_lowercase().as_str() {
+            "vndb" => {
+                match fetch_vndb_cached(&entry.id, state).await {
+                    Ok((title, mut char_data, cached)) => {
+                        download_images_concurrent(
+                            &mut char_data,
+                            &state.http_client,
+                            &state.image_cache,
+                            8,
+                        )
+                        .await;
+
+                        for character in char_data.all_characters() {
+                            builder.add_character(character, &title);
+                        }
+
+                        if !cached {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
+                    }
+                }
+            }
+            "anilist" => {
+                let media_id: i32 = match entry.id.parse() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        // Try parsing as AniList URL
+                        match parse_anilist_id(&entry.id) {
+                            Ok(id) => id,
+                            Err(_) => {
+                                warn!(id = %entry.id, "Invalid AniList media ID");
+                                continue;
+                            }
+                        }
+                    }
+                };
+
+                let media_type = match entry.media_type.to_uppercase().as_str() {
+                    "MANGA" => "MANGA",
+                    _ => "ANIME",
+                };
+
+                match fetch_anilist_cached(media_id, media_type, state).await {
+                    Ok((title, mut char_data, cached)) => {
+                        download_images_concurrent(
+                            &mut char_data,
+                            &state.http_client,
+                            &state.image_cache,
+                            6,
+                        )
+                        .await;
+
+                        for character in char_data.all_characters() {
+                            builder.add_character(character, &title);
+                        }
+
+                        if !cached {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(700)).await;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(media_id = %entry.id, error = %e, "Failed to fetch AniList characters");
+                    }
+                }
+            }
+            _ => {
+                warn!(source = %entry.source, "Unknown source in entries");
+            }
+        }
+    }
+
+    if builder.entries.is_empty() {
+        return Err("No character entries generated from any media".to_string());
+    }
+
+    let zip_bytes = builder.export_bytes()?;
+    Ok(zip_bytes)
+}
+
+// === Generate dictionary (single media OR username-based OR multi-entry) ===
 
 async fn generate_dict(
     Query(params): Query<DictQuery>,
@@ -878,6 +1033,46 @@ async fn generate_dict(
         }
     }
 
+    // Multi-entry mode: entries=JSON
+    if let Some(ref entries_json) = params.entries {
+        let manual_entries: Vec<ManualEntry> = match serde_json::from_str(entries_json) {
+            Ok(e) => e,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    format!("Invalid entries JSON: {}", e),
+                )
+                    .into_response();
+            }
+        };
+
+        if manual_entries.is_empty() {
+            return (StatusCode::BAD_REQUEST, "entries array is empty").into_response();
+        }
+
+        let settings = params.to_settings();
+        match generate_dict_from_entries(&manual_entries, settings, &state).await {
+            Ok(bytes) => {
+                return (
+                    StatusCode::OK,
+                    [
+                        ("content-type", "application/zip"),
+                        (
+                            "content-disposition",
+                            "attachment; filename=bee_characters.zip",
+                        ),
+                        ("access-control-allow-origin", "*"),
+                    ],
+                    bytes,
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+            }
+        }
+    }
+
     // Single-media mode
     let source = params.source.as_deref().unwrap_or("");
     let id = params.id.as_deref().unwrap_or("");
@@ -885,7 +1080,7 @@ async fn generate_dict(
     if source.is_empty() || id.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            "Either provide source+id or vndb_user/anilist_user",
+            "Either provide source+id, entries JSON, or vndb_user/anilist_user",
         )
             .into_response();
     }
@@ -979,6 +1174,15 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
         }
         params.append_settings_params(&mut url_parts);
         format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"))
+    } else if let Some(ref entries_json) = params.entries {
+        // Multi-entry mode: pass entries JSON through to download URL
+        let base = base_url();
+        let mut parts = vec![format!(
+            "entries={}",
+            urlencoding::encode(entries_json)
+        )];
+        params.append_settings_params(&mut parts);
+        format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
     } else {
         let base = base_url();
         let source = params.source.as_deref().unwrap_or("");
@@ -1494,5 +1698,498 @@ mod tests {
         // (Can't easily test this without modifying env, but we can test the function exists)
         let url = base_url();
         assert!(url.starts_with("http"));
+    }
+
+    // ===================================================================
+    // DictQuery → DictSettings conversion tests
+    // ===================================================================
+
+    /// Helper: build a DictQuery with all defaults.
+    fn make_dict_query_default() -> DictQuery {
+        DictQuery {
+            source: None,
+            id: None,
+            entries: None,
+            media_type: default_media_type(),
+            vndb_user: None,
+            anilist_user: None,
+            honorifics: true,
+            image: true,
+            tag: true,
+            description: true,
+            traits: true,
+            spoilers: true,
+        }
+    }
+
+    #[test]
+    fn test_dict_query_defaults_all_true() {
+        let q = make_dict_query_default();
+        let s = q.to_settings();
+        assert!(s.show_image, "image defaults to true");
+        assert!(s.show_tag, "tag defaults to true");
+        assert!(s.show_description, "description defaults to true");
+        assert!(s.show_traits, "traits defaults to true");
+        assert!(s.show_spoilers, "spoilers defaults to true");
+        assert!(s.honorifics, "honorifics defaults to true");
+    }
+
+    #[test]
+    fn test_dict_query_all_false() {
+        let q = DictQuery {
+            honorifics: false,
+            image: false,
+            tag: false,
+            description: false,
+            traits: false,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let s = q.to_settings();
+        assert!(!s.honorifics);
+        assert!(!s.show_image);
+        assert!(!s.show_tag);
+        assert!(!s.show_description);
+        assert!(!s.show_traits);
+        assert!(!s.show_spoilers);
+    }
+
+    #[test]
+    fn test_dict_query_mixed_settings() {
+        let q = DictQuery {
+            image: false,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let s = q.to_settings();
+        assert!(!s.show_image);
+        assert!(s.show_tag);
+        assert!(s.show_description);
+        assert!(s.show_traits);
+        assert!(!s.show_spoilers);
+        assert!(s.honorifics);
+    }
+
+    #[test]
+    fn test_dict_query_only_honorifics_false() {
+        let q = DictQuery {
+            honorifics: false,
+            ..make_dict_query_default()
+        };
+        let s = q.to_settings();
+        assert!(!s.honorifics);
+        assert!(s.show_image);
+        assert!(s.show_tag);
+        assert!(s.show_description);
+        assert!(s.show_traits);
+        assert!(s.show_spoilers);
+    }
+
+    #[test]
+    fn test_dict_query_preserves_source_and_id() {
+        let q = DictQuery {
+            source: Some("vndb".to_string()),
+            id: Some("v17".to_string()),
+            image: false,
+            ..make_dict_query_default()
+        };
+        assert_eq!(q.source.as_deref(), Some("vndb"));
+        assert_eq!(q.id.as_deref(), Some("v17"));
+        let s = q.to_settings();
+        assert!(!s.show_image);
+    }
+
+    #[test]
+    fn test_dict_query_media_type_default() {
+        let q = make_dict_query_default();
+        assert_eq!(q.media_type, "ANIME");
+    }
+
+    #[test]
+    fn test_dict_query_media_type_manga() {
+        let q = DictQuery {
+            media_type: "MANGA".to_string(),
+            ..make_dict_query_default()
+        };
+        assert_eq!(q.media_type, "MANGA");
+    }
+
+    #[test]
+    fn test_dict_query_with_usernames() {
+        let q = DictQuery {
+            vndb_user: Some("testuser".to_string()),
+            anilist_user: Some("testuser2".to_string()),
+            traits: false,
+            ..make_dict_query_default()
+        };
+        assert_eq!(q.vndb_user.as_deref(), Some("testuser"));
+        assert_eq!(q.anilist_user.as_deref(), Some("testuser2"));
+        let s = q.to_settings();
+        assert!(!s.show_traits);
+        assert!(s.show_image);
+    }
+
+    // ===================================================================
+    // DictQuery.append_settings_params tests
+    // ===================================================================
+
+    #[test]
+    fn test_append_settings_params_all_default_no_params() {
+        let q = make_dict_query_default();
+        let mut parts = Vec::new();
+        q.append_settings_params(&mut parts);
+        assert!(
+            parts.is_empty(),
+            "All-default settings should append no params, got: {:?}",
+            parts
+        );
+    }
+
+    #[test]
+    fn test_append_settings_params_all_false() {
+        let q = DictQuery {
+            honorifics: false,
+            image: false,
+            tag: false,
+            description: false,
+            traits: false,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let mut parts = Vec::new();
+        q.append_settings_params(&mut parts);
+        assert_eq!(parts.len(), 6, "All-false should append 6 params");
+        assert!(parts.contains(&"honorifics=false".to_string()));
+        assert!(parts.contains(&"image=false".to_string()));
+        assert!(parts.contains(&"tag=false".to_string()));
+        assert!(parts.contains(&"description=false".to_string()));
+        assert!(parts.contains(&"traits=false".to_string()));
+        assert!(parts.contains(&"spoilers=false".to_string()));
+    }
+
+    #[test]
+    fn test_append_settings_params_one_false() {
+        let q = DictQuery {
+            image: false,
+            ..make_dict_query_default()
+        };
+        let mut parts = Vec::new();
+        q.append_settings_params(&mut parts);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0], "image=false");
+    }
+
+    #[test]
+    fn test_append_settings_params_preserves_existing_parts() {
+        let q = DictQuery {
+            tag: false,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let mut parts = vec!["source=vndb".to_string(), "id=v17".to_string()];
+        q.append_settings_params(&mut parts);
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "source=vndb");
+        assert_eq!(parts[1], "id=v17");
+        assert!(parts.contains(&"tag=false".to_string()));
+        assert!(parts.contains(&"spoilers=false".to_string()));
+    }
+
+    #[test]
+    fn test_append_settings_params_does_not_add_true_values() {
+        let q = DictQuery {
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let mut parts = Vec::new();
+        q.append_settings_params(&mut parts);
+        assert_eq!(parts.len(), 1, "Only false values should be appended");
+        assert_eq!(parts[0], "spoilers=false");
+    }
+
+    // ===================================================================
+    // GenerateStreamQuery → DictSettings conversion tests
+    // ===================================================================
+
+    fn make_stream_query_default() -> GenerateStreamQuery {
+        GenerateStreamQuery {
+            vndb_user: None,
+            anilist_user: None,
+            honorifics: true,
+            image: true,
+            tag: true,
+            description: true,
+            traits: true,
+            spoilers: true,
+        }
+    }
+
+    #[test]
+    fn test_stream_query_defaults_all_true() {
+        let q = make_stream_query_default();
+        let s = q.to_settings();
+        assert!(s.show_image);
+        assert!(s.show_tag);
+        assert!(s.show_description);
+        assert!(s.show_traits);
+        assert!(s.show_spoilers);
+        assert!(s.honorifics);
+    }
+
+    #[test]
+    fn test_stream_query_all_false() {
+        let q = GenerateStreamQuery {
+            honorifics: false,
+            image: false,
+            tag: false,
+            description: false,
+            traits: false,
+            spoilers: false,
+            ..make_stream_query_default()
+        };
+        let s = q.to_settings();
+        assert!(!s.honorifics);
+        assert!(!s.show_image);
+        assert!(!s.show_tag);
+        assert!(!s.show_description);
+        assert!(!s.show_traits);
+        assert!(!s.show_spoilers);
+    }
+
+    #[test]
+    fn test_stream_query_mixed() {
+        let q = GenerateStreamQuery {
+            description: false,
+            traits: false,
+            ..make_stream_query_default()
+        };
+        let s = q.to_settings();
+        assert!(!s.show_description);
+        assert!(!s.show_traits);
+        assert!(s.show_image);
+        assert!(s.show_tag);
+        assert!(s.show_spoilers);
+        assert!(s.honorifics);
+    }
+
+    #[test]
+    fn test_stream_query_with_usernames() {
+        let q = GenerateStreamQuery {
+            vndb_user: Some("foo".to_string()),
+            anilist_user: Some("bar".to_string()),
+            image: false,
+            ..make_stream_query_default()
+        };
+        assert_eq!(q.vndb_user.as_deref(), Some("foo"));
+        assert_eq!(q.anilist_user.as_deref(), Some("bar"));
+        let s = q.to_settings();
+        assert!(!s.show_image);
+    }
+
+    // ===================================================================
+    // DictQuery and GenerateStreamQuery produce identical DictSettings
+    // ===================================================================
+
+    #[test]
+    fn test_dict_and_stream_query_produce_same_settings() {
+        let dict_q = DictQuery {
+            honorifics: false,
+            image: false,
+            tag: true,
+            description: false,
+            traits: true,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+        let stream_q = GenerateStreamQuery {
+            honorifics: false,
+            image: false,
+            tag: true,
+            description: false,
+            traits: true,
+            spoilers: false,
+            ..make_stream_query_default()
+        };
+        let ds = dict_q.to_settings();
+        let ss = stream_q.to_settings();
+
+        assert_eq!(ds.honorifics, ss.honorifics);
+        assert_eq!(ds.show_image, ss.show_image);
+        assert_eq!(ds.show_tag, ss.show_tag);
+        assert_eq!(ds.show_description, ss.show_description);
+        assert_eq!(ds.show_traits, ss.show_traits);
+        assert_eq!(ds.show_spoilers, ss.show_spoilers);
+    }
+
+    // ===================================================================
+    // URL round-trip: settings survive through append_settings_params
+    // ===================================================================
+
+    #[test]
+    fn test_settings_url_roundtrip() {
+        let q1 = DictQuery {
+            source: Some("vndb".to_string()),
+            id: Some("v17".to_string()),
+            honorifics: false,
+            spoilers: false,
+            image: false,
+            ..make_dict_query_default()
+        };
+        let s1 = q1.to_settings();
+        assert!(!s1.honorifics);
+        assert!(!s1.show_spoilers);
+        assert!(!s1.show_image);
+        assert!(s1.show_tag);
+        assert!(s1.show_description);
+        assert!(s1.show_traits);
+
+        // Reconstruct URL via append_settings_params
+        let mut parts = vec![
+            format!("source={}", q1.source.as_deref().unwrap()),
+            format!("id={}", q1.id.as_deref().unwrap()),
+        ];
+        q1.append_settings_params(&mut parts);
+
+        // Verify the right params were added
+        assert!(parts.contains(&"honorifics=false".to_string()));
+        assert!(parts.contains(&"image=false".to_string()));
+        assert!(parts.contains(&"spoilers=false".to_string()));
+        // tag, description, traits are default=true, should not be added
+        assert!(!parts.iter().any(|p| p.starts_with("tag=")));
+        assert!(!parts.iter().any(|p| p.starts_with("description=")));
+        assert!(!parts.iter().any(|p| p.starts_with("traits=")));
+    }
+
+    #[test]
+    fn test_settings_url_roundtrip_all_defaults() {
+        let q1 = DictQuery {
+            source: Some("anilist".to_string()),
+            id: Some("9253".to_string()),
+            ..make_dict_query_default()
+        };
+        let mut parts = vec!["source=anilist".to_string(), "id=9253".to_string()];
+        q1.append_settings_params(&mut parts);
+        // No extra params since all are default
+        assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn test_settings_url_roundtrip_all_false() {
+        let q1 = DictQuery {
+            honorifics: false,
+            image: false,
+            tag: false,
+            description: false,
+            traits: false,
+            spoilers: false,
+            ..make_dict_query_default()
+        };
+
+        let mut parts = Vec::new();
+        q1.append_settings_params(&mut parts);
+        assert_eq!(parts.len(), 6, "All-false should produce 6 params");
+
+        // Verify every setting is represented
+        let joined = parts.join("&");
+        assert!(joined.contains("honorifics=false"));
+        assert!(joined.contains("image=false"));
+        assert!(joined.contains("tag=false"));
+        assert!(joined.contains("description=false"));
+        assert!(joined.contains("traits=false"));
+        assert!(joined.contains("spoilers=false"));
+    }
+
+    // ===================================================================
+    // to_settings mapping correctness
+    // ===================================================================
+
+    #[test]
+    fn test_to_settings_field_mapping_dict_query() {
+        // Verify each DictQuery field maps to the correct DictSettings field
+        let q = DictQuery {
+            image: false,
+            tag: true,
+            description: false,
+            traits: true,
+            spoilers: false,
+            honorifics: true,
+            ..make_dict_query_default()
+        };
+        let s = q.to_settings();
+        assert_eq!(s.show_image, q.image);
+        assert_eq!(s.show_tag, q.tag);
+        assert_eq!(s.show_description, q.description);
+        assert_eq!(s.show_traits, q.traits);
+        assert_eq!(s.show_spoilers, q.spoilers);
+        assert_eq!(s.honorifics, q.honorifics);
+    }
+
+    #[test]
+    fn test_to_settings_field_mapping_stream_query() {
+        let q = GenerateStreamQuery {
+            image: false,
+            tag: true,
+            description: true,
+            traits: false,
+            spoilers: true,
+            honorifics: false,
+            ..make_stream_query_default()
+        };
+        let s = q.to_settings();
+        assert_eq!(s.show_image, q.image);
+        assert_eq!(s.show_tag, q.tag);
+        assert_eq!(s.show_description, q.description);
+        assert_eq!(s.show_traits, q.traits);
+        assert_eq!(s.show_spoilers, q.spoilers);
+        assert_eq!(s.honorifics, q.honorifics);
+    }
+
+    // ===================================================================
+    // Each setting independently toggleable
+    // ===================================================================
+
+    #[test]
+    fn test_each_setting_independently_toggleable() {
+        let fields = ["honorifics", "image", "tag", "description", "traits", "spoilers"];
+        for field in fields {
+            let q = DictQuery {
+                honorifics: field != "honorifics",
+                image: field != "image",
+                tag: field != "tag",
+                description: field != "description",
+                traits: field != "traits",
+                spoilers: field != "spoilers",
+                ..make_dict_query_default()
+            };
+            let s = q.to_settings();
+            // The one field that was set to false should be false, all others true
+            match field {
+                "honorifics" => {
+                    assert!(!s.honorifics);
+                    assert!(s.show_image && s.show_tag && s.show_description && s.show_traits && s.show_spoilers);
+                }
+                "image" => {
+                    assert!(!s.show_image);
+                    assert!(s.honorifics && s.show_tag && s.show_description && s.show_traits && s.show_spoilers);
+                }
+                "tag" => {
+                    assert!(!s.show_tag);
+                    assert!(s.honorifics && s.show_image && s.show_description && s.show_traits && s.show_spoilers);
+                }
+                "description" => {
+                    assert!(!s.show_description);
+                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_traits && s.show_spoilers);
+                }
+                "traits" => {
+                    assert!(!s.show_traits);
+                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_description && s.show_spoilers);
+                }
+                "spoilers" => {
+                    assert!(!s.show_spoilers);
+                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_description && s.show_traits);
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 }

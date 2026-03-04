@@ -34,9 +34,22 @@ function updatePreviewCard() {
         el.classList.toggle('disabled', !enabled);
         const btn = el.querySelector('.toggle-btn');
         if (btn) {
-            btn.textContent = enabled ? '\u00d7' : '+';
+            btn.textContent = enabled ? '\u274c' : '\u2705';
             btn.title = enabled ? 'Click to disable' : 'Click to re-enable';
         }
+    }
+
+    // Grey out the ちゃん suffix in the header when honorifics are off
+    const honorificSuffix = document.getElementById('header-honorific-suffix');
+    if (honorificSuffix) {
+        honorificSuffix.style.color = settings.honorifics ? '' : '#ccc';
+    }
+
+    // Dim the "primary" tag in the header when role badge (tag) is off
+    const primaryTag = document.getElementById('header-primary-tag');
+    if (primaryTag) {
+        primaryTag.style.opacity = settings.tag ? '' : '0.2';
+        primaryTag.style.filter = settings.tag ? '' : 'grayscale(1)';
     }
 
     // Spoiler toggle (nested under description)
@@ -51,7 +64,7 @@ function updatePreviewCard() {
         spoilerEl.classList.toggle('disabled', !enabled);
         const btn = spoilerEl.querySelector('.toggle-btn');
         if (btn) {
-            btn.textContent = enabled ? '\u00d7' : '+';
+            btn.textContent = enabled ? '\u274c' : '\u2705';
             btn.title = enabled ? 'Click to disable (hide spoilers)' : 'Click to re-enable (show spoilers)';
         }
     }
@@ -89,11 +102,78 @@ document.querySelectorAll('.tab').forEach(tab => {
     });
 });
 
-// === Manual tab: show/hide media type ===
-document.getElementById('source').addEventListener('change', function() {
-    document.getElementById('mediaTypeGroup').style.display =
-        this.value === 'anilist' ? 'block' : 'none';
-});
+// === Manual tab: dynamic entry rows ===
+let manualEntryCounter = 0;
+
+function addManualEntry() {
+    const container = document.getElementById('manualEntries');
+    const row = document.createElement('div');
+    row.className = 'manual-entry-row';
+    const idx = manualEntryCounter++;
+
+    row.innerHTML = `
+        <div class="entry-source">
+            <label>Source</label>
+            <select data-field="source" onchange="onEntrySourceChange(this)">
+                <option value="vndb">VNDB</option>
+                <option value="anilist">AniList</option>
+            </select>
+        </div>
+        <div class="entry-media-type hidden" data-wrapper="media-type">
+            <label>Type</label>
+            <select data-field="media_type">
+                <option value="ANIME">Anime</option>
+                <option value="MANGA">Manga / LN</option>
+            </select>
+        </div>
+        <div class="entry-id">
+            <label>Media ID</label>
+            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253">
+        </div>
+        <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
+    `;
+
+    container.appendChild(row);
+    updateRemoveButtons();
+}
+
+function removeManualEntry(btn) {
+    const row = btn.closest('.manual-entry-row');
+    row.remove();
+    updateRemoveButtons();
+}
+
+function onEntrySourceChange(select) {
+    const row = select.closest('.manual-entry-row');
+    const mtWrapper = row.querySelector('[data-wrapper="media-type"]');
+    mtWrapper.classList.toggle('hidden', select.value !== 'anilist');
+}
+
+function updateRemoveButtons() {
+    const rows = document.querySelectorAll('.manual-entry-row');
+    rows.forEach(row => {
+        const btn = row.querySelector('.remove-entry-btn');
+        btn.classList.toggle('hidden', rows.length <= 1);
+    });
+}
+
+function getManualEntries() {
+    const rows = document.querySelectorAll('.manual-entry-row');
+    const entries = [];
+    rows.forEach(row => {
+        const source = row.querySelector('[data-field="source"]').value;
+        const id = row.querySelector('[data-field="id"]').value.trim();
+        const mediaType = row.querySelector('[data-field="media_type"]').value;
+        if (id) {
+            const entry = { source, id };
+            if (source === 'anilist') {
+                entry.media_type = mediaType;
+            }
+            entries.push(entry);
+        }
+    });
+    return entries;
+}
 
 // === Shared generate button: dispatch based on active tab ===
 function generateDictionary() {
@@ -289,16 +369,14 @@ function generateFromUsername() {
     };
 }
 
-// === Manual tab: Single media generation ===
+// === Manual tab: Media generation (single or multi-entry) ===
 async function generateFromManual() {
-    const source = document.getElementById('source').value;
-    const id = document.getElementById('id').value.trim();
-    const mediaType = document.getElementById('mediaType').value;
+    const entries = getManualEntries();
     const genBtn = document.getElementById('generateBtn');
     const status = document.getElementById('statusManual');
 
-    if (!id) {
-        status.textContent = 'Please enter a media ID';
+    if (entries.length === 0) {
+        status.textContent = 'Please enter at least one media ID.';
         status.className = 'status show error';
         return;
     }
@@ -309,9 +387,17 @@ async function generateFromManual() {
     status.className = 'status show loading';
 
     try {
-        let url = `/api/yomitan-dict?source=${source}&id=${encodeURIComponent(id)}`;
-        if (source === 'anilist') {
-            url += `&media_type=${mediaType}`;
+        let url;
+        if (entries.length === 1) {
+            // Single entry: use backward-compatible source+id params
+            const e = entries[0];
+            url = `/api/yomitan-dict?source=${e.source}&id=${encodeURIComponent(e.id)}`;
+            if (e.source === 'anilist' && e.media_type) {
+                url += `&media_type=${e.media_type}`;
+            }
+        } else {
+            // Multiple entries: encode as JSON array
+            url = `/api/yomitan-dict?entries=${encodeURIComponent(JSON.stringify(entries))}`;
         }
         const sp = settingsParams();
         if (sp) url += '&' + sp;
@@ -327,7 +413,11 @@ async function generateFromManual() {
         const downloadUrl = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = `yomitan_${source}_${id}.zip`;
+        if (entries.length === 1) {
+            a.download = `yomitan_${entries[0].source}_${entries[0].id}.zip`;
+        } else {
+            a.download = 'bee_characters.zip';
+        }
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -350,7 +440,8 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Initialize the preview card toggles on load
+// Initialize the preview card toggles and first manual entry row on load
 document.addEventListener('DOMContentLoaded', () => {
     updatePreviewCard();
+    addManualEntry();
 });

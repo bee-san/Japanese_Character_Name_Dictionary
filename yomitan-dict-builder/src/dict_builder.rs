@@ -71,6 +71,9 @@ impl DictBuilder {
 
         let role = &char.role;
         let score = get_score(role);
+        // When show_tag is disabled, use empty role so definitionTags won't include
+        // role labels (e.g. "primary", "main") in Yomitan's tag display.
+        let tag_role: &str = if self.settings.show_tag { role } else { "" };
 
         let content_builder = ContentBuilder::new(self.settings.clone());
 
@@ -129,7 +132,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &name_parts.original,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -140,7 +143,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &name_parts.combined,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -156,7 +159,7 @@ impl DictBuilder {
                         self.entries.push(ContentBuilder::create_term_entry(
                             family,
                             &readings.family,
-                            role,
+                            tag_role,
                             score,
                             &structured_content,
                         ));
@@ -167,7 +170,7 @@ impl DictBuilder {
                         self.entries.push(ContentBuilder::create_term_entry(
                             given,
                             &readings.given,
-                            role,
+                            tag_role,
                             score,
                             &structured_content,
                         ));
@@ -180,7 +183,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     name_original,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -198,7 +201,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &hira_combined,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -209,7 +212,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &hira_spaced,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -219,7 +222,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &readings.family,
                     &readings.family,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -229,7 +232,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &readings.given,
                     &readings.given,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -243,7 +246,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_combined,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -253,7 +256,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_spaced,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -262,7 +265,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_family,
                     &readings.family,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -271,7 +274,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_given,
                     &readings.given,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -282,7 +285,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &readings.full,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -292,7 +295,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     &kata_full,
                     &readings.full,
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -375,7 +378,7 @@ impl DictBuilder {
                         self.entries.push(ContentBuilder::create_term_entry(
                             &term_with_suffix,
                             &reading_with_suffix,
-                            role,
+                            tag_role,
                             score,
                             &honorific_content,
                         ));
@@ -391,7 +394,7 @@ impl DictBuilder {
                 self.entries.push(ContentBuilder::create_term_entry(
                     alias,
                     &readings.full, // Use full reading for aliases
-                    role,
+                    tag_role,
                     score,
                     &structured_content,
                 ));
@@ -411,7 +414,7 @@ impl DictBuilder {
                             self.entries.push(ContentBuilder::create_term_entry(
                                 &alias_with_suffix,
                                 &reading_with_suffix,
-                                role,
+                                tag_role,
                                 score,
                                 &honorific_content,
                             ));
@@ -462,15 +465,21 @@ impl DictBuilder {
             .unwrap_or("unknown");
         let dict_built = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
-        json!([
-            ["name", "partOfSpeech", 0, "Character name", 0],
-            ["main", "name", 0, "Protagonist", 0],
-            ["primary", "name", 0, "Main character", 0],
-            ["side", "name", 0, "Side character", 0],
-            ["appears", "name", 0, "Minor appearance", 0],
-            ["docker-built", "meta", 0, build_timestamp, 0],
-            ["dict-built", "meta", 0, dict_built, 0]
-        ])
+        let mut tags = vec![json!(["name", "partOfSpeech", 0, "Character name", 0])];
+
+        // Only include role tag definitions when show_tag is enabled;
+        // when disabled, no term entry references these tags so they'd be unused.
+        if self.settings.show_tag {
+            tags.push(json!(["main", "name", 0, "Protagonist", 0]));
+            tags.push(json!(["primary", "name", 0, "Main character", 0]));
+            tags.push(json!(["side", "name", 0, "Side character", 0]));
+            tags.push(json!(["appears", "name", 0, "Minor appearance", 0]));
+        }
+
+        tags.push(json!(["docker-built", "meta", 0, build_timestamp, 0]));
+        tags.push(json!(["dict-built", "meta", 0, dict_built, 0]));
+
+        serde_json::Value::Array(tags)
     }
 
     /// Export the dictionary as in-memory ZIP bytes.
@@ -2376,5 +2385,527 @@ mod tests {
         builder.add_character(&ch, "Test");
         // Whitespace-only name should still generate entries (it's not empty)
         assert!(!builder.entries.is_empty());
+    }
+
+    // ===================================================================
+    // DictSettings-gated behavior tests — verify each setting controls
+    // the correct aspect of dictionary generation
+    // ===================================================================
+
+    // --- show_image: false should suppress images in ZIP ---
+
+    #[test]
+    fn test_show_image_false_no_images_in_builder() {
+        let settings = DictSettings {
+            show_image: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.image_bytes = Some(vec![0xFF, 0xD8, 0xFF, 0xE0]);
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        assert!(
+            builder.images.is_empty(),
+            "show_image=false should not add images to the builder"
+        );
+    }
+
+    #[test]
+    fn test_show_image_false_no_img_references_in_content() {
+        let settings = DictSettings {
+            show_image: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.image_bytes = Some(vec![0xFF, 0xD8, 0xFF, 0xE0]);
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        let content_str = serde_json::to_string(&builder.entries).unwrap();
+        assert!(
+            !content_str.contains("\"img\""),
+            "show_image=false should not reference img tags in structured content"
+        );
+    }
+
+    #[test]
+    fn test_show_image_false_zip_has_no_img_folder() {
+        let settings = DictSettings {
+            show_image: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.image_bytes = Some(vec![0xFF, 0xD8, 0xFF, 0xE0]);
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+        assert!(
+            !names.iter().any(|n| n.starts_with("img/")),
+            "show_image=false ZIP should have no img/ entries"
+        );
+    }
+
+    #[test]
+    fn test_show_image_true_zip_has_img_folder() {
+        let settings = DictSettings {
+            show_image: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.image_bytes = Some(vec![0xFF, 0xD8, 0xFF, 0xE0]);
+        ch.image_ext = Some("jpg".to_string());
+        builder.add_character(&ch, "Test");
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+        assert!(
+            names.iter().any(|n| n.starts_with("img/")),
+            "show_image=true ZIP should have img/ entries"
+        );
+    }
+
+    // --- show_tag: false should suppress role badges ---
+
+    #[test]
+    fn test_show_tag_false_no_role_badge_in_content() {
+        let settings = DictSettings {
+            show_tag: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test Name", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        // Find base entry
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            !sc_str.contains("Protagonist"),
+            "show_tag=false should not include 'Protagonist' label"
+        );
+    }
+
+    #[test]
+    fn test_show_tag_true_has_role_badge_in_content() {
+        let settings = DictSettings {
+            show_tag: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test Name", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            sc_str.contains("Protagonist"),
+            "show_tag=true should include 'Protagonist' label"
+        );
+    }
+
+    #[test]
+    fn test_show_tag_false_definition_tags_exclude_role() {
+        let settings = DictSettings {
+            show_tag: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test Name", "テスト", "primary");
+        builder.add_character(&ch, "Test");
+
+        // Every entry's definitionTags (element [2]) must be just "name" with no role
+        for entry in &builder.entries {
+            let def_tags = entry[2].as_str().unwrap();
+            assert_eq!(
+                def_tags, "name",
+                "show_tag=false: definitionTags must be 'name', got '{}'",
+                def_tags
+            );
+        }
+    }
+
+    #[test]
+    fn test_show_tag_true_definition_tags_include_role() {
+        let settings = DictSettings {
+            show_tag: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test Name", "テスト", "primary");
+        builder.add_character(&ch, "Test");
+
+        // Every entry's definitionTags (element [2]) must include the role
+        for entry in &builder.entries {
+            let def_tags = entry[2].as_str().unwrap();
+            assert_eq!(
+                def_tags, "name primary",
+                "show_tag=true: definitionTags must be 'name primary', got '{}'",
+                def_tags
+            );
+        }
+    }
+
+    #[test]
+    fn test_show_tag_false_tag_bank_excludes_role_tags() {
+        let settings = DictSettings {
+            show_tag: false,
+            ..DictSettings::default()
+        };
+        let builder = DictBuilder::new(settings, None, "Test".to_string());
+        let tags = builder.create_tags();
+        let tags_str = serde_json::to_string(&tags).unwrap();
+        assert!(
+            !tags_str.contains("\"primary\""),
+            "show_tag=false: tag_bank must not define 'primary'"
+        );
+        assert!(
+            !tags_str.contains("\"main\""),
+            "show_tag=false: tag_bank must not define 'main'"
+        );
+        // "name" tag should always be present
+        assert!(
+            tags_str.contains("\"name\""),
+            "tag_bank must always define 'name'"
+        );
+    }
+
+    #[test]
+    fn test_show_tag_true_tag_bank_includes_role_tags() {
+        let settings = DictSettings {
+            show_tag: true,
+            ..DictSettings::default()
+        };
+        let builder = DictBuilder::new(settings, None, "Test".to_string());
+        let tags = builder.create_tags();
+        let tags_str = serde_json::to_string(&tags).unwrap();
+        assert!(
+            tags_str.contains("\"primary\""),
+            "show_tag=true: tag_bank must define 'primary'"
+        );
+        assert!(
+            tags_str.contains("\"main\""),
+            "show_tag=true: tag_bank must define 'main'"
+        );
+        assert!(
+            tags_str.contains("\"side\""),
+            "show_tag=true: tag_bank must define 'side'"
+        );
+        assert!(
+            tags_str.contains("\"appears\""),
+            "show_tag=true: tag_bank must define 'appears'"
+        );
+    }
+
+    // --- show_description: false should suppress descriptions ---
+
+    #[test]
+    fn test_show_description_false_no_description_in_content() {
+        let settings = DictSettings {
+            show_description: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_test_character("c1", "Test", "テスト", "main");
+        ch.description = Some("A unique test description.".to_string());
+        builder.add_character(&ch, "Test");
+
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            !sc_str.contains("A unique test description."),
+            "show_description=false should exclude description"
+        );
+    }
+
+    #[test]
+    fn test_show_description_true_has_description_in_content() {
+        let settings = DictSettings {
+            show_description: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_test_character("c1", "Test", "テスト", "main");
+        ch.description = Some("A unique test description.".to_string());
+        builder.add_character(&ch, "Test");
+
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            sc_str.contains("A unique test description."),
+            "show_description=true should include description"
+        );
+    }
+
+    // --- show_traits: false should suppress traits ---
+
+    #[test]
+    fn test_show_traits_false_no_traits_in_content() {
+        let settings = DictSettings {
+            show_traits: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            !sc_str.contains("Character Information"),
+            "show_traits=false should exclude Character Information"
+        );
+    }
+
+    #[test]
+    fn test_show_traits_true_has_traits_in_content() {
+        let settings = DictSettings {
+            show_traits: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_test_character("c1", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("テスト"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(
+            sc_str.contains("Character Information"),
+            "show_traits=true should include Character Information"
+        );
+    }
+
+    // --- All settings false: minimal content ---
+
+    #[test]
+    fn test_all_settings_off_minimal_content() {
+        let settings = DictSettings {
+            show_image: false,
+            show_tag: false,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+            honorifics: false,
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.description = Some("Detailed description.".to_string());
+        builder.add_character(&ch, "Test");
+
+        // No images in builder
+        assert!(builder.images.is_empty());
+
+        // No honorific entries
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+        assert!(
+            !terms.iter().any(|t| t.ends_with("さん")),
+            "All off should not have honorifics"
+        );
+
+        // Content should not have img, role badge, description, or traits
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("須々木 心一"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(!sc_str.contains("\"img\""), "No img tag");
+        assert!(!sc_str.contains("Protagonist"), "No role badge");
+        assert!(!sc_str.contains("Description"), "No description");
+        assert!(!sc_str.contains("Character Information"), "No traits");
+    }
+
+    // --- All settings true: maximal content ---
+
+    #[test]
+    fn test_all_settings_on_maximal_content() {
+        let settings = DictSettings::default();
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_full_character();
+        ch.description = Some("A brilliant detective.".to_string());
+        builder.add_character(&ch, "Test");
+
+        // Has images
+        assert!(!builder.images.is_empty(), "Should have images");
+
+        // Has honorific entries
+        let terms: Vec<String> = builder
+            .entries
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+        assert!(
+            terms.iter().any(|t| t.ends_with("さん")),
+            "Should have honorifics"
+        );
+
+        // Content should have everything
+        let entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str() == Some("須々木 心一"))
+            .unwrap();
+        let sc_str = serde_json::to_string(&entry[5]).unwrap();
+        assert!(sc_str.contains("\"img\""), "Should have img tag");
+        assert!(sc_str.contains("Protagonist"), "Should have role badge");
+        assert!(sc_str.contains("Description"), "Should have description");
+        assert!(
+            sc_str.contains("Character Information"),
+            "Should have traits"
+        );
+    }
+
+    // --- Settings don't affect entry counts (only content shape) ---
+
+    #[test]
+    fn test_settings_dont_change_entry_count_except_honorifics() {
+        let settings_with = DictSettings {
+            honorifics: true,
+            show_image: true,
+            show_tag: true,
+            show_description: true,
+            show_traits: true,
+            show_spoilers: true,
+        };
+        let settings_without = DictSettings {
+            honorifics: true,
+            show_image: false,
+            show_tag: false,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+        };
+
+        let mut b1 = DictBuilder::new(settings_with, None, "T".to_string());
+        let mut b2 = DictBuilder::new(settings_without, None, "T".to_string());
+
+        let ch = make_test_character("c1", "Test Name", "テスト", "main");
+        b1.add_character(&ch, "T");
+        b2.add_character(&ch, "T");
+
+        assert_eq!(
+            b1.entries.len(),
+            b2.entries.len(),
+            "Image/tag/description/traits/spoilers settings should not affect entry count when honorifics are the same"
+        );
+    }
+
+    #[test]
+    fn test_honorifics_setting_affects_entry_count() {
+        let with_hon = DictSettings {
+            honorifics: true,
+            ..DictSettings::default()
+        };
+        let without_hon = DictSettings {
+            honorifics: false,
+            ..DictSettings::default()
+        };
+
+        let mut b1 = DictBuilder::new(with_hon, None, "T".to_string());
+        let mut b2 = DictBuilder::new(without_hon, None, "T".to_string());
+
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        b1.add_character(&ch, "T");
+        b2.add_character(&ch, "T");
+
+        assert!(
+            b1.entries.len() > b2.entries.len(),
+            "honorifics=true should produce more entries ({}) than honorifics=false ({})",
+            b1.entries.len(),
+            b2.entries.len()
+        );
+    }
+
+    // --- ZIP export with various settings ---
+
+    #[test]
+    fn test_zip_export_with_all_settings_off() {
+        let settings = DictSettings {
+            show_image: false,
+            show_tag: false,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+            honorifics: false,
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        let zip_bytes = builder.export_bytes().unwrap();
+        let cursor = std::io::Cursor::new(zip_bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+
+        let names = zip_filenames(&mut archive);
+        assert!(names.contains(&"index.json".to_string()));
+        assert!(names.contains(&"tag_bank_1.json".to_string()));
+        // Should have term banks but no images
+        assert!(names.iter().any(|n| n.starts_with("term_bank_")));
+        assert!(!names.iter().any(|n| n.starts_with("img/")));
+    }
+
+    // --- Spoiler settings affect all honorific variants equally ---
+
+    #[test]
+    fn test_spoiler_settings_propagate_to_honorific_entries() {
+        let no_spoilers = DictSettings {
+            show_spoilers: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(no_spoilers, None, "Test".to_string());
+        let mut ch = make_full_character();
+        // Add a spoiler trait that should be excluded
+        ch.personality.push(CharacterTrait {
+            name: "HiddenTrait".to_string(),
+            spoiler: 2,
+        });
+        builder.add_character(&ch, "Test");
+
+        // Check a honorific entry
+        let san_entry = builder
+            .entries
+            .iter()
+            .find(|e| e[0].as_str().map(|s| s == "須々木さん").unwrap_or(false))
+            .expect("Should have 須々木さん");
+
+        let sc_str = serde_json::to_string(&san_entry[5]).unwrap();
+        assert!(
+            !sc_str.contains("HiddenTrait"),
+            "Spoiler traits should be excluded from honorific entries too"
+        );
     }
 }

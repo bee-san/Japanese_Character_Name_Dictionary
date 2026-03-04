@@ -43,11 +43,6 @@
         <div class="main-col">
             <div class="container">
 
-                <!-- Main Header Image -->
-                <div class="dict-preview">
-                    <img src="/static/main_image.png" alt="Bee's Character Dictionary Builder" style="max-height: 300px; object-fit: contain;">
-                </div>
-
                 <div class="tabs">
                     <div class="tab active" data-tab="username">From VNDB / AniList Username</div>
                     <div class="tab" data-tab="manual">From VNDB / AniList Media ID</div>
@@ -77,122 +72,110 @@
 
                 <!-- Tab 2: Manual Media ID -->
                 <div class="tab-content" id="tab-manual">
-                    <div class="form-group">
-                        <label for="source">Source:</label>
-                        <select id="source" name="source" required>
-                            <option value="vndb">VNDB (Visual Novel Database)</option>
-                            <option value="anilist">AniList (Anime/Manga/Light Novels)</option>
-                        </select>
+                    <div id="manualEntries">
+                        <!-- Entry rows are added dynamically by JS -->
                     </div>
-
-                    <div class="form-group" id="mediaTypeGroup">
-                        <label for="mediaType">Media Type:</label>
-                        <select id="mediaType" name="mediaType">
-                            <option value="ANIME">Anime</option>
-                            <option value="MANGA">Manga / Light Novel</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="id">Media ID:</label>
-                        <input type="text" id="id" name="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" required>
-                    </div>
+                    <button type="button" id="addEntryBtn" onclick="addManualEntry()">+ Add Another Entry</button>
                 </div>
 
-                <!-- Fake Yomitan dictionary preview (shared across tabs) -->
+                <!-- Fake Yomitan dictionary preview -->
+                <div style="border-top: 2px solid #f0f0f0; margin-top: 28px; padding-top: 20px;">
+                <p style="text-align: left; color: #999; font-size: 0.9em; margin-bottom: 8px;">This is what the dictionary will look like</p>
                 <div class="yomitan-preview-section">
                     <div class="yomitan-card">
-                        <!-- Simulated Yomitan header (term + tags) -->
-                        <div class="yomitan-card-header">
-                            <span class="yomitan-ruby">ふ た み は ら り り こ</span>
-                            <div class="yomitan-term">二見原 莉々子ちゃん</div>
-                            <div class="yomitan-tags">
-                                <span class="yomitan-tag tag-name">name</span>
-                                <span class="yomitan-tag tag-primary">primary</span>
-                                <span class="yomitan-tag tag-dict">Bee's Character Dictionary</span>
+                    <!-- Simulated Yomitan header (term + tags) -->
+                    <div class="yomitan-card-header">
+                        <span class="yomitan-ruby">ふ た み は ら り り こ</span>
+                        <div class="yomitan-term">二見原 莉々子<span id="header-honorific-suffix">ちゃん</span></div>
+                        <div class="yomitan-tags">
+                            <span class="yomitan-tag tag-name">name</span>
+                            <span class="yomitan-tag tag-primary" id="header-primary-tag">primary</span>
+                            <span class="yomitan-tag tag-dict">Bee's Character Dictionary</span>
+                        </div>
+                    </div>
+
+                    <!-- Our structured content -->
+                    <div class="yomitan-card-body">
+
+                        <!-- Honorific banner [toggleable] -->
+                        <div id="preview-honorifics" class="toggle-section has-info">
+                            <span class="info-btn" onclick="event.stopPropagation(); alert('If your character is called せいさん, some dictionaries will show the longest match which is 生産. This checkbox will make the characters name the longest match.')" title="More info">?</span>
+                            <span class="toggle-btn" onclick="toggleSetting('honorifics')" title="Click to disable">❌</span>
+                            <div class="yomitan-honorific">
+                                <strong>ちゃん</strong> &mdash; Endearing suffix (children, close friends, girls)
                             </div>
                         </div>
 
-                        <!-- Our structured content -->
-                        <div class="yomitan-card-body">
+                        <!-- Name block (NOT toggleable) -->
+                        <div class="yomitan-name-jp">二見原 莉々子</div>
+                        <div class="yomitan-name-romaji">Futamihara Ririko</div>
 
-                            <!-- Honorific banner [toggleable] -->
-                            <div id="preview-honorifics" class="toggle-section">
-                                <span class="toggle-btn" onclick="toggleSetting('honorifics')" title="Click to disable">&times;</span>
-                                <div class="yomitan-honorific">
-                                    <strong>ちゃん</strong> &mdash; Endearing suffix (children, close friends, girls)
-                                </div>
+                        <!-- Character image [toggleable] -->
+                        <div id="preview-image" class="toggle-section">
+                            <span class="toggle-btn" onclick="toggleSetting('image')" title="Click to disable">❌</span>
+                            <div class="yomitan-portrait">
+                                <img src="https://t.vndb.org/ch/02/180602.jpg" alt="Futamihara Ririko">
                             </div>
+                        </div>
 
-                            <!-- Name block (NOT toggleable) -->
-                            <div class="yomitan-name-jp">二見原 莉々子</div>
-                            <div class="yomitan-name-romaji">Futamihara Ririko</div>
+                        <!-- Media source (not toggleable) -->
+                        <div class="yomitan-source">From: ライムライト・レモネードジャム</div>
 
-                            <!-- Character image [toggleable] -->
-                            <div id="preview-image" class="toggle-section">
-                                <span class="toggle-btn" onclick="toggleSetting('image')" title="Click to disable">&times;</span>
-                                <div class="yomitan-portrait">
-                                    <img src="https://t.vndb.org/ch/02/180602.jpg" alt="Futamihara Ririko">
-                                </div>
-                            </div>
+                        <!-- Role badge [toggleable] -->
+                        <div id="preview-tag" class="toggle-section">
+                            <span class="toggle-btn" onclick="toggleSetting('tag')" title="Click to disable">❌</span>
+                            <span class="yomitan-role-badge role-primary">Main Character</span>
+                        </div>
 
-                            <!-- Media source (not toggleable) -->
-                            <div class="yomitan-source">From: ライムライト・レモネードジャム</div>
+                        <!-- Description [toggleable] -->
+                        <div id="preview-description" class="toggle-section">
+                            <span class="toggle-btn" onclick="toggleSetting('description')" title="Click to disable">❌</span>
+                            <div class="yomitan-details">
+                                <div class="yomitan-details-summary">&#9660; Description</div>
+                                <div class="yomitan-details-content">
+                                    <p><strong>SNS Manager of <em>Lemonade Factory</em></strong></p>
+                                    <p>The protagonist's childhood friend.<br>
+                                    She doesn't sweat the small stuff and has an outspoken personality.<br>
+                                    Bad at waking up in the morning, she has the protagonist wake her up.</p>
+                                    <p style="font-size: 0.85em; color: #999;">[Translated from official website]</p>
 
-                            <!-- Role badge [toggleable] -->
-                            <div id="preview-tag" class="toggle-section">
-                                <span class="toggle-btn" onclick="toggleSetting('tag')" title="Click to disable">&times;</span>
-                                <span class="yomitan-role-badge role-primary">Main Character</span>
-                            </div>
-
-                            <!-- Description [toggleable] -->
-                            <div id="preview-description" class="toggle-section">
-                                <span class="toggle-btn" onclick="toggleSetting('description')" title="Click to disable">&times;</span>
-                                <div class="yomitan-details">
-                                    <div class="yomitan-details-summary">&#9660; Description</div>
-                                    <div class="yomitan-details-content">
-                                        <p><strong>SNS Manager of <em>Lemonade Factory</em></strong></p>
-                                        <p>The protagonist's childhood friend.<br>
-                                        She doesn't sweat the small stuff and has an outspoken personality.<br>
-                                        Bad at waking up in the morning, she has the protagonist wake her up.</p>
-                                        <p style="font-size: 0.85em; color: #999;">[Translated from official website]</p>
-
-                                        <!-- Spoiler block [nested toggle] -->
-                                        <div id="spoiler-wrapper">
-                                            <div id="preview-spoilers" class="toggle-section" style="padding-right: 0;">
-                                                <div class="yomitan-spoiler-block">
-                                                    <span class="toggle-btn" onclick="event.stopPropagation(); toggleSetting('spoilers')" title="Click to disable (hide spoilers)" style="right: 6px; top: 6px;">&times;</span>
-                                                    [spoiler]Ririko really likes Anki. Disable this to hide spoilers from the dictionary.[/spoiler]
-                                                </div>
+                                    <!-- Spoiler block [nested toggle] -->
+                                    <div id="spoiler-wrapper">
+                                        <div id="preview-spoilers" class="toggle-section" style="padding-right: 0;">
+                                            <div class="yomitan-spoiler-block">
+                                                <span class="toggle-btn" onclick="event.stopPropagation(); toggleSetting('spoilers')" title="Click to disable (hide spoilers)" style="right: 6px; top: 6px;">❌</span>
+                                                [spoiler]Ririko really likes Anki. Disable this to hide spoilers from the dictionary.[/spoiler]
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Traits / Character Information [toggleable] -->
-                            <div id="preview-traits" class="toggle-section">
-                                <span class="toggle-btn" onclick="toggleSetting('traits')" title="Click to disable">&times;</span>
-                                <div class="yomitan-details">
-                                    <div class="yomitan-details-summary">&#9660; Character Information</div>
-                                    <ul class="yomitan-traits-list">
-                                        <li>Hair: Braid, Ponytail, Red, Shoulder-length</li>
-                                        <li>Eyes: Amber</li>
-                                        <li>Body: Pale, Slim, Teen</li>
-                                        <li>Clothes: Hairpin, Necklace, Pantyhose, Pleated Skirt, School Uniform, Sweater, Yukata</li>
-                                        <li>Personality: Blunt, Cheerful, Kind, Lazy, Mischievous, Sloppy, Smart, Sweets Lover</li>
-                                        <li>Role: Childhood Friend, Online Content Creator</li>
-                                        <li>Activities: Online Chatting, Shopping</li>
-                                        <li>Voiced by: Shimashima Hakase</li>
-                                    </ul>
-                                </div>
-                            </div>
-
                         </div>
+
+                        <!-- Traits / Character Information [toggleable] -->
+                        <div id="preview-traits" class="toggle-section">
+                            <span class="toggle-btn" onclick="toggleSetting('traits')" title="Click to disable">❌</span>
+                            <div class="yomitan-details">
+                                <div class="yomitan-details-summary">&#9660; Character Information</div>
+                                <ul class="yomitan-traits-list">
+                                    <li>Hair: Braid, Ponytail, Red, Shoulder-length</li>
+                                    <li>Eyes: Amber</li>
+                                    <li>Body: Pale, Slim, Teen</li>
+                                    <li>Clothes: Hairpin, Necklace, Pantyhose, Pleated Skirt, School Uniform, Sweater, Yukata</li>
+                                    <li>Personality: Blunt, Cheerful, Kind, Lazy, Mischievous, Sloppy, Smart, Sweets Lover</li>
+                                    <li>Role: Childhood Friend, Online Content Creator</li>
+                                    <li>Activities: Online Chatting, Shopping</li>
+                                    <li>Voiced by: Shimashima Hakase</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                    </div>
                     </div>
                 </div>
+                </div>
 
-                <!-- Generate button (shared across tabs) -->
+                <!-- Generate button -->
                 <button id="generateBtn" style="margin-top: 16px;" onclick="generateDictionary()">Generate Dictionary</button>
 
                 <div class="progress-bar-container" id="progressContainer">
@@ -233,7 +216,7 @@
                 Integrated into your favourite apps so you don't have to use this website
             </p>
             <ul style="list-style: none; padding: 0; margin-bottom: 16px;">
-                <li style="padding: 8px 0; color: #555; font-size: 0.92em;">
+                <li style="padding: 8px 0; color: #666; font-size: 0.92em;">
                     <strong><a href='https://github.com/bpwhelan/GameSentenceMiner' target='_blank' rel='noopener'>GameSentenceMiner (GSM)</a></strong> - Found in Database Management in Stats
                 </li>
             </ul>
@@ -248,7 +231,7 @@
         <div class="info-card">
             <h3>Dictionary Apps that support auto-updating</h3>
             <ul style="padding-left: 20px;">
-                <li style="padding: 4px 0; color: #555; font-size: 0.92em;">
+                <li style="padding: 4px 0; color: #666; font-size: 0.92em;">
                     <a href='https://github.com/rampaa/JL' target='_blank' rel='noopener'>JL</a>
                 </li>
             </ul>

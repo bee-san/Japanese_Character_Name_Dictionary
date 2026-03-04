@@ -1673,4 +1673,596 @@ mod tests {
         assert!(traits_str.contains("Minor"));
         assert!(traits_str.contains("Major"));
     }
+
+    // ===================================================================
+    // DictSettings individual toggle tests — verify each setting gates
+    // exactly the right section of the structured content card
+    // ===================================================================
+
+    // --- DictSettings::default() ---
+
+    #[test]
+    fn test_dict_settings_default_all_true() {
+        let s = DictSettings::default();
+        assert!(s.show_image);
+        assert!(s.show_tag);
+        assert!(s.show_description);
+        assert!(s.show_traits);
+        assert!(s.show_spoilers);
+        assert!(s.honorifics);
+    }
+
+    #[test]
+    fn test_dict_settings_clone() {
+        let s = DictSettings {
+            show_image: false,
+            show_tag: true,
+            show_description: false,
+            show_traits: true,
+            show_spoilers: false,
+            honorifics: false,
+        };
+        let cloned = s.clone();
+        assert_eq!(cloned.show_image, false);
+        assert_eq!(cloned.show_tag, true);
+        assert_eq!(cloned.show_description, false);
+        assert_eq!(cloned.show_traits, true);
+        assert_eq!(cloned.show_spoilers, false);
+        assert_eq!(cloned.honorifics, false);
+    }
+
+    // --- show_image toggle ---
+
+    #[test]
+    fn test_show_image_true_includes_img_tag() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_image: true,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let items = content["content"].as_array().unwrap();
+        let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
+        assert!(has_img, "show_image=true should include img tag");
+    }
+
+    #[test]
+    fn test_show_image_false_excludes_img_tag() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_image: false,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let items = content["content"].as_array().unwrap();
+        let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
+        assert!(!has_img, "show_image=false should exclude img tag");
+    }
+
+    #[test]
+    fn test_show_image_false_still_shows_name_and_role() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_image: false,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains(&char.name_original));
+        assert!(content_str.contains(&char.name));
+    }
+
+    // --- show_tag toggle ---
+
+    #[test]
+    fn test_show_tag_true_includes_role_badge() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_tag: true,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            content_str.contains("Protagonist")
+                || content_str.contains("Main Character")
+                || content_str.contains("Side Character")
+                || content_str.contains("Minor Role"),
+            "show_tag=true should include role badge"
+        );
+    }
+
+    #[test]
+    fn test_show_tag_false_excludes_role_badge() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_tag: false,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let items = content["content"].as_array().unwrap();
+        // Role badge uses background color styling — verify no span with background exists
+        let role_spans: Vec<_> = items
+            .iter()
+            .filter(|v| v["tag"].as_str() == Some("span") && v["style"]["background"].is_string())
+            .collect();
+        assert!(
+            role_spans.is_empty(),
+            "show_tag=false should not have role badge spans"
+        );
+    }
+
+    // --- show_description toggle ---
+
+    #[test]
+    fn test_show_description_true_includes_description_details() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_description: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.description = Some("This is a description.".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("Description"));
+        assert!(content_str.contains("This is a description."));
+    }
+
+    #[test]
+    fn test_show_description_false_excludes_description() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_description: false,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.description = Some("This is a description.".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            !content_str.contains("This is a description."),
+            "show_description=false should not include description text"
+        );
+    }
+
+    #[test]
+    fn test_show_description_false_does_not_affect_traits() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_description: false,
+            show_traits: true,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        // Traits section should still be present
+        assert!(
+            content_str.contains("Character Information"),
+            "Disabling description should not affect traits"
+        );
+    }
+
+    // --- show_traits toggle ---
+
+    #[test]
+    fn test_show_traits_true_includes_character_information() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_traits: true,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            content_str.contains("Character Information"),
+            "show_traits=true should include Character Information section"
+        );
+    }
+
+    #[test]
+    fn test_show_traits_false_excludes_character_information() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_traits: false,
+            ..DictSettings::default()
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            !content_str.contains("Character Information"),
+            "show_traits=false should exclude Character Information section"
+        );
+    }
+
+    #[test]
+    fn test_show_traits_false_does_not_affect_description() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_traits: false,
+            show_description: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.description = Some("A unique description.".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            content_str.contains("A unique description."),
+            "Disabling traits should not affect description"
+        );
+    }
+
+    // --- show_spoilers toggle ---
+
+    #[test]
+    fn test_show_spoilers_true_includes_spoiler_text_in_description() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_spoilers: true,
+            show_description: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.description = Some("Visible [spoiler]Secret info[/spoiler] end".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            content_str.contains("Secret info"),
+            "show_spoilers=true should keep spoiler text"
+        );
+    }
+
+    #[test]
+    fn test_show_spoilers_false_strips_spoiler_text_from_description() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_spoilers: false,
+            show_description: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.description = Some("Visible [spoiler]Secret info[/spoiler] end".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            !content_str.contains("Secret info"),
+            "show_spoilers=false should strip spoiler text"
+        );
+        assert!(
+            content_str.contains("Visible"),
+            "Non-spoiler text should remain"
+        );
+    }
+
+    #[test]
+    fn test_show_spoilers_false_filters_spoiler_traits() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_spoilers: false,
+            show_traits: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.personality = vec![
+            CharacterTrait {
+                name: "Safe".to_string(),
+                spoiler: 0,
+            },
+            CharacterTrait {
+                name: "Minor spoiler".to_string(),
+                spoiler: 1,
+            },
+            CharacterTrait {
+                name: "Major spoiler".to_string(),
+                spoiler: 2,
+            },
+        ];
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("Safe"));
+        assert!(!content_str.contains("Minor spoiler"));
+        assert!(!content_str.contains("Major spoiler"));
+    }
+
+    #[test]
+    fn test_show_spoilers_true_includes_all_traits() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_spoilers: true,
+            show_traits: true,
+            ..DictSettings::default()
+        });
+        let mut char = make_test_character();
+        char.personality = vec![
+            CharacterTrait {
+                name: "Safe".to_string(),
+                spoiler: 0,
+            },
+            CharacterTrait {
+                name: "Dangerous".to_string(),
+                spoiler: 2,
+            },
+        ];
+        let content = cb.build_content(&char, None, None, "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(content_str.contains("Safe"));
+        assert!(content_str.contains("Dangerous"));
+    }
+
+    // --- Combined toggles: all off ---
+
+    #[test]
+    fn test_all_toggles_off_only_name_and_source_remain() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_image: false,
+            show_tag: false,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+            honorifics: false,
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game Title");
+        let items = content["content"].as_array().unwrap();
+
+        // Should only have: Japanese name div, Romanized name div, "From: Game Title" div
+        for item in items {
+            let tag = item["tag"].as_str().unwrap_or("");
+            assert_eq!(tag, "div", "With all sections off, only div elements (names + source) should remain, got tag '{}'", tag);
+        }
+        let content_str = serde_json::to_string(&content).unwrap();
+        assert!(
+            content_str.contains(&char.name_original),
+            "Japanese name should always be present"
+        );
+        assert!(
+            content_str.contains(&char.name),
+            "Romanized name should always be present"
+        );
+        assert!(
+            content_str.contains("Game Title"),
+            "Media source should always be present"
+        );
+        assert!(!content_str.contains("\"img\""), "No img tag");
+        assert!(!content_str.contains("Description"), "No description");
+        assert!(!content_str.contains("Character Information"), "No traits");
+    }
+
+    // --- Combined toggles: all on ---
+
+    #[test]
+    fn test_all_toggles_on_all_sections_present() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let mut char = make_test_character();
+        char.description = Some("Has a description".to_string());
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let content_str = serde_json::to_string(&content).unwrap();
+
+        assert!(content_str.contains("\"img\""), "Should have img tag");
+        assert!(
+            content_str.contains("Protagonist"),
+            "Should have role badge"
+        );
+        assert!(
+            content_str.contains("Description"),
+            "Should have description details"
+        );
+        assert!(
+            content_str.contains("Character Information"),
+            "Should have traits section"
+        );
+    }
+
+    // --- Content structure counts ---
+
+    #[test]
+    fn test_content_element_count_minimal() {
+        let cb = ContentBuilder::new(DictSettings {
+            show_image: false,
+            show_tag: false,
+            show_description: false,
+            show_traits: false,
+            show_spoilers: false,
+            honorifics: false,
+        });
+        let char = make_test_character();
+        let content = cb.build_content(&char, None, None, "Game");
+        let items = content["content"].as_array().unwrap();
+        // Expect: Japanese name, Romanized name, "From: Game" = 3 divs
+        assert_eq!(
+            items.len(),
+            3,
+            "Minimal settings should produce 3 elements (jp name, romaji name, source)"
+        );
+    }
+
+    #[test]
+    fn test_content_element_count_full_with_image() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let mut char = make_test_character();
+        char.description = Some("desc".to_string());
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let items = content["content"].as_array().unwrap();
+        // Expect: jp name, romaji name, img, source, role badge, description details, traits details = 7
+        assert_eq!(
+            items.len(),
+            7,
+            "Full settings with image should produce 7 elements"
+        );
+    }
+
+    #[test]
+    fn test_content_element_count_no_image() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let mut char = make_test_character();
+        char.description = Some("desc".to_string());
+        let content = cb.build_content(&char, None, None, "Game");
+        let items = content["content"].as_array().unwrap();
+        // No image: jp name, romaji name, source, role badge, description, traits = 6
+        assert_eq!(
+            items.len(),
+            6,
+            "Full settings without image should produce 6 elements"
+        );
+    }
+
+    // --- Spoiler stripping in description vs. keeping in traits ---
+
+    #[test]
+    fn test_spoiler_stripping_only_affects_description_not_structure() {
+        let cb_no_spoilers = ContentBuilder::new(DictSettings {
+            show_spoilers: false,
+            show_description: true,
+            show_traits: true,
+            ..DictSettings::default()
+        });
+        let cb_with_spoilers = ContentBuilder::new(DictSettings::default());
+        let mut char = make_test_character();
+        char.description = Some("Visible [spoiler]Hidden[/spoiler] end".to_string());
+
+        let content_no = cb_no_spoilers.build_content(&char, None, None, "G");
+        let content_yes = cb_with_spoilers.build_content(&char, None, None, "G");
+
+        // Both should have description details section
+        let items_no = content_no["content"].as_array().unwrap();
+        let items_yes = content_yes["content"].as_array().unwrap();
+        let has_details = |items: &[serde_json::Value]| {
+            items.iter().any(|v| v["tag"].as_str() == Some("details"))
+        };
+        assert!(
+            has_details(items_no),
+            "Description section should exist even without spoilers"
+        );
+        assert!(
+            has_details(items_yes),
+            "Description section should exist with spoilers"
+        );
+
+        let str_no = serde_json::to_string(&content_no).unwrap();
+        let str_yes = serde_json::to_string(&content_yes).unwrap();
+        assert!(!str_no.contains("Hidden"));
+        assert!(str_yes.contains("Hidden"));
+    }
+
+    // --- Empty character edge cases with settings ---
+
+    #[test]
+    fn test_empty_names_with_all_settings() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let mut char = make_test_character();
+        char.name = String::new();
+        char.name_original = String::new();
+        char.description = None;
+        char.personality = vec![];
+        char.roles = vec![];
+        char.sex = None;
+        char.age = None;
+        char.height = None;
+        char.weight = None;
+        char.blood_type = None;
+        char.birthday = None;
+        let content = cb.build_content(&char, None, None, "");
+        let items = content["content"].as_array().unwrap();
+        // With everything empty and no title: should only have role badge span
+        assert!(
+            !items.is_empty(),
+            "Even empty character should produce at least the role badge"
+        );
+    }
+
+    // --- Image dimension edge cases ---
+
+    #[test]
+    fn test_image_with_zero_dimensions_uses_fallback() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), "Game");
+        let items = content["content"].as_array().unwrap();
+        let img = items
+            .iter()
+            .find(|v| v["tag"].as_str() == Some("img"))
+            .unwrap();
+        assert_eq!(
+            img["width"].as_u64().unwrap(),
+            67,
+            "Should use fallback width"
+        );
+        assert_eq!(
+            img["height"].as_u64().unwrap(),
+            100,
+            "Should use fallback height"
+        );
+    }
+
+    #[test]
+    fn test_image_with_valid_dimensions_calculates_proportionally() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((200, 400)), "Game");
+        let items = content["content"].as_array().unwrap();
+        let img = items
+            .iter()
+            .find(|v| v["tag"].as_str() == Some("img"))
+            .unwrap();
+        // height capped at 100, so width = (200 * 100 + 200) / 400 = 50
+        assert_eq!(img["height"].as_u64().unwrap(), 100);
+        assert_eq!(img["width"].as_u64().unwrap(), 50);
+    }
+
+    #[test]
+    fn test_image_none_dimensions_uses_fallback() {
+        let cb = ContentBuilder::new(DictSettings::default());
+        let char = make_test_character();
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, "Game");
+        let items = content["content"].as_array().unwrap();
+        let img = items
+            .iter()
+            .find(|v| v["tag"].as_str() == Some("img"))
+            .unwrap();
+        assert_eq!(img["width"].as_u64().unwrap(), 67);
+        assert_eq!(img["height"].as_u64().unwrap(), 100);
+    }
+
+    // --- Role color/label mapping ---
+
+    #[test]
+    fn test_all_roles_produce_correct_labels() {
+        let roles_labels = [
+            ("main", "Protagonist"),
+            ("primary", "Main Character"),
+            ("side", "Side Character"),
+            ("appears", "Minor Role"),
+        ];
+        for (role, expected_label) in roles_labels {
+            let cb = ContentBuilder::new(DictSettings::default());
+            let mut char = make_test_character();
+            char.role = role.to_string();
+            let content = cb.build_content(&char, None, None, "Game");
+            let content_str = serde_json::to_string(&content).unwrap();
+            assert!(
+                content_str.contains(expected_label),
+                "Role '{}' should produce label '{}', content: {}",
+                role,
+                expected_label,
+                content_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_roles_produce_correct_colors() {
+        let roles_colors = [
+            ("main", "#4CAF50"),
+            ("primary", "#2196F3"),
+            ("side", "#FF9800"),
+            ("appears", "#9E9E9E"),
+        ];
+        for (role, expected_color) in roles_colors {
+            let cb = ContentBuilder::new(DictSettings::default());
+            let mut char = make_test_character();
+            char.role = role.to_string();
+            let content = cb.build_content(&char, None, None, "Game");
+            let content_str = serde_json::to_string(&content).unwrap();
+            assert!(
+                content_str.contains(expected_color),
+                "Role '{}' should use color '{}'",
+                role,
+                expected_color
+            );
+        }
+    }
 }
