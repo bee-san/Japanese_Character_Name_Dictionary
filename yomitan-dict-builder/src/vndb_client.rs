@@ -462,6 +462,11 @@ impl VndbClient {
             first_name_hint: None,
             last_name_hint: None,
             seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         })
     }
 }

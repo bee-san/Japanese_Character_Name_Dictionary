@@ -323,6 +323,8 @@ impl ContentBuilder {
         char: &Character,
         image_path: Option<&str>,
         image_dims: Option<(u32, u32)>,
+        seiyuu_image_path: Option<&str>,
+        seiyuu_image_dims: Option<(u32, u32)>,
         game_title: &str,
     ) -> serde_json::Value {
         let mut content: Vec<serde_json::Value> = Vec::new();
@@ -474,14 +476,44 @@ impl ContentBuilder {
         if self.settings.show_seiyuu {
             if let Some(ref va) = char.seiyuu {
                 if !va.is_empty() {
+                    let mut seiyuu_inner: Vec<serde_json::Value> = Vec::new();
+
+                    // Seiyuu portrait image (if available)
+                    if let Some(va_path) = seiyuu_image_path {
+                        let (display_w, display_h) = match seiyuu_image_dims {
+                            Some((w, h)) if w > 0 && h > 0 => {
+                                let dh = 60u32;
+                                let dw = (w * dh + h / 2) / h;
+                                (dw, dh)
+                            }
+                            _ => (40, 60),
+                        };
+                        seiyuu_inner.push(json!({
+                            "tag": "img",
+                            "path": va_path,
+                            "width": display_w,
+                            "height": display_h,
+                            "sizeUnits": "px",
+                            "collapsible": false,
+                            "collapsed": false,
+                            "background": false
+                        }));
+                    }
+
+                    seiyuu_inner.push(json!({
+                        "tag": "div",
+                        "style": { "fontSize": "0.9em", "marginTop": "4px" },
+                        "content": va.as_str()
+                    }));
+
                     content.push(json!({
                         "tag": "details",
                         "content": [
                             { "tag": "summary", "content": "Seiyuu" },
                             {
                                 "tag": "div",
-                                "style": { "fontSize": "0.9em", "marginTop": "4px" },
-                                "content": va.as_str()
+                                "style": { "marginTop": "4px" },
+                                "content": seiyuu_inner
                             }
                         ]
                     }));
@@ -640,7 +672,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
-            seiyuu: None,
+            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         }
     }
 
@@ -891,7 +923,7 @@ mod tests {
     fn test_build_content_minimal() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         // Minimal settings: should NOT contain <details> tags (no description/traits)
         let has_details = items.iter().any(|v| v["tag"].as_str() == Some("details"));
@@ -908,7 +940,7 @@ mod tests {
     fn test_build_content_no_spoilers() {
         let cb = ContentBuilder::new(settings_no_spoilers());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         // Should contain <details> tags (Description + Character Information)
         let details_count = items
@@ -925,7 +957,7 @@ mod tests {
     fn test_build_content_full() {
         let cb = ContentBuilder::new(settings_full());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         let details_count = items
             .iter()
@@ -941,7 +973,7 @@ mod tests {
     fn test_build_content_with_image() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c123.jpg"), None, "Test Game");
+        let content = cb.build_content(&char, Some("img/c123.jpg"), None, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
         let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
         assert!(has_img, "Should contain image tag");
@@ -1171,7 +1203,7 @@ mod tests {
         let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.role = "custom_role".to_string();
-        let content = cb.build_content(&char, None, None, "Test");
+        let content = cb.build_content(&char, None, None, None, None, "Test");
         let items = content["content"].as_array().unwrap();
         // Should use fallback color and "Unknown" label
         let role_span = items
@@ -1187,7 +1219,7 @@ mod tests {
     fn test_build_content_empty_game_title() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "");
+        let content = cb.build_content(&char, None, None, None, None, "");
         let content_str = serde_json::to_string(&content).unwrap();
         // Empty game title should not produce a "From: " div
         assert!(!content_str.contains("From: "));
@@ -1200,7 +1232,7 @@ mod tests {
         let cb = ContentBuilder::new(settings_no_spoilers());
         let mut char = make_test_character();
         char.description = Some("[spoiler]everything is hidden[/spoiler]".to_string());
-        let content = cb.build_content(&char, None, None, "Test");
+        let content = cb.build_content(&char, None, None, None, None, "Test");
         let items = content["content"].as_array().unwrap();
         // After stripping, description is empty → no Description details section
         let desc_details = items.iter().find(|v| {
@@ -1468,7 +1500,7 @@ mod tests {
     fn test_build_content_has_required_structure() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         assert_eq!(content["type"], "structured-content");
         assert!(content["content"].is_array());
     }
@@ -1477,7 +1509,7 @@ mod tests {
     fn test_build_content_includes_japanese_name() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains(&char.name_original));
     }
@@ -1486,7 +1518,7 @@ mod tests {
     fn test_build_content_includes_romanized_name() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test Game");
+        let content = cb.build_content(&char, None, None, None, None, "Test Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains(&char.name));
     }
@@ -1495,7 +1527,7 @@ mod tests {
     fn test_build_content_includes_game_title() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Steins;Gate");
+        let content = cb.build_content(&char, None, None, None, None, "Steins;Gate");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("Steins;Gate"));
     }
@@ -1504,7 +1536,7 @@ mod tests {
     fn test_build_content_includes_role_badge() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Test");
+        let content = cb.build_content(&char, None, None, None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
         // Should contain a role label
         assert!(
@@ -1521,7 +1553,7 @@ mod tests {
         let cb = ContentBuilder::new(settings_minimal());
         let mut char = make_test_character();
         char.description = Some("A detailed description".to_string());
-        let content = cb.build_content(&char, None, None, "Test");
+        let content = cb.build_content(&char, None, None, None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
         // With show_description=false, description should NOT be included
         assert!(!content_str.contains("A detailed description"));
@@ -1532,7 +1564,7 @@ mod tests {
         let cb = ContentBuilder::new(settings_no_spoilers());
         let mut char = make_test_character();
         char.description = Some("A detailed description".to_string());
-        let content = cb.build_content(&char, None, None, "Test");
+        let content = cb.build_content(&char, None, None, None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("A detailed description"));
     }
@@ -1541,7 +1573,7 @@ mod tests {
     fn test_build_content_with_image_includes_img_tag() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 150)), "Test");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 150)), None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("img/c1.jpg"));
         assert!(content_str.contains("\"tag\":\"img\""));
@@ -1551,7 +1583,7 @@ mod tests {
     fn test_build_content_image_dimensions_calculated() {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Test");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Test");
         let content_str = serde_json::to_string(&content).unwrap();
         // Should contain width and height attributes
         assert!(content_str.contains("\"width\""));
@@ -1745,7 +1777,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
         assert!(has_img, "show_image=true should include img tag");
@@ -1758,7 +1790,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
         assert!(!has_img, "show_image=false should exclude img tag");
@@ -1771,7 +1803,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), None, "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains(&char.name_original));
         assert!(content_str.contains(&char.name));
@@ -1786,7 +1818,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             content_str.contains("Protagonist")
@@ -1804,7 +1836,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
         // Role badge uses background color styling — verify no span with background exists
         let role_spans: Vec<_> = items
@@ -1827,7 +1859,7 @@ mod tests {
         });
         let mut char = make_test_character();
         char.description = Some("This is a description.".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("Description"));
         assert!(content_str.contains("This is a description."));
@@ -1841,7 +1873,7 @@ mod tests {
         });
         let mut char = make_test_character();
         char.description = Some("This is a description.".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             !content_str.contains("This is a description."),
@@ -1857,7 +1889,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         // Traits section should still be present
         assert!(
@@ -1875,7 +1907,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             content_str.contains("Character Information"),
@@ -1890,7 +1922,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             !content_str.contains("Character Information"),
@@ -1907,7 +1939,7 @@ mod tests {
         });
         let mut char = make_test_character();
         char.description = Some("A unique description.".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             content_str.contains("A unique description."),
@@ -1926,7 +1958,7 @@ mod tests {
         });
         let mut char = make_test_character();
         char.description = Some("Visible [spoiler]Secret info[/spoiler] end".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             content_str.contains("Secret info"),
@@ -1943,7 +1975,7 @@ mod tests {
         });
         let mut char = make_test_character();
         char.description = Some("Visible [spoiler]Secret info[/spoiler] end".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
             !content_str.contains("Secret info"),
@@ -1977,7 +2009,7 @@ mod tests {
                 spoiler: 2,
             },
         ];
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("Safe"));
         assert!(!content_str.contains("Minor spoiler"));
@@ -2002,7 +2034,7 @@ mod tests {
                 spoiler: 2,
             },
         ];
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains("Safe"));
         assert!(content_str.contains("Dangerous"));
@@ -2022,7 +2054,7 @@ mod tests {
             show_seiyuu: false,
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game Title");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Game Title");
         let items = content["content"].as_array().unwrap();
 
         // Should only have: Japanese name div, Romanized name div, "From: Game Title" div
@@ -2055,7 +2087,7 @@ mod tests {
         let cb = ContentBuilder::new(DictSettings::default());
         let mut char = make_test_character();
         char.description = Some("Has a description".to_string());
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
 
         assert!(content_str.contains("\"img\""), "Should have img tag");
@@ -2087,7 +2119,7 @@ mod tests {
             show_seiyuu: false,
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
         // Expect: Japanese name, Romanized name, "From: Game" = 3 divs
         assert_eq!(
@@ -2102,7 +2134,7 @@ mod tests {
         let cb = ContentBuilder::new(DictSettings::default());
         let mut char = make_test_character();
         char.description = Some("desc".to_string());
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((100, 200)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         // Expect: jp name, romaji name, img, source, role badge, description details, traits details = 7
         assert_eq!(
@@ -2117,7 +2149,7 @@ mod tests {
         let cb = ContentBuilder::new(DictSettings::default());
         let mut char = make_test_character();
         char.description = Some("desc".to_string());
-        let content = cb.build_content(&char, None, None, "Game");
+        let content = cb.build_content(&char, None, None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
         // No image: jp name, romaji name, source, role badge, description, traits = 6
         assert_eq!(
@@ -2141,8 +2173,8 @@ mod tests {
         let mut char = make_test_character();
         char.description = Some("Visible [spoiler]Hidden[/spoiler] end".to_string());
 
-        let content_no = cb_no_spoilers.build_content(&char, None, None, "G");
-        let content_yes = cb_with_spoilers.build_content(&char, None, None, "G");
+        let content_no = cb_no_spoilers.build_content(&char, None, None, None, None, "G");
+        let content_yes = cb_with_spoilers.build_content(&char, None, None, None, None, "G");
 
         // Both should have description details section
         let items_no = content_no["content"].as_array().unwrap();
@@ -2182,7 +2214,7 @@ mod tests {
         char.weight = None;
         char.blood_type = None;
         char.birthday = None;
-        let content = cb.build_content(&char, None, None, "");
+        let content = cb.build_content(&char, None, None, None, None, "");
         let items = content["content"].as_array().unwrap();
         // With everything empty and no title: should only have role badge span
         assert!(
@@ -2197,7 +2229,7 @@ mod tests {
     fn test_image_with_zero_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()
@@ -2219,7 +2251,7 @@ mod tests {
     fn test_image_with_valid_dimensions_calculates_proportionally() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((200, 400)), "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((200, 400)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()
@@ -2234,7 +2266,7 @@ mod tests {
     fn test_image_none_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), None, "Game");
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()
@@ -2258,7 +2290,7 @@ mod tests {
             let cb = ContentBuilder::new(DictSettings::default());
             let mut char = make_test_character();
             char.role = role.to_string();
-            let content = cb.build_content(&char, None, None, "Game");
+            let content = cb.build_content(&char, None, None, None, None, "Game");
             let content_str = serde_json::to_string(&content).unwrap();
             assert!(
                 content_str.contains(expected_label),
@@ -2282,7 +2314,7 @@ mod tests {
             let cb = ContentBuilder::new(DictSettings::default());
             let mut char = make_test_character();
             char.role = role.to_string();
-            let content = cb.build_content(&char, None, None, "Game");
+            let content = cb.build_content(&char, None, None, None, None, "Game");
             let content_str = serde_json::to_string(&content).unwrap();
             assert!(
                 content_str.contains(expected_color),

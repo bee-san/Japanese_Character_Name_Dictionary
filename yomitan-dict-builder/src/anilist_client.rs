@@ -229,6 +229,9 @@ impl AnilistClient {
                             full
                             native
                         }
+                        image {
+                            large
+                        }
                     }
                     node {
                         id
@@ -410,15 +413,21 @@ impl AnilistClient {
         });
 
         // Voice actor: prefer native (Japanese) name, fall back to full (romanized)
-        let seiyuu = edge["voiceActors"]
+        let va_data = edge["voiceActors"]
             .as_array()
-            .and_then(|arr| arr.first())
+            .and_then(|arr| arr.first());
+
+        let seiyuu = va_data
             .and_then(|va| {
                 va["name"]["native"]
                     .as_str()
                     .filter(|s| !s.is_empty())
                     .or_else(|| va["name"]["full"].as_str())
             })
+            .map(|s| s.to_string());
+
+        let seiyuu_image_url = va_data
+            .and_then(|va| va["image"]["large"].as_str())
             .map(|s| s.to_string());
 
         Some(Character {
@@ -456,6 +465,11 @@ impl AnilistClient {
             first_name_hint: name_first,
             last_name_hint: name_last,
             seiyuu,
+            seiyuu_image_url,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         })
     }
 }

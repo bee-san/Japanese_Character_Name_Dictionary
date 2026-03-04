@@ -95,13 +95,40 @@ impl DictBuilder {
             None
         };
 
+        // Handle seiyuu image (gated by show_seiyuu)
+        let seiyuu_image_path = if self.settings.show_seiyuu {
+            if let Some(ref img_bytes) = char.seiyuu_image_bytes {
+                let ext = char.seiyuu_image_ext.as_deref().unwrap_or("jpg");
+                let filename = ImageHandler::make_filename(&format!("{}_va", char.id), ext);
+                let path = format!("img/{}", filename);
+                if self.added_images.insert(filename.clone()) {
+                    self.images.push((filename, img_bytes.clone()));
+                }
+                Some(path)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Build the structured content card (shared across all entries for this character)
         let image_dims = match (char.image_width, char.image_height) {
             (Some(w), Some(h)) => Some((w, h)),
             _ => None,
         };
-        let structured_content =
-            content_builder.build_content(char, image_path.as_deref(), image_dims, game_title);
+        let seiyuu_image_dims = match (char.seiyuu_image_width, char.seiyuu_image_height) {
+            (Some(w), Some(h)) => Some((w, h)),
+            _ => None,
+        };
+        let structured_content = content_builder.build_content(
+            char,
+            image_path.as_deref(),
+            image_dims,
+            seiyuu_image_path.as_deref(),
+            seiyuu_image_dims,
+            game_title,
+        );
 
         // Track terms to avoid duplicates
         let mut added_terms: HashSet<String> = HashSet::new();
@@ -586,7 +613,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
-            seiyuu: None,
+            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         }
     }
 
@@ -985,7 +1012,7 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
-            seiyuu: None,
+            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         }
     }
 
@@ -1366,7 +1393,7 @@ mod tests {
                 image_height: None,
                 first_name_hint: None,
                 last_name_hint: None,
-                seiyuu: None,
+                seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
             };
             builder.add_character(&ch, "Test");
         }

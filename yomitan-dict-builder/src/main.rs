@@ -657,6 +657,52 @@ async fn download_images_concurrent(
     }
 }
 
+/// Download seiyuu (voice actor) images for all characters that have a seiyuu_image_url.
+/// Uses the same cache and resize pipeline as character images.
+async fn download_seiyuu_images(
+    char_data: &mut models::CharacterData,
+    http_client: &reqwest::Client,
+    image_cache: &ImageCache,
+    concurrency: usize,
+) {
+    let all_chars: Vec<_> = char_data.all_characters().enumerate().collect();
+    let urls: Vec<(usize, String)> = all_chars
+        .iter()
+        .filter_map(|(i, c)| c.seiyuu_image_url.as_ref().map(|url| (*i, url.clone())))
+        .collect();
+
+    if urls.is_empty() {
+        return;
+    }
+
+    let results: Vec<IndexedImageResult> = stream::iter(urls)
+        .map(|(idx, url)| {
+            let client = http_client.clone();
+            let cache = image_cache.clone();
+            async move {
+                let result = fetch_image(&url, &client, &cache).await;
+                (idx, result)
+            }
+        })
+        .buffer_unordered(concurrency)
+        .collect()
+        .await;
+
+    let mut flat: Vec<&mut models::Character> = char_data.all_characters_mut().collect();
+    for (idx, result) in results {
+        if let Some((bytes, ext, w, h)) = result {
+            if let Some(ch) = flat.get_mut(idx) {
+                ch.seiyuu_image_bytes = Some(bytes);
+                ch.seiyuu_image_ext = Some(ext);
+                if w > 0 && h > 0 {
+                    ch.seiyuu_image_width = Some(w);
+                    ch.seiyuu_image_height = Some(h);
+                }
+            }
+        }
+    }
+}
+
 // === Core function: Generate dictionary from usernames ===
 
 async fn generate_dict_from_usernames(
@@ -784,6 +830,13 @@ async fn generate_dict_from_usernames(
                             8,
                         )
                         .await;
+                        download_seiyuu_images(
+                            &mut char_data,
+                            &state.http_client,
+                            &state.image_cache,
+                            4,
+                        )
+                        .await;
 
                         for character in char_data.all_characters() {
                             builder.add_character(character, &title);
@@ -821,6 +874,13 @@ async fn generate_dict_from_usernames(
                             &state.http_client,
                             &state.image_cache,
                             6,
+                        )
+                        .await;
+                        download_seiyuu_images(
+                            &mut char_data,
+                            &state.http_client,
+                            &state.image_cache,
+                            4,
                         )
                         .await;
 
@@ -1285,6 +1345,8 @@ async fn fetch_vndb_cached(
     for c in char_data.all_characters_mut() {
         c.image_bytes = None;
         c.image_ext = None;
+        c.seiyuu_image_bytes = None;
+        c.seiyuu_image_ext = None;
     }
 
     // Store in cache (blocking SQLite write).
@@ -1337,6 +1399,8 @@ async fn fetch_anilist_cached(
     for c in char_data.all_characters_mut() {
         c.image_bytes = None;
         c.image_ext = None;
+        c.seiyuu_image_bytes = None;
+        c.seiyuu_image_ext = None;
     }
 
     // Store in cache.
@@ -1363,6 +1427,7 @@ async fn generate_vndb_dict(
 
     // Concurrent image downloads with resize
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 8).await;
+    download_seiyuu_images(&mut char_data, &state.http_client, &state.image_cache, 4).await;
 
     let mut builder = DictBuilder::new(
         settings,
@@ -1393,6 +1458,7 @@ async fn generate_anilist_dict(
 
     // Concurrent image downloads with resize
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 6).await;
+    download_seiyuu_images(&mut char_data, &state.http_client, &state.image_cache, 4).await;
 
     let mut builder = DictBuilder::new(
         settings,

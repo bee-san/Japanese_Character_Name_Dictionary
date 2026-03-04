@@ -45,7 +45,17 @@ pub struct Character {
     pub first_name_hint: Option<String>, // Given name romaji hint (AniList "first")
     pub last_name_hint: Option<String>, // Family name romaji hint (AniList "last")
     #[serde(default)]
-    pub seiyuu: Option<String>,        // Voice actor name (e.g. "花澤香菜")
+    pub seiyuu: Option<String>,            // Voice actor name (e.g. "花澤香菜")
+    #[serde(default)]
+    pub seiyuu_image_url: Option<String>,   // VA portrait URL (AniList only)
+    #[serde(default)]
+    pub seiyuu_image_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    pub seiyuu_image_ext: Option<String>,
+    #[serde(default)]
+    pub seiyuu_image_width: Option<u32>,
+    #[serde(default)]
+    pub seiyuu_image_height: Option<u32>,
 }
 
 /// Categorized characters for a single game/media.
@@ -146,7 +156,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None,
+            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
         cd.side.push(Character {
             id: "c2".to_string(),
@@ -171,7 +181,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None,
+            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
 
         assert_eq!(cd.all_characters().count(), 2);
@@ -206,7 +216,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None,
+            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
 
         for c in cd.all_characters_mut() {
@@ -246,7 +256,7 @@ mod tests {
             image_height: Some(150),
             first_name_hint: Some("Rintarou".to_string()),
             last_name_hint: Some("Okabe".to_string()),
-            seiyuu: None,
+            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         };
 
         let json = serde_json::to_string(&char).unwrap();
@@ -296,7 +306,7 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None,
+            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         };
 
         let json = serde_json::to_string(&char).unwrap();
@@ -332,7 +342,7 @@ mod tests {
             blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
         cd.primary.push(Character {
             id: "c2".to_string(), name: "Primary".to_string(), name_original: "".to_string(),
@@ -340,7 +350,7 @@ mod tests {
             blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
         cd.side.push(Character {
             id: "c3".to_string(), name: "Side".to_string(), name_original: "".to_string(),
@@ -348,7 +358,7 @@ mod tests {
             blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
         cd.appears.push(Character {
             id: "c4".to_string(), name: "Appears".to_string(), name_original: "".to_string(),
@@ -356,7 +366,7 @@ mod tests {
             blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
 
         // all_characters should iterate in order: main, primary, side, appears
@@ -373,7 +383,7 @@ mod tests {
             weight: None, blood_type: None, birthday: None, description: None, aliases: vec![],
             personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
             image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None,
+            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
         });
 
         let json = serde_json::to_string(&cd).unwrap();
