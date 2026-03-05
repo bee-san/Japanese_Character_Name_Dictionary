@@ -1395,7 +1395,8 @@ mod tests {
 
     #[test]
     fn test_all_candidates_with_space() {
-        let candidates = split_japanese_name_all_candidates("田中 太郎", Some("Tarou"), Some("Tanaka"));
+        let candidates =
+            split_japanese_name_all_candidates("田中 太郎", Some("Tarou"), Some("Tanaka"));
         assert_eq!(candidates.len(), 1);
         assert!(candidates[0].has_space);
         assert_eq!(candidates[0].family.as_deref(), Some("田中"));
@@ -1404,7 +1405,11 @@ mod tests {
 
     #[test]
     fn test_all_candidates_middledot() {
-        let candidates = split_japanese_name_all_candidates("ルルーシュ・ランペルージ", Some("Lelouch"), Some("Lamperouge"));
+        let candidates = split_japanese_name_all_candidates(
+            "ルルーシュ・ランペルージ",
+            Some("Lelouch"),
+            Some("Lamperouge"),
+        );
         assert_eq!(candidates.len(), 1);
         assert!(!candidates[0].has_space);
     }
@@ -1456,14 +1461,24 @@ mod tests {
 
     #[test]
     fn test_readings_anilist_with_hints_spaced() {
-        let r = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some("Rintarou"), Some("Okabe"));
+        let r = generate_name_readings(
+            "岡部 倫太郎",
+            "Okabe Rintarou",
+            Some("Rintarou"),
+            Some("Okabe"),
+        );
         assert_eq!(r.family, "おかべ");
         assert_eq!(r.given, "りんたろう");
     }
 
     #[test]
     fn test_readings_anilist_with_hints_no_space() {
-        let r = generate_name_readings("幸平創真", "Souma Yukihira", Some("Souma"), Some("Yukihira"));
+        let r = generate_name_readings(
+            "幸平創真",
+            "Souma Yukihira",
+            Some("Souma"),
+            Some("Yukihira"),
+        );
         assert_eq!(r.family, "ゆきひら");
         assert_eq!(r.given, "そうま");
         assert_eq!(r.full, "ゆきひらそうま");
@@ -1472,7 +1487,12 @@ mod tests {
     #[test]
     fn test_readings_katakana_middledot_with_hints() {
         // Foreign name with middle dot — should not split, just convert to hiragana
-        let r = generate_name_readings("ルルーシュ・ランペルージ", "Lelouch Lamperouge", Some("Lelouch"), Some("Lamperouge"));
+        let r = generate_name_readings(
+            "ルルーシュ・ランペルージ",
+            "Lelouch Lamperouge",
+            Some("Lelouch"),
+            Some("Lamperouge"),
+        );
         assert_eq!(r.full, "るるーしゅ・らんぺるーじ");
     }
 
@@ -1523,7 +1543,8 @@ mod tests {
     #[test]
     fn test_split_hints_katakana_no_middledot() {
         // Katakana without middle dot — should attempt split
-        let parts = split_japanese_name_with_hints("セイバーアルトリア", Some("Artoria"), Some("Saber"));
+        let parts =
+            split_japanese_name_with_hints("セイバーアルトリア", Some("Artoria"), Some("Saber"));
         assert_eq!(parts.combined, "セイバーアルトリア");
     }
 
@@ -1556,7 +1577,11 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (display, reading, desc) in HONORIFIC_SUFFIXES {
             let key = format!("{}:{}:{}", display, reading, desc);
-            assert!(seen.insert(key.clone()), "Duplicate honorific triple: {}", key);
+            assert!(
+                seen.insert(key.clone()),
+                "Duplicate honorific triple: {}",
+                key
+            );
         }
     }
 
@@ -1624,7 +1649,12 @@ mod tests {
         // With space (VNDB style)
         let r1 = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", None, None);
         // With hints (AniList style)
-        let r2 = generate_name_readings("岡部 倫太郎", "Okabe Rintarou", Some("Rintarou"), Some("Okabe"));
+        let r2 = generate_name_readings(
+            "岡部 倫太郎",
+            "Okabe Rintarou",
+            Some("Rintarou"),
+            Some("Okabe"),
+        );
         // Both should produce the same readings
         assert_eq!(r1.family, r2.family);
         assert_eq!(r1.given, r2.given);

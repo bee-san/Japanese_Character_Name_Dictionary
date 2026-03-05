@@ -144,8 +144,7 @@ impl MediaCache {
             Ok(d) => d,
             Err(e) => {
                 warn!(key = cache_key, error = %e, "Corrupt cache entry, removing");
-                let _ =
-                    db.execute("DELETE FROM media WHERE cache_key = ?1", params![cache_key]);
+                let _ = db.execute("DELETE FROM media WHERE cache_key = ?1", params![cache_key]);
                 self.inner
                     .total_bytes
                     .fetch_sub(size_bytes as u64, Ordering::Relaxed);
@@ -159,11 +158,7 @@ impl MediaCache {
             params![now, cache_key],
         );
 
-        info!(
-            key = cache_key,
-            size_bytes = size_bytes,
-            "Media cache hit"
-        );
+        info!(key = cache_key, size_bytes = size_bytes, "Media cache hit");
 
         Some(CacheEntry { title, char_data })
     }
@@ -356,7 +351,13 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            last_name_hint: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         });
         data.side.push(Character {
             id: "c2".to_string(),
@@ -381,7 +382,13 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            last_name_hint: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         });
         data
     }
@@ -445,7 +452,13 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            last_name_hint: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         });
 
         cache.put("vndb:v1", "Title 1", &data1);
@@ -545,7 +558,13 @@ mod tests {
             image_width: None,
             image_height: None,
             first_name_hint: None,
-            last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            last_name_hint: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         });
 
         cache.put("vndb:v1", "T", &small);
@@ -650,12 +669,35 @@ mod tests {
         let data1 = make_test_char_data();
         let mut data2 = CharacterData::new();
         data2.main.push(Character {
-            id: "c10".to_string(), name: "Other".to_string(), name_original: "その他".to_string(),
-            role: "main".to_string(), sex: None, age: None, height: None, weight: None,
-            blood_type: None, birthday: None, description: None, aliases: vec![],
-            personality: vec![], roles: vec![], engages_in: vec![], subject_of: vec![],
-            image_url: None, image_bytes: None, image_ext: None, image_width: None,
-            image_height: None, first_name_hint: None, last_name_hint: None, seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            id: "c10".to_string(),
+            name: "Other".to_string(),
+            name_original: "その他".to_string(),
+            role: "main".to_string(),
+            sex: None,
+            age: None,
+            height: None,
+            weight: None,
+            blood_type: None,
+            birthday: None,
+            description: None,
+            aliases: vec![],
+            personality: vec![],
+            roles: vec![],
+            engages_in: vec![],
+            subject_of: vec![],
+            image_url: None,
+            image_bytes: None,
+            image_ext: None,
+            image_width: None,
+            image_height: None,
+            first_name_hint: None,
+            last_name_hint: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         });
 
         cache.put("vndb:v17", "Title 1", &data1);
