@@ -163,7 +163,7 @@ impl AnilistClient {
             }
         }
 
-        return entries;
+        entries
     }
 
     /// Fetch a user's currently watching/reading media from AniList.
