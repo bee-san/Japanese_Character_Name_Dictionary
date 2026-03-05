@@ -904,7 +904,7 @@ async fn generate_dict_from_usernames(
         }
     }
 
-    if builder.entries.is_empty() {
+    if !builder.has_entries() {
         return Err("No character entries generated from any media".to_string());
     }
 
@@ -1065,7 +1065,7 @@ async fn generate_dict_from_entries(
         }
     }
 
-    if builder.entries.is_empty() {
+    if !builder.has_entries() {
         return Err("No character entries generated from any media".to_string());
     }
 
@@ -1423,7 +1423,7 @@ async fn generate_vndb_dict(
         builder.add_character(character, &game_title);
     }
 
-    if builder.entries.is_empty() {
+    if !builder.has_entries() {
         return Err("No character entries generated".to_string());
     }
 
@@ -1451,7 +1451,7 @@ async fn generate_anilist_dict(
         builder.add_character(character, &game_title);
     }
 
-    if builder.entries.is_empty() {
+    if !builder.has_entries() {
         return Err("No character entries generated".to_string());
     }
 

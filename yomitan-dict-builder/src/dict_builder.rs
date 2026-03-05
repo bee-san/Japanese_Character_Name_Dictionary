@@ -21,8 +21,25 @@ fn get_score(role: &str) -> i32 {
     }
 }
 
+/// Compact data needed to lazily generate honorific entries during ZIP export.
+/// Instead of eagerly expanding ~257 honorific suffixes x N base names into full
+/// serde_json::Value entries (which can consume hundreds of MB for large dictionaries),
+/// we store just the source data and generate entries on-the-fly during export.
+struct HonorificSource {
+    /// (base_name, base_reading) pairs to combine with each honorific suffix
+    base_names_with_readings: Vec<(String, String)>,
+    /// The shared structured content card for this character (cloned once per honorific)
+    structured_content: serde_json::Value,
+    tag_role: String,
+    score: i32,
+    /// Terms already added as base entries — skip these during honorific expansion
+    added_terms: HashSet<String>,
+}
+
 pub struct DictBuilder {
     pub entries: Vec<serde_json::Value>,
+    /// Deferred honorific data — expanded lazily during export_bytes()
+    honorific_sources: Vec<HonorificSource>,
     images: Vec<(String, Vec<u8>)>, // (filename, bytes) for ZIP img/ folder
     added_images: HashSet<String>,  // track image filenames to avoid duplicate ZIP entries
     seen_characters: HashSet<String>, // track normalized name_original to skip cross-media duplicates
@@ -41,6 +58,7 @@ impl DictBuilder {
             .as_secs();
         Self {
             entries: Vec::new(),
+            honorific_sources: Vec::new(),
             images: Vec::new(),
             added_images: HashSet::new(),
             seen_characters: HashSet::new(),
@@ -410,30 +428,6 @@ impl DictBuilder {
             }
         }
 
-        if self.settings.honorifics {
-            for (base_name, base_reading) in &base_names_with_readings {
-                for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
-                    let term_with_suffix = format!("{}{}", base_name, suffix);
-                    let reading_with_suffix = format!("{}{}", base_reading, suffix_reading);
-
-                    if added_terms.insert(term_with_suffix.clone()) {
-                        let honorific_content = ContentBuilder::build_honorific_content(
-                            &structured_content,
-                            suffix,
-                            description,
-                        );
-                        self.entries.push(ContentBuilder::create_term_entry(
-                            &term_with_suffix,
-                            &reading_with_suffix,
-                            tag_role,
-                            score,
-                            &honorific_content,
-                        ));
-                    }
-                }
-            }
-        }
-
         // --- Alias entries ---
 
         for alias in &char.aliases {
@@ -446,30 +440,70 @@ impl DictBuilder {
                     &structured_content,
                 ));
 
-                // Also add honorific variants for each alias
+                // Also collect alias name+reading for deferred honorific generation
                 if self.settings.honorifics {
-                    for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
-                        let alias_with_suffix = format!("{}{}", alias, suffix);
-                        let reading_with_suffix = format!("{}{}", readings.full, suffix_reading);
-
-                        if added_terms.insert(alias_with_suffix.clone()) {
-                            let honorific_content = ContentBuilder::build_honorific_content(
-                                &structured_content,
-                                suffix,
-                                description,
-                            );
-                            self.entries.push(ContentBuilder::create_term_entry(
-                                &alias_with_suffix,
-                                &reading_with_suffix,
-                                tag_role,
-                                score,
-                                &honorific_content,
-                            ));
-                        }
-                    }
+                    base_names_with_readings.push((alias.clone(), readings.full.clone()));
                 }
             }
         }
+
+        // --- Deferred honorific generation ---
+        // Instead of expanding ~257 suffixes x N base names here (which creates
+        // thousands of serde_json::Value entries per character), store the compact
+        // source data. Honorific entries are generated lazily during export_bytes().
+        if self.settings.honorifics && !base_names_with_readings.is_empty() {
+            self.honorific_sources.push(HonorificSource {
+                base_names_with_readings,
+                structured_content,
+                tag_role: tag_role.to_string(),
+                score,
+                added_terms,
+            });
+        }
+    }
+
+    /// Returns true if the builder has any entries (base or deferred honorifics).
+    pub fn has_entries(&self) -> bool {
+        !self.entries.is_empty() || !self.honorific_sources.is_empty()
+    }
+
+    /// Collect all entries including lazily-generated honorifics.
+    /// This materializes the full entry set — use only for testing or inspection,
+    /// not for ZIP export (which streams in chunks to avoid memory spikes).
+    #[cfg(test)]
+    fn collect_all_entries(&self) -> Vec<serde_json::Value> {
+        let mut all = self.entries.clone();
+        let mut honorific_dedup: HashSet<String> = HashSet::new();
+        for source in &self.honorific_sources {
+            for (base_name, base_reading) in &source.base_names_with_readings {
+                for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
+                    let term_with_suffix = format!("{}{}", base_name, suffix);
+                    // Skip if this term was already added as a base entry for this character
+                    if source.added_terms.contains(&term_with_suffix) {
+                        continue;
+                    }
+                    // Skip if already emitted as an honorific (cross-character or
+                    // duplicate base name forms within the same character)
+                    if !honorific_dedup.insert(term_with_suffix.clone()) {
+                        continue;
+                    }
+                    let reading_with_suffix = format!("{}{}", base_reading, suffix_reading);
+                    let honorific_content = ContentBuilder::build_honorific_content(
+                        &source.structured_content,
+                        suffix,
+                        description,
+                    );
+                    all.push(ContentBuilder::create_term_entry(
+                        &term_with_suffix,
+                        &reading_with_suffix,
+                        &source.tag_role,
+                        source.score,
+                        &honorific_content,
+                    ));
+                }
+            }
+        }
+        all
     }
 
     /// Create index.json metadata.
@@ -557,17 +591,84 @@ impl DictBuilder {
         zip.write_all(tags_json.as_bytes())
             .map_err(|e| format!("Failed to write tag_bank: {}", e))?;
 
-        // 3. term_bank_N.json (chunked at 10,000 entries per file)
+        // 3. term_bank_N.json — stream base entries then lazily generate honorifics.
+        // Instead of holding all honorific entries in memory (which can be hundreds of
+        // MB for large dictionaries), we buffer up to 10k entries at a time and flush
+        // each chunk to the ZIP before moving on.
         let entries_per_bank = 10_000;
-        for (i, chunk) in self.entries.chunks(entries_per_bank).enumerate() {
-            let filename = format!("term_bank_{}.json", i + 1);
-            zip.start_file(&filename, json_options)
+        let mut bank_buffer: Vec<serde_json::Value> = Vec::with_capacity(entries_per_bank);
+        let mut bank_number: usize = 1;
+
+        // Helper closure: flush the buffer as a term_bank file
+        let flush_bank = |buf: &mut Vec<serde_json::Value>,
+                          num: &mut usize,
+                          zip: &mut ZipWriter<Cursor<Vec<u8>>>,
+                          opts: SimpleFileOptions|
+         -> Result<(), String> {
+            if buf.is_empty() {
+                return Ok(());
+            }
+            let filename = format!("term_bank_{}.json", *num);
+            zip.start_file(&filename, opts)
                 .map_err(|e| format!("Failed to create {} in ZIP: {}", filename, e))?;
-            let data = serde_json::to_string(chunk)
+            let data = serde_json::to_string(&*buf)
                 .map_err(|e| format!("Failed to serialize {}: {}", filename, e))?;
             zip.write_all(data.as_bytes())
                 .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+            buf.clear();
+            *num += 1;
+            Ok(())
+        };
+
+        // Phase 1: Drain base entries (non-honorific)
+        for entry in &self.entries {
+            bank_buffer.push(entry.clone());
+            if bank_buffer.len() >= entries_per_bank {
+                flush_bank(&mut bank_buffer, &mut bank_number, &mut zip, json_options)?;
+            }
         }
+
+        // Phase 2: Lazily generate and stream honorific entries
+        let mut honorific_dedup: HashSet<String> = HashSet::new();
+        for source in &self.honorific_sources {
+            for (base_name, base_reading) in &source.base_names_with_readings {
+                for (suffix, suffix_reading, description) in HONORIFIC_SUFFIXES {
+                    let term_with_suffix = format!("{}{}", base_name, suffix);
+
+                    // Skip if this term was already added as a base entry
+                    if source.added_terms.contains(&term_with_suffix) {
+                        continue;
+                    }
+
+                    // Skip duplicates (e.g. same base name form appearing multiple
+                    // times, or same honorific term across different characters)
+                    if !honorific_dedup.insert(term_with_suffix.clone()) {
+                        continue;
+                    }
+
+                    let reading_with_suffix = format!("{}{}", base_reading, suffix_reading);
+                    let honorific_content = ContentBuilder::build_honorific_content(
+                        &source.structured_content,
+                        suffix,
+                        description,
+                    );
+                    bank_buffer.push(ContentBuilder::create_term_entry(
+                        &term_with_suffix,
+                        &reading_with_suffix,
+                        &source.tag_role,
+                        source.score,
+                        &honorific_content,
+                    ));
+
+                    if bank_buffer.len() >= entries_per_bank {
+                        flush_bank(&mut bank_buffer, &mut bank_number, &mut zip, json_options)?;
+                    }
+                }
+            }
+        }
+
+        // Flush any remaining entries
+        flush_bank(&mut bank_buffer, &mut bank_number, &mut zip, json_options)?;
 
         // 4. Images in img/ folder (stored uncompressed)
         for (filename, bytes) in &self.images {
@@ -717,8 +818,8 @@ mod tests {
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
 
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
             .collect();
@@ -741,8 +842,8 @@ mod tests {
         builder.add_character(&char, "Test Game");
 
         // Find an entry ending with さん
-        let san_entry = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let san_entry = all_entries
             .iter()
             .find(|e| {
                 e[0].as_str()
@@ -1184,8 +1285,9 @@ mod tests {
         let ch = make_full_character();
         builder.add_character(&ch, "Test Game");
 
-        // Validate every entry matches Yomitan's expected schema
-        for (i, entry) in builder.entries.iter().enumerate() {
+        // Validate every entry (base + honorific) matches Yomitan's expected schema
+        let all_entries = builder.collect_all_entries();
+        for (i, entry) in all_entries.iter().enumerate() {
             let arr = entry
                 .as_array()
                 .unwrap_or_else(|| panic!("entry {} must be array", i));
@@ -1271,8 +1373,6 @@ mod tests {
 
     #[test]
     fn test_yomitan_term_entry_scores_match_roles() {
-        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
-
         let roles_scores = [
             ("main", 100),
             ("primary", 75),
@@ -1280,11 +1380,12 @@ mod tests {
             ("appears", 25),
         ];
         for (role, expected_score) in &roles_scores {
+            let mut builder = DictBuilder::new(s(), None, "Test".to_string());
             let ch = make_test_character("c1", "Test", "テスト", role);
-            builder.entries.clear();
             builder.add_character(&ch, "Test");
 
-            for entry in &builder.entries {
+            let all_entries = builder.collect_all_entries();
+            for entry in &all_entries {
                 assert_eq!(
                     entry[4].as_i64().unwrap(),
                     *expected_score as i64,
@@ -1434,9 +1535,9 @@ mod tests {
         }
 
         assert!(
-            builder.entries.len() > 10_000,
+            builder.collect_all_entries().len() > 10_000,
             "Need >10k entries to test chunking, got {}",
-            builder.entries.len()
+            builder.collect_all_entries().len()
         );
 
         let mut archive = build_zip_archive(&builder);
@@ -1587,9 +1688,10 @@ mod tests {
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
-        // Collect (term, reading) pairs — should be unique
+        // Collect (term, reading) pairs — should be unique across all entries
+        let all_entries = builder.collect_all_entries();
         let mut seen: HashSet<(String, String)> = HashSet::new();
-        for entry in &builder.entries {
+        for entry in &all_entries {
             let term = entry[0].as_str().unwrap().to_string();
             let reading = entry[1].as_str().unwrap().to_string();
             let key = (term.clone(), reading.clone());
@@ -1682,8 +1784,8 @@ mod tests {
         let ch = make_test_character("c1", "Saber", "セイバー", "main");
         builder.add_character(&ch, "Test");
 
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .map(|e| e[0].as_str().unwrap().to_string())
             .collect();
@@ -1703,7 +1805,8 @@ mod tests {
         let ch = make_full_character();
         builder.add_character(&ch, "Test");
 
-        for entry in &builder.entries {
+        let all_entries = builder.collect_all_entries();
+        for entry in &all_entries {
             let defs = entry[5].as_array().unwrap();
             for def in defs {
                 assert_eq!(
@@ -2195,8 +2298,8 @@ mod tests {
         let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
         builder.add_character(&ch, "Test");
 
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
             .collect();
@@ -2232,8 +2335,8 @@ mod tests {
         ch.aliases = vec!["鳳凰院凶真".to_string()];
         builder.add_character(&ch, "Test");
 
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
             .collect();
@@ -2256,8 +2359,8 @@ mod tests {
         let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
         builder.add_character(&ch, "Test");
 
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .map(|e| {
                 format!(
@@ -2917,8 +3020,8 @@ mod tests {
         assert!(!builder.images.is_empty(), "Should have images");
 
         // Has honorific entries
-        let terms: Vec<String> = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let terms: Vec<String> = all_entries
             .iter()
             .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
             .collect();
@@ -2974,8 +3077,8 @@ mod tests {
         b2.add_character(&ch, "T");
 
         assert_eq!(
-            b1.entries.len(),
-            b2.entries.len(),
+            b1.collect_all_entries().len(),
+            b2.collect_all_entries().len(),
             "Image/tag/description/traits/spoilers settings should not affect entry count when honorifics are the same"
         );
     }
@@ -2998,11 +3101,13 @@ mod tests {
         b1.add_character(&ch, "T");
         b2.add_character(&ch, "T");
 
+        let count_with = b1.collect_all_entries().len();
+        let count_without = b2.collect_all_entries().len();
         assert!(
-            b1.entries.len() > b2.entries.len(),
+            count_with > count_without,
             "honorifics=true should produce more entries ({}) than honorifics=false ({})",
-            b1.entries.len(),
-            b2.entries.len()
+            count_with,
+            count_without
         );
     }
 
@@ -3053,8 +3158,8 @@ mod tests {
         builder.add_character(&ch, "Test");
 
         // Check a honorific entry
-        let san_entry = builder
-            .entries
+        let all_entries = builder.collect_all_entries();
+        let san_entry = all_entries
             .iter()
             .find(|e| e[0].as_str().map(|s| s == "須々木さん").unwrap_or(false))
             .expect("Should have 須々木さん");
@@ -3064,5 +3169,204 @@ mod tests {
             !sc_str.contains("HiddenTrait"),
             "Spoiler traits should be excluded from honorific entries too"
         );
+    }
+
+    // === Deferred honorific generation (memory optimization) tests ===
+
+    #[test]
+    fn test_honorifics_not_materialized_in_entries_vec() {
+        // The core optimization: builder.entries should only hold base entries,
+        // while honorific entries are deferred to export time.
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        let base_count = builder.entries.len();
+        let total_count = builder.collect_all_entries().len();
+
+        // Base entries should be a small fraction of total
+        assert!(
+            base_count < 30,
+            "Base entries should be small (got {}), honorifics should be deferred",
+            base_count
+        );
+        assert!(
+            total_count > base_count * 10,
+            "Total entries ({}) should be much larger than base entries ({}), \
+             confirming honorifics are generated lazily",
+            total_count,
+            base_count
+        );
+    }
+
+    #[test]
+    fn test_honorific_sources_populated_when_enabled() {
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        assert!(
+            !builder.honorific_sources.is_empty(),
+            "honorific_sources should be populated when honorifics are enabled"
+        );
+        assert!(
+            !builder.honorific_sources[0]
+                .base_names_with_readings
+                .is_empty(),
+            "base_names_with_readings should contain name forms for honorific expansion"
+        );
+    }
+
+    #[test]
+    fn test_honorific_sources_empty_when_disabled() {
+        let mut builder = DictBuilder::new(s_no_hon(), None, "Test".to_string());
+        let ch = make_test_character("c1", "Okabe Rintarou", "岡部 倫太郎", "main");
+        builder.add_character(&ch, "Test");
+
+        assert!(
+            builder.honorific_sources.is_empty(),
+            "honorific_sources should be empty when honorifics are disabled"
+        );
+    }
+
+    #[test]
+    fn test_has_entries_reflects_deferred_honorifics() {
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        assert!(
+            !builder.has_entries(),
+            "Empty builder should not have entries"
+        );
+
+        let ch = make_test_character("c1", "Test", "テスト", "main");
+        builder.add_character(&ch, "Test");
+        assert!(
+            builder.has_entries(),
+            "Builder with character should have entries"
+        );
+    }
+
+    #[test]
+    fn test_export_produces_same_entries_as_collect_all() {
+        // Verify that the streaming export in export_bytes() produces the same
+        // entries as collect_all_entries() — they use the same generation logic.
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        let ch = make_full_character();
+        builder.add_character(&ch, "Test");
+
+        let collected = builder.collect_all_entries();
+        let collected_terms: HashSet<String> = collected
+            .iter()
+            .map(|e| e[0].as_str().unwrap().to_string())
+            .collect();
+
+        // Parse terms from the exported ZIP
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+        let mut exported_terms: HashSet<String> = HashSet::new();
+        for name in names.iter().filter(|n| n.starts_with("term_bank_")) {
+            let raw = read_zip_entry(&mut archive, name);
+            let entries: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+            for entry in &entries {
+                exported_terms.insert(entry[0].as_str().unwrap().to_string());
+            }
+        }
+
+        assert_eq!(
+            collected_terms, exported_terms,
+            "collect_all_entries() and export_bytes() should produce identical term sets"
+        );
+    }
+
+    #[test]
+    fn test_deferred_honorifics_dedup_across_characters() {
+        // Two characters sharing a family name should not produce duplicate honorific entries
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        let ch1 = make_test_character("c1", "Ichiro Suzuki", "鈴木 一郎", "main");
+        let mut ch2 = make_test_character("c2", "Jiro Suzuki", "鈴木 二郎", "side");
+        ch2.aliases = vec![];
+        builder.add_character(&ch1, "Test");
+        builder.add_character(&ch2, "Test");
+
+        let all_entries = builder.collect_all_entries();
+        let all_terms: Vec<String> = all_entries
+            .iter()
+            .map(|e| e[0].as_str().unwrap().to_string())
+            .collect();
+
+        // "鈴木さん" should appear exactly once despite both characters having family name 鈴木
+        let suzuki_san_count = all_terms
+            .iter()
+            .filter(|t| t.as_str() == "鈴木さん")
+            .count();
+        assert_eq!(
+            suzuki_san_count, 1,
+            "Shared family name honorific should be deduplicated across characters, got {}",
+            suzuki_san_count
+        );
+    }
+
+    #[test]
+    fn test_streaming_chunk_size_respected_in_export() {
+        // Verify that no term_bank file exceeds 10,000 entries,
+        // even with many characters producing deferred honorifics
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        for i in 0..10 {
+            let ch = Character {
+                id: format!("c{}", i),
+                name: format!("Given{} Family{}", i, i),
+                name_original: format!("姓{} 名{}", i, i),
+                role: "main".to_string(),
+                sex: None,
+                age: None,
+                height: None,
+                weight: None,
+                blood_type: None,
+                birthday: None,
+                description: None,
+                aliases: vec![format!("Alias{}", i)],
+                personality: vec![],
+                roles: vec![],
+                engages_in: vec![],
+                subject_of: vec![],
+                image_url: None,
+                image_bytes: None,
+                image_ext: None,
+                image_width: None,
+                image_height: None,
+                first_name_hint: None,
+                last_name_hint: None,
+                seiyuu: None,
+                seiyuu_image_url: None,
+                seiyuu_image_bytes: None,
+                seiyuu_image_ext: None,
+                seiyuu_image_width: None,
+                seiyuu_image_height: None,
+            };
+            builder.add_character(&ch, "Test");
+        }
+
+        let mut archive = build_zip_archive(&builder);
+        let names = zip_filenames(&mut archive);
+
+        let term_banks: Vec<&String> = names
+            .iter()
+            .filter(|n| n.starts_with("term_bank_") && n.ends_with(".json"))
+            .collect();
+
+        assert!(
+            term_banks.len() >= 2,
+            "Should produce multiple term banks from deferred honorifics"
+        );
+
+        for name in &term_banks {
+            let raw = read_zip_entry(&mut archive, name);
+            let arr: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+            assert!(
+                arr.len() <= 10_000,
+                "Streaming chunk violated: {} has {} entries (max 10,000)",
+                name,
+                arr.len()
+            );
+        }
     }
 }
