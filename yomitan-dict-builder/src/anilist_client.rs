@@ -339,9 +339,10 @@ impl AnilistClient {
                     .to_string();
             }
 
-            let edges = media["characters"]["edges"]
-                .as_array()
-                .ok_or(format!("Invalid character response format for AniList media ID {}", media_id))?;
+            let edges = media["characters"]["edges"].as_array().ok_or(format!(
+                "Invalid character response format for AniList media ID {}",
+                media_id
+            ))?;
 
             for edge in edges {
                 if let Some(character) = self.process_character(edge) {
@@ -435,9 +436,7 @@ impl AnilistClient {
         });
 
         // Voice actor: prefer native (Japanese) name, fall back to full (romanized)
-        let va_data = edge["voiceActors"]
-            .as_array()
-            .and_then(|arr| arr.first());
+        let va_data = edge["voiceActors"].as_array().and_then(|arr| arr.first());
 
         let seiyuu = va_data
             .and_then(|va| {

@@ -797,11 +797,26 @@ mod tests {
 
     #[test]
     fn test_alphabet_to_kana_compound_syllables_full() {
-        assert_eq!(alphabet_to_kana("kyakyukyoshashusho"), "きゃきゅきょしゃしゅしょ");
-        assert_eq!(alphabet_to_kana("chachuchonyanyunyo"), "ちゃちゅちょにゃにゅにょ");
-        assert_eq!(alphabet_to_kana("hyahyuhyomyamyumyo"), "ひゃひゅひょみゃみゅみょ");
-        assert_eq!(alphabet_to_kana("ryaryuryogyagyugyo"), "りゃりゅりょぎゃぎゅぎょ");
-        assert_eq!(alphabet_to_kana("byabyubyopyapyupyo"), "びゃびゅびょぴゃぴゅぴょ");
+        assert_eq!(
+            alphabet_to_kana("kyakyukyoshashusho"),
+            "きゃきゅきょしゃしゅしょ"
+        );
+        assert_eq!(
+            alphabet_to_kana("chachuchonyanyunyo"),
+            "ちゃちゅちょにゃにゅにょ"
+        );
+        assert_eq!(
+            alphabet_to_kana("hyahyuhyomyamyumyo"),
+            "ひゃひゅひょみゃみゅみょ"
+        );
+        assert_eq!(
+            alphabet_to_kana("ryaryuryogyagyugyo"),
+            "りゃりゅりょぎゃぎゅぎょ"
+        );
+        assert_eq!(
+            alphabet_to_kana("byabyubyopyapyupyo"),
+            "びゃびゅびょぴゃぴゅぴょ"
+        );
     }
 
     #[test]

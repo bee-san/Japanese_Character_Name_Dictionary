@@ -52,9 +52,9 @@ pub struct VndbClient {
 
 /// Information returned from the VNDB VN endpoint, including title and voice actor mapping.
 pub struct VnInfo {
-    pub title: String,                    // romanized
-    pub alttitle: String,                 // Japanese
-    pub va_map: HashMap<String, String>,  // character_id → VA display name
+    pub title: String,                   // romanized
+    pub alttitle: String,                // Japanese
+    pub va_map: HashMap<String, String>, // character_id → VA display name
 }
 
 impl VndbClient {

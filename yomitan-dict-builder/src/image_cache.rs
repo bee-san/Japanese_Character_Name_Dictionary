@@ -542,7 +542,9 @@ mod tests {
         // Write data
         {
             let cache = ImageCache::open(dir.path()).unwrap();
-            cache.put("https://example.com/persist.jpg", &[10, 20, 30], "jpg").await;
+            cache
+                .put("https://example.com/persist.jpg", &[10, 20, 30], "jpg")
+                .await;
         }
 
         // Reopen and verify

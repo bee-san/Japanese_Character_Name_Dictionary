@@ -119,10 +119,14 @@ impl AppState {
                 "/var/cache/yomitan".to_string()
             }
         });
-        let image_cache = ImageCache::open(std::path::Path::new(&cache_dir))
-            .unwrap_or_else(|e| { error!("Image cache initialization failed: {}", e); std::process::exit(1) });
-        let media_cache = MediaCache::open(std::path::Path::new(&cache_dir))
-            .unwrap_or_else(|e| { error!("Media cache initialization failed: {}", e); std::process::exit(1) });
+        let image_cache = ImageCache::open(std::path::Path::new(&cache_dir)).unwrap_or_else(|e| {
+            error!("Image cache initialization failed: {}", e);
+            std::process::exit(1)
+        });
+        let media_cache = MediaCache::open(std::path::Path::new(&cache_dir)).unwrap_or_else(|e| {
+            error!("Media cache initialization failed: {}", e);
+            std::process::exit(1)
+        });
 
         Self {
             downloads,
@@ -140,12 +144,12 @@ impl AppState {
 
 #[derive(Deserialize)]
 struct DictQuery {
-    source: Option<String>, // "vndb" or "anilist" (for single-media mode)
-    id: Option<String>,     // VN ID like "v17" or AniList media ID (for single-media mode)
+    source: Option<String>,  // "vndb" or "anilist" (for single-media mode)
+    id: Option<String>,      // VN ID like "v17" or AniList media ID (for single-media mode)
     entries: Option<String>, // JSON array of {source, id, media_type?} for multi-entry mode
     #[serde(default = "default_media_type")]
     media_type: String, // "ANIME" or "MANGA" (for AniList single-media)
-    vndb_user: Option<String>,    // VNDB username (for username mode)
+    vndb_user: Option<String>, // VNDB username (for username mode)
     anilist_user: Option<String>, // AniList username (for username mode)
     #[serde(default = "default_true")]
     honorifics: bool,
@@ -295,11 +299,13 @@ fn parse_anilist_id(input: &str) -> Result<i32, String> {
     }
 
     // Plain numeric ID
-    input
-        .parse::<i32>()
-        .map_err(|_| format!("Invalid AniList ID '{}': must be a number or AniList URL", input))
+    input.parse::<i32>().map_err(|_| {
+        format!(
+            "Invalid AniList ID '{}': must be a number or AniList URL",
+            input
+        )
+    })
 }
-
 
 /// Get the base URL for auto-update URLs.
 /// Reads from BASE_URL env var, defaults to http://127.0.0.1:3000.
@@ -501,14 +507,9 @@ async fn generate_stream(
     let anilist_user = params.anilist_user.unwrap_or_default().trim().to_string();
 
     tokio::spawn(async move {
-        let result = generate_dict_from_usernames(
-            &vndb_user,
-            &anilist_user,
-            settings,
-            Some(&tx),
-            &state,
-        )
-        .await;
+        let result =
+            generate_dict_from_usernames(&vndb_user, &anilist_user, settings, Some(&tx), &state)
+                .await;
 
         match result {
             Ok(zip_bytes) => {
@@ -712,7 +713,6 @@ async fn generate_dict_from_usernames(
     progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-
     // Step 1: Collect all media entries from user lists
     let mut media_entries: Vec<UserMediaEntry> = Vec::new();
 
@@ -980,30 +980,28 @@ async fn generate_dict_from_entries(
 
     for entry in &unique_entries {
         match entry.source.to_lowercase().as_str() {
-            "vndb" => {
-                match fetch_vndb_cached(&entry.id, state).await {
-                    Ok((title, mut char_data, cached)) => {
-                        download_images_concurrent(
-                            &mut char_data,
-                            &state.http_client,
-                            &state.image_cache,
-                            8,
-                        )
-                        .await;
+            "vndb" => match fetch_vndb_cached(&entry.id, state).await {
+                Ok((title, mut char_data, cached)) => {
+                    download_images_concurrent(
+                        &mut char_data,
+                        &state.http_client,
+                        &state.image_cache,
+                        8,
+                    )
+                    .await;
 
-                        for character in char_data.all_characters() {
-                            builder.add_character(character, &title);
-                        }
-
-                        if !cached {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                        }
+                    for character in char_data.all_characters() {
+                        builder.add_character(character, &title);
                     }
-                    Err(e) => {
-                        warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
+
+                    if !cached {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                     }
                 }
-            }
+                Err(e) => {
+                    warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
+                }
+            },
             "anilist" => {
                 let media_id: i32 = match entry.id.parse() {
                     Ok(id) => id,
@@ -1078,14 +1076,7 @@ async fn generate_dict(
         .to_string();
 
     if !vndb_user.is_empty() || !anilist_user.is_empty() {
-        match generate_dict_from_usernames(
-            &vndb_user,
-            &anilist_user,
-            settings,
-            None,
-            &state,
-        )
-        .await
+        match generate_dict_from_usernames(&vndb_user, &anilist_user, settings, None, &state).await
         {
             Ok(bytes) => {
                 return (
@@ -1174,29 +1165,18 @@ async fn generate_dict(
     let settings = params.to_settings();
 
     let result = match source.to_lowercase().as_str() {
-        "vndb" => {
-            generate_vndb_dict(id, settings, &download_url, &state).await
-        }
+        "vndb" => generate_vndb_dict(id, settings, &download_url, &state).await,
         "anilist" => {
             let media_id: i32 = match parse_anilist_id(id) {
                 Ok(id) => id,
-                Err(e) => {
-                    return (StatusCode::BAD_REQUEST, e).into_response()
-                }
+                Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
             };
             let media_type = params.media_type.to_uppercase();
             if media_type != "ANIME" && media_type != "MANGA" {
                 return (StatusCode::BAD_REQUEST, "media_type must be ANIME or MANGA")
                     .into_response();
             }
-            generate_anilist_dict(
-                media_id,
-                &media_type,
-                settings,
-                &download_url,
-                &state,
-            )
-            .await
+            generate_anilist_dict(media_id, &media_type, settings, &download_url, &state).await
         }
         _ => {
             return (
@@ -1252,10 +1232,7 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
     } else if let Some(ref entries_json) = params.entries {
         // Multi-entry mode: pass entries JSON through to download URL
         let base = base_url();
-        let mut parts = vec![format!(
-            "entries={}",
-            urlencoding::encode(entries_json)
-        )];
+        let mut parts = vec![format!("entries={}", urlencoding::encode(entries_json))];
         params.append_settings_params(&mut parts);
         format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
     } else {
@@ -1272,11 +1249,7 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
     };
 
     let settings = params.to_settings();
-    let builder = DictBuilder::new(
-        settings,
-        Some(download_url),
-        String::new(),
-    );
+    let builder = DictBuilder::new(settings, Some(download_url), String::new());
     let index = builder.create_index_public();
 
     (
@@ -1429,11 +1402,8 @@ async fn generate_vndb_dict(
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 8).await;
     download_seiyuu_images(&mut char_data, &state.http_client, &state.image_cache, 4).await;
 
-    let mut builder = DictBuilder::new(
-        settings,
-        Some(download_url.to_string()),
-        game_title.clone(),
-    );
+    let mut builder =
+        DictBuilder::new(settings, Some(download_url.to_string()), game_title.clone());
 
     for character in char_data.all_characters() {
         builder.add_character(character, &game_title);
@@ -1460,11 +1430,8 @@ async fn generate_anilist_dict(
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 6).await;
     download_seiyuu_images(&mut char_data, &state.http_client, &state.image_cache, 4).await;
 
-    let mut builder = DictBuilder::new(
-        settings,
-        Some(download_url.to_string()),
-        game_title.clone(),
-    );
+    let mut builder =
+        DictBuilder::new(settings, Some(download_url.to_string()), game_title.clone());
 
     for character in char_data.all_characters() {
         builder.add_character(character, &game_title);
@@ -1541,10 +1508,7 @@ mod tests {
 
     #[test]
     fn test_parse_anilist_id_bare_domain() {
-        assert_eq!(
-            parse_anilist_id("anilist.co/anime/9253").unwrap(),
-            9253
-        );
+        assert_eq!(parse_anilist_id("anilist.co/anime/9253").unwrap(), 9253);
     }
 
     #[test]
@@ -1771,11 +1735,41 @@ mod tests {
     #[test]
     fn test_media_entries_dedup_mixed_sources() {
         let mut entries = vec![
-            UserMediaEntry { id: "1".to_string(), title: "A".to_string(), title_romaji: "A".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
-            UserMediaEntry { id: "1".to_string(), title: "A".to_string(), title_romaji: "A".to_string(), source: "anilist".to_string(), media_type: "anime".to_string() },
-            UserMediaEntry { id: "2".to_string(), title: "B".to_string(), title_romaji: "B".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
-            UserMediaEntry { id: "2".to_string(), title: "B".to_string(), title_romaji: "B".to_string(), source: "anilist".to_string(), media_type: "manga".to_string() },
-            UserMediaEntry { id: "1".to_string(), title: "A dup".to_string(), title_romaji: "A".to_string(), source: "vndb".to_string(), media_type: "vn".to_string() },
+            UserMediaEntry {
+                id: "1".to_string(),
+                title: "A".to_string(),
+                title_romaji: "A".to_string(),
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+            },
+            UserMediaEntry {
+                id: "1".to_string(),
+                title: "A".to_string(),
+                title_romaji: "A".to_string(),
+                source: "anilist".to_string(),
+                media_type: "anime".to_string(),
+            },
+            UserMediaEntry {
+                id: "2".to_string(),
+                title: "B".to_string(),
+                title_romaji: "B".to_string(),
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+            },
+            UserMediaEntry {
+                id: "2".to_string(),
+                title: "B".to_string(),
+                title_romaji: "B".to_string(),
+                source: "anilist".to_string(),
+                media_type: "manga".to_string(),
+            },
+            UserMediaEntry {
+                id: "1".to_string(),
+                title: "A dup".to_string(),
+                title_romaji: "A".to_string(),
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+            },
         ];
         let mut seen = HashSet::new();
         entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
@@ -2244,7 +2238,14 @@ mod tests {
 
     #[test]
     fn test_each_setting_independently_toggleable() {
-        let fields = ["honorifics", "image", "tag", "description", "traits", "spoilers"];
+        let fields = [
+            "honorifics",
+            "image",
+            "tag",
+            "description",
+            "traits",
+            "spoilers",
+        ];
         for field in fields {
             let q = DictQuery {
                 honorifics: field != "honorifics",
@@ -2260,27 +2261,63 @@ mod tests {
             match field {
                 "honorifics" => {
                     assert!(!s.honorifics);
-                    assert!(s.show_image && s.show_tag && s.show_description && s.show_traits && s.show_spoilers);
+                    assert!(
+                        s.show_image
+                            && s.show_tag
+                            && s.show_description
+                            && s.show_traits
+                            && s.show_spoilers
+                    );
                 }
                 "image" => {
                     assert!(!s.show_image);
-                    assert!(s.honorifics && s.show_tag && s.show_description && s.show_traits && s.show_spoilers);
+                    assert!(
+                        s.honorifics
+                            && s.show_tag
+                            && s.show_description
+                            && s.show_traits
+                            && s.show_spoilers
+                    );
                 }
                 "tag" => {
                     assert!(!s.show_tag);
-                    assert!(s.honorifics && s.show_image && s.show_description && s.show_traits && s.show_spoilers);
+                    assert!(
+                        s.honorifics
+                            && s.show_image
+                            && s.show_description
+                            && s.show_traits
+                            && s.show_spoilers
+                    );
                 }
                 "description" => {
                     assert!(!s.show_description);
-                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_traits && s.show_spoilers);
+                    assert!(
+                        s.honorifics
+                            && s.show_image
+                            && s.show_tag
+                            && s.show_traits
+                            && s.show_spoilers
+                    );
                 }
                 "traits" => {
                     assert!(!s.show_traits);
-                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_description && s.show_spoilers);
+                    assert!(
+                        s.honorifics
+                            && s.show_image
+                            && s.show_tag
+                            && s.show_description
+                            && s.show_spoilers
+                    );
                 }
                 "spoilers" => {
                     assert!(!s.show_spoilers);
-                    assert!(s.honorifics && s.show_image && s.show_tag && s.show_description && s.show_traits);
+                    assert!(
+                        s.honorifics
+                            && s.show_image
+                            && s.show_tag
+                            && s.show_description
+                            && s.show_traits
+                    );
                 }
                 _ => unreachable!(),
             }

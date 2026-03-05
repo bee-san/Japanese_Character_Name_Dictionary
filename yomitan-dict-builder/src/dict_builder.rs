@@ -613,7 +613,12 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
-            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         }
     }
 
@@ -1012,7 +1017,12 @@ mod tests {
             image_height: None,
             first_name_hint: None,
             last_name_hint: None,
-            seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+            seiyuu: None,
+            seiyuu_image_url: None,
+            seiyuu_image_bytes: None,
+            seiyuu_image_ext: None,
+            seiyuu_image_width: None,
+            seiyuu_image_height: None,
         }
     }
 
@@ -1393,7 +1403,12 @@ mod tests {
                 image_height: None,
                 first_name_hint: None,
                 last_name_hint: None,
-                seiyuu: None, seiyuu_image_url: None, seiyuu_image_bytes: None, seiyuu_image_ext: None, seiyuu_image_width: None, seiyuu_image_height: None,
+                seiyuu: None,
+                seiyuu_image_url: None,
+                seiyuu_image_bytes: None,
+                seiyuu_image_ext: None,
+                seiyuu_image_width: None,
+                seiyuu_image_height: None,
             };
             builder.add_character(&ch, "Test");
         }
