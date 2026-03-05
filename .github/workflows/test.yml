@@ -22,5 +22,8 @@ jobs:
         with:
           workspaces: yomitan-dict-builder
 
+      - name: Check code format
+        run: cargo fmt --all --check
+
       - name: Run tests
         run: cargo test
