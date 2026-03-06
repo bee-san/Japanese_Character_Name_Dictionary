@@ -11,6 +11,13 @@ const MAX_RETRIES: u32 = 5;
 /// Maximum backoff cap per retry: 1 minute 30 seconds.
 const MAX_BACKOFF_MS: u64 = 90_000;
 
+/// Role string returned by AniList for main characters.
+const ROLE_MAIN: &str = "MAIN";
+/// Role string returned by AniList for supporting characters.
+const ROLE_SUPPORTING: &str = "SUPPORTING";
+/// Role string returned by AniList for background characters.
+const ROLE_BACKGROUND: &str = "BACKGROUND";
+
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
 /// Uses exponential backoff with jitter: 5s, 10s, 20s, 40s, 80s (capped at 90s).
 async fn send_with_retry(
@@ -373,13 +380,13 @@ impl AnilistClient {
     /// Process a single AniList character edge into our Character struct.
     fn process_character(&self, edge: &serde_json::Value) -> Option<Character> {
         let node = edge.get("node")?;
-        let role_raw = edge["role"].as_str().unwrap_or("BACKGROUND");
+        let role_raw = edge["role"].as_str().unwrap_or(ROLE_BACKGROUND);
 
         let role = match role_raw {
-            "MAIN" => "main",
-            "SUPPORTING" => "primary",
-            "BACKGROUND" => "side",
-            _ => "side",
+            ROLE_MAIN => "primary",
+            ROLE_SUPPORTING => "side",
+            ROLE_BACKGROUND => "appears",
+            _ => "appears",
         }
         .to_string();
 
@@ -550,7 +557,7 @@ mod tests {
     fn test_process_character_main_role() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             12345,
             "Lelouch Lamperouge",
             "ルルーシュ・ランペルージ",
@@ -566,7 +573,7 @@ mod tests {
         assert_eq!(ch.id, "12345");
         assert_eq!(ch.name, "Lelouch Lamperouge");
         assert_eq!(ch.name_original, "ルルーシュ・ランペルージ");
-        assert_eq!(ch.role, "main");
+        assert_eq!(ch.role, "primary");
         assert_eq!(ch.sex, Some("m".to_string()));
         assert_eq!(ch.age, Some("17".to_string()));
         assert_eq!(ch.birthday, Some(vec![12, 5]));
@@ -590,7 +597,7 @@ mod tests {
     fn test_process_character_extracts_name_hints() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             100,
             "Souma Yukihira",
             "幸平創真",
@@ -614,7 +621,7 @@ mod tests {
     fn test_process_character_no_hints_when_missing() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             100,
             "Souma Yukihira",
             "幸平創真",
@@ -635,7 +642,7 @@ mod tests {
     fn test_process_character_trims_hint_whitespace() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             100,
             "Souma Yukihira",
             "幸平創真",
@@ -658,7 +665,7 @@ mod tests {
     fn test_process_character_empty_hint_becomes_none() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             100,
             "Himiko",
             "ヒミコ",
@@ -678,10 +685,10 @@ mod tests {
     }
 
     #[test]
-    fn test_process_character_supporting_maps_to_primary() {
+    fn test_process_character_supporting_maps_to_side() {
         let client = make_client();
         let edge = make_edge(
-            "SUPPORTING",
+            ROLE_SUPPORTING,
             99,
             "Kallen Stadtfeld",
             "紅月カレン",
@@ -694,7 +701,7 @@ mod tests {
             None,
         );
         let ch = client.process_character(&edge).unwrap();
-        assert_eq!(ch.role, "primary");
+        assert_eq!(ch.role, "side");
         assert_eq!(ch.sex, Some("f".to_string()));
         assert!(ch.age.is_none());
         assert!(ch.birthday.is_none());
@@ -705,10 +712,10 @@ mod tests {
     }
 
     #[test]
-    fn test_process_character_background_maps_to_side() {
+    fn test_process_character_background_maps_to_appears() {
         let client = make_client();
         let edge = make_edge(
-            "BACKGROUND",
+            ROLE_BACKGROUND,
             50,
             "Extra",
             "",
@@ -721,12 +728,12 @@ mod tests {
             None,
         );
         let ch = client.process_character(&edge).unwrap();
-        assert_eq!(ch.role, "side");
+        assert_eq!(ch.role, "appears");
         assert_eq!(ch.name_original, "");
     }
 
     #[test]
-    fn test_process_character_unknown_role_maps_to_side() {
+    fn test_process_character_unknown_role_maps_to_appears() {
         let client = make_client();
         let edge = make_edge(
             "UNKNOWN_ROLE",
@@ -742,14 +749,14 @@ mod tests {
             None,
         );
         let ch = client.process_character(&edge).unwrap();
-        assert_eq!(ch.role, "side");
+        assert_eq!(ch.role, "appears");
     }
 
     #[test]
     fn test_process_character_age_as_string() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -769,7 +776,7 @@ mod tests {
     fn test_process_character_age_as_integer() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -789,7 +796,7 @@ mod tests {
     fn test_process_character_age_null() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -809,7 +816,7 @@ mod tests {
     fn test_process_character_gender_nonbinary_returns_none() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -830,7 +837,7 @@ mod tests {
     fn test_process_character_gender_null() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -850,7 +857,7 @@ mod tests {
     fn test_process_character_multiple_aliases() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -871,7 +878,7 @@ mod tests {
         let client = make_client();
         // Build edge with empty string alias mixed in
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -891,14 +898,14 @@ mod tests {
     #[test]
     fn test_process_character_missing_node_returns_none() {
         let client = make_client();
-        let edge = serde_json::json!({"role": "MAIN"});
+        let edge = serde_json::json!({"role": ROLE_MAIN});
         assert!(client.process_character(&edge).is_none());
     }
 
     #[test]
     fn test_process_character_missing_name_returns_none() {
         let client = make_client();
-        let edge = serde_json::json!({"role": "MAIN", "node": {"id": 1}});
+        let edge = serde_json::json!({"role": ROLE_MAIN, "node": {"id": 1}});
         assert!(client.process_character(&edge).is_none());
     }
 
@@ -907,7 +914,7 @@ mod tests {
         // AniList can return {"month": 5, "day": null} for unknown day
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -929,7 +936,7 @@ mod tests {
     fn test_process_character_id_zero_when_missing() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             0,
             "A",
             "あ",
@@ -947,10 +954,10 @@ mod tests {
     }
 
     #[test]
-    fn test_process_character_no_role_defaults_to_side() {
+    fn test_process_character_no_role_defaults_to_appears() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -964,15 +971,15 @@ mod tests {
         );
         edge.as_object_mut().unwrap().remove("role");
         let ch = client.process_character(&edge).unwrap();
-        // role_raw defaults to "BACKGROUND" when missing → maps to "side"
-        assert_eq!(ch.role, "side");
+        // role_raw defaults to ROLE_BACKGROUND when missing → maps to "appears"
+        assert_eq!(ch.role, "appears");
     }
 
     #[test]
     fn test_process_character_description_with_anilist_spoilers() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -1033,7 +1040,7 @@ mod tests {
         let client = make_client();
         let edges = vec![
             make_edge(
-                "MAIN",
+                ROLE_MAIN,
                 1,
                 "Main Char",
                 "主人公",
@@ -1046,7 +1053,7 @@ mod tests {
                 None,
             ),
             make_edge(
-                "SUPPORTING",
+                ROLE_SUPPORTING,
                 2,
                 "Support Char",
                 "サポート",
@@ -1059,7 +1066,7 @@ mod tests {
                 None,
             ),
             make_edge(
-                "BACKGROUND",
+                ROLE_BACKGROUND,
                 3,
                 "BG Char",
                 "背景",
@@ -1077,9 +1084,9 @@ mod tests {
         for edge in &edges {
             if let Some(character) = client.process_character(edge) {
                 match character.role.as_str() {
-                    "main" => char_data.main.push(character),
-                    "primary" => char_data.primary.push(character),
-                    "side" => char_data.side.push(character),
+                    "primary" => char_data.main.push(character),
+                    "side" => char_data.primary.push(character),
+                    "appears" => char_data.side.push(character),
                     _ => char_data.side.push(character),
                 }
             }
@@ -1388,7 +1395,7 @@ mod tests {
     fn test_realistic_anilist_character_edge() {
         let client = make_client();
         let edge = serde_json::json!({
-            "role": "MAIN",
+            "role": ROLE_MAIN,
             "node": {
                 "id": 35252,
                 "name": {
@@ -1410,7 +1417,7 @@ mod tests {
         assert_eq!(ch.id, "35252");
         assert_eq!(ch.name, "Okabe Rintarou");
         assert_eq!(ch.name_original, "岡部 倫太郎");
-        assert_eq!(ch.role, "main");
+        assert_eq!(ch.role, "primary");
         assert_eq!(ch.sex, Some("m".to_string()));
         assert_eq!(ch.age, Some("18".to_string()));
         assert_eq!(ch.birthday, Some(vec![12, 14]));
@@ -1428,7 +1435,7 @@ mod tests {
         // Some AniList characters have very sparse data
         let client = make_client();
         let edge = serde_json::json!({
-            "role": "BACKGROUND",
+            "role": ROLE_BACKGROUND,
             "node": {
                 "id": 99999,
                 "name": {
@@ -1448,7 +1455,7 @@ mod tests {
         assert_eq!(ch.id, "99999");
         assert_eq!(ch.name, "Student A");
         assert_eq!(ch.name_original, "");
-        assert_eq!(ch.role, "side");
+        assert_eq!(ch.role, "appears");
         assert!(ch.sex.is_none());
         assert!(ch.age.is_none());
         assert!(ch.birthday.is_none());
@@ -1483,7 +1490,7 @@ mod tests {
     fn test_process_character_gender_empty_string() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -1505,7 +1512,7 @@ mod tests {
         let client = make_client();
         // "FEMALE" should still map to "f" (lowercased first char)
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -1527,7 +1534,7 @@ mod tests {
     fn test_process_character_age_empty_string() {
         let client = make_client();
         let edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -1551,7 +1558,7 @@ mod tests {
     fn test_process_character_birthday_month_zero() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
@@ -1611,7 +1618,7 @@ mod tests {
     fn test_process_character_alternatives_with_nulls() {
         let client = make_client();
         let mut edge = make_edge(
-            "MAIN",
+            ROLE_MAIN,
             1,
             "A",
             "あ",
