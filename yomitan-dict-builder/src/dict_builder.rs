@@ -11,6 +11,9 @@ use crate::kana;
 use crate::models::*;
 use crate::name_parser::{self, HONORIFIC_SUFFIXES};
 
+/// Maximum number of entries to put into one term bank file.
+/// Yomitan recommends keeping each term bank small to reduce import issues.
+/// JMdict and Jitendex both use 2k entries as their limit.
 const TERM_BANK_LIMIT: usize = 2_000;
 
 fn get_score(role: &str) -> i32 {
@@ -597,8 +600,6 @@ impl DictBuilder {
         // Instead of holding all honorific entries in memory (which can be hundreds of
         // MB for large dictionaries), we buffer up to a term bank amount at a time and
         // flush each chunk to the ZIP before moving on.
-        // Yomitan recommends keeping each term bank small to reduce import issues.
-        // JMdict and Jitendex both use 2k entries as their limit.
         let entries_per_bank = TERM_BANK_LIMIT;
         let mut bank_buffer: Vec<serde_json::Value> = Vec::with_capacity(entries_per_bank);
         let mut bank_number: usize = 1;
