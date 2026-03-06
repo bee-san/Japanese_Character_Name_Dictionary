@@ -512,6 +512,25 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
     line-height: 1.8;
 }
 
+/* === Inline validation hints === */
+.input-hint {
+    font-size: 0.82em;
+    margin-top: 4px;
+    line-height: 1.4;
+    display: none;
+}
+.input-hint.show { display: block; }
+.input-hint.warn { color: #856404; }
+.input-hint.error { color: #721c24; }
+.input-hint a {
+    color: #e84393;
+    cursor: pointer;
+    text-decoration: underline;
+    font-weight: 500;
+}
+input.input-warn { border-color: #ffc107; }
+input.input-error { border-color: #dc3545; }
+
 /* === Mobile === */
 @media (max-width: 850px) {
     body {

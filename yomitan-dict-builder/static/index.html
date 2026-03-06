@@ -53,11 +53,13 @@
                     <div class="form-group inline">
                         <div>
                             <label for="vndbUser">VNDB ID <span class="label-hint">(optional)</span></label>
-                            <input type="text" id="vndbUser" placeholder="e.g., https://vndb.org/u306797">
+                            <input type="text" id="vndbUser" placeholder="e.g., https://vndb.org/u306797" oninput="validateVndbUser()">
+                            <div class="input-hint" id="vndbUserHint"></div>
                         </div>
                         <div>
                             <label for="anilistUser">AniList ID <span class="label-hint">(optional)</span></label>
-                            <input type="text" id="anilistUser" placeholder="e.g., https://anilist.co/user/Josh">
+                            <input type="text" id="anilistUser" placeholder="e.g., https://anilist.co/user/Josh" oninput="validateAnilistUser()">
+                            <div class="input-hint" id="anilistUserHint"></div>
                         </div>
                     </div>
                     <p style="text-align: center; color: #f78fb3; font-size: 0.85em; margin-top: -12px; margin-bottom: 12px;">You can do both at the same time!</p>
@@ -129,19 +131,19 @@
 
                         <!-- Description [toggleable] -->
                         <div id="preview-description" class="toggle-section">
-                            <span class="toggle-btn" onclick="toggleSetting('description')" title="Click to disable">❌</span>
+                            <span class="toggle-btn" onclick="toggleSetting('description')" title="Click to disable">&#10060;</span>
                             <div class="yomitan-details">
                                 <div class="yomitan-details-summary">&#9660; Description</div>
                                 <div class="yomitan-details-content">
                                     <p><strong>SNS Manager of <em>Lemonade Factory</em></strong></p>
-                                    <p>The protagonist's childhood friend.</p>
+                                    <p>The protagonist's childhood friend. Always hangs out with 須々木 心一.</p>
                                     <p style="font-size: 0.85em; color: #999;">[Translated from official website]</p>
 
                                     <!-- Spoiler block [nested toggle] -->
                                     <div id="spoiler-wrapper">
                                         <div id="preview-spoilers" class="toggle-section" style="padding-right: 0;">
                                             <div class="yomitan-spoiler-block">
-                                                <span class="toggle-btn" onclick="event.stopPropagation(); toggleSetting('spoilers')" title="Click to disable (hide spoilers)" style="right: 6px; top: 6px;">❌</span>
+                                                <span class="toggle-btn" onclick="event.stopPropagation(); toggleSetting('spoilers')" title="Click to disable (hide spoilers)" style="right: 6px; top: 6px;">&#10060;</span>
                                                 [spoiler]Ririko really likes Anki. Disable this to hide spoilers from the dictionary.[/spoiler]
                                             </div>
                                         </div>

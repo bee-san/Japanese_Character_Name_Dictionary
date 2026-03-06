@@ -259,9 +259,15 @@ impl ImageCache {
     }
 
     /// Current total cached bytes (from in-memory counter).
-    #[cfg(test)]
-    fn total_bytes(&self) -> u64 {
+    pub fn total_bytes(&self) -> u64 {
         self.inner.total_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Number of entries currently in the cache.
+    pub async fn entry_count(&self) -> u64 {
+        let db = self.inner.db.lock().await;
+        db.query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .unwrap_or(0)
     }
 }
 

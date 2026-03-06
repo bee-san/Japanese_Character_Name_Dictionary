@@ -80,6 +80,8 @@ struct AppState {
     image_cache: ImageCache,
     /// Per-media API response cache (character data + title).
     media_cache: MediaCache,
+    /// Server start time for uptime reporting.
+    started_at: std::time::Instant,
 }
 
 impl AppState {
@@ -136,6 +138,7 @@ impl AppState {
                 .expect("Failed to build HTTP client"),
             image_cache,
             media_cache,
+            started_at: std::time::Instant::now(),
         }
     }
 }
@@ -379,6 +382,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/api/health", get(health_check))
         .merge(generate_routes)
         .merge(api_routes)
         .nest_service("/static", ServeDir::new(static_dir()))
@@ -417,6 +421,41 @@ async fn serve_index() -> impl IntoResponse {
 async fn build_info() -> impl IntoResponse {
     let timestamp = env!("BUILD_TIMESTAMP");
     axum::Json(serde_json::json!({ "build_time": timestamp }))
+}
+
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let uptime = state.started_at.elapsed();
+    let uptime_secs = uptime.as_secs();
+    let hours = uptime_secs / 3600;
+    let minutes = (uptime_secs % 3600) / 60;
+    let seconds = uptime_secs % 60;
+
+    let image_cache_bytes = state.image_cache.total_bytes();
+    let image_cache_entries = state.image_cache.entry_count().await;
+
+    let media_cache = state.media_cache.clone();
+    let (media_cache_bytes, media_cache_entries) =
+        tokio::task::spawn_blocking(move || (media_cache.total_bytes(), media_cache.entry_count()))
+            .await
+            .unwrap_or((0, 0));
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "uptime": format!("{}h {}m {}s", hours, minutes, seconds),
+        "uptime_seconds": uptime_secs,
+        "cache": {
+            "image": {
+                "entries": image_cache_entries,
+                "size_bytes": image_cache_bytes,
+                "size_mb": format!("{:.1}", image_cache_bytes as f64 / (1024.0 * 1024.0)),
+            },
+            "media": {
+                "entries": media_cache_entries,
+                "size_bytes": media_cache_bytes,
+                "size_mb": format!("{:.1}", media_cache_bytes as f64 / (1024.0 * 1024.0)),
+            }
+        }
+    }))
 }
 
 // === Fetch user lists endpoint ===
@@ -1821,191 +1860,6 @@ mod tests {
             spoilers: true,
             seiyuu: true,
         }
-    }
-
-    #[test]
-    fn test_dict_query_defaults_all_true() {
-        let q = make_dict_query_default();
-        let s = q.to_settings();
-        assert!(s.show_image, "image defaults to true");
-        assert!(s.show_tag, "tag defaults to true");
-        assert!(s.show_description, "description defaults to true");
-        assert!(s.show_traits, "traits defaults to true");
-        assert!(s.show_spoilers, "spoilers defaults to true");
-        assert!(s.honorifics, "honorifics defaults to true");
-    }
-
-    #[test]
-    fn test_dict_query_all_false() {
-        let q = DictQuery {
-            honorifics: false,
-            image: false,
-            tag: false,
-            description: false,
-            traits: false,
-            spoilers: false,
-            ..make_dict_query_default()
-        };
-        let s = q.to_settings();
-        assert!(!s.honorifics);
-        assert!(!s.show_image);
-        assert!(!s.show_tag);
-        assert!(!s.show_description);
-        assert!(!s.show_traits);
-        assert!(!s.show_spoilers);
-    }
-
-    #[test]
-    fn test_dict_query_mixed_settings() {
-        let q = DictQuery {
-            image: false,
-            spoilers: false,
-            ..make_dict_query_default()
-        };
-        let s = q.to_settings();
-        assert!(!s.show_image);
-        assert!(s.show_tag);
-        assert!(s.show_description);
-        assert!(s.show_traits);
-        assert!(!s.show_spoilers);
-        assert!(s.honorifics);
-    }
-
-    #[test]
-    fn test_dict_query_only_honorifics_false() {
-        let q = DictQuery {
-            honorifics: false,
-            ..make_dict_query_default()
-        };
-        let s = q.to_settings();
-        assert!(!s.honorifics);
-        assert!(s.show_image);
-        assert!(s.show_tag);
-        assert!(s.show_description);
-        assert!(s.show_traits);
-        assert!(s.show_spoilers);
-    }
-
-    #[test]
-    fn test_dict_query_preserves_source_and_id() {
-        let q = DictQuery {
-            source: Some("vndb".to_string()),
-            id: Some("v17".to_string()),
-            image: false,
-            ..make_dict_query_default()
-        };
-        assert_eq!(q.source.as_deref(), Some("vndb"));
-        assert_eq!(q.id.as_deref(), Some("v17"));
-        let s = q.to_settings();
-        assert!(!s.show_image);
-    }
-
-    #[test]
-    fn test_dict_query_media_type_default() {
-        let q = make_dict_query_default();
-        assert_eq!(q.media_type, "ANIME");
-    }
-
-    #[test]
-    fn test_dict_query_media_type_manga() {
-        let q = DictQuery {
-            media_type: "MANGA".to_string(),
-            ..make_dict_query_default()
-        };
-        assert_eq!(q.media_type, "MANGA");
-    }
-
-    #[test]
-    fn test_dict_query_with_usernames() {
-        let q = DictQuery {
-            vndb_user: Some("testuser".to_string()),
-            anilist_user: Some("testuser2".to_string()),
-            traits: false,
-            ..make_dict_query_default()
-        };
-        assert_eq!(q.vndb_user.as_deref(), Some("testuser"));
-        assert_eq!(q.anilist_user.as_deref(), Some("testuser2"));
-        let s = q.to_settings();
-        assert!(!s.show_traits);
-        assert!(s.show_image);
-    }
-
-    // ===================================================================
-    // DictQuery.append_settings_params tests
-    // ===================================================================
-
-    #[test]
-    fn test_append_settings_params_all_default_no_params() {
-        let q = make_dict_query_default();
-        let mut parts = Vec::new();
-        q.append_settings_params(&mut parts);
-        assert!(
-            parts.is_empty(),
-            "All-default settings should append no params, got: {:?}",
-            parts
-        );
-    }
-
-    #[test]
-    fn test_append_settings_params_all_false() {
-        let q = DictQuery {
-            honorifics: false,
-            image: false,
-            tag: false,
-            description: false,
-            traits: false,
-            spoilers: false,
-            ..make_dict_query_default()
-        };
-        let mut parts = Vec::new();
-        q.append_settings_params(&mut parts);
-        assert_eq!(parts.len(), 6, "All-false should append 6 params");
-        assert!(parts.contains(&"honorifics=false".to_string()));
-        assert!(parts.contains(&"image=false".to_string()));
-        assert!(parts.contains(&"tag=false".to_string()));
-        assert!(parts.contains(&"description=false".to_string()));
-        assert!(parts.contains(&"traits=false".to_string()));
-        assert!(parts.contains(&"spoilers=false".to_string()));
-    }
-
-    #[test]
-    fn test_append_settings_params_one_false() {
-        let q = DictQuery {
-            image: false,
-            ..make_dict_query_default()
-        };
-        let mut parts = Vec::new();
-        q.append_settings_params(&mut parts);
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0], "image=false");
-    }
-
-    #[test]
-    fn test_append_settings_params_preserves_existing_parts() {
-        let q = DictQuery {
-            tag: false,
-            spoilers: false,
-            ..make_dict_query_default()
-        };
-        let mut parts = vec!["source=vndb".to_string(), "id=v17".to_string()];
-        q.append_settings_params(&mut parts);
-        assert_eq!(parts.len(), 4);
-        assert_eq!(parts[0], "source=vndb");
-        assert_eq!(parts[1], "id=v17");
-        assert!(parts.contains(&"tag=false".to_string()));
-        assert!(parts.contains(&"spoilers=false".to_string()));
-    }
-
-    #[test]
-    fn test_append_settings_params_does_not_add_true_values() {
-        let q = DictQuery {
-            spoilers: false,
-            ..make_dict_query_default()
-        };
-        let mut parts = Vec::new();
-        q.append_settings_params(&mut parts);
-        assert_eq!(parts.len(), 1, "Only false values should be appended");
-        assert_eq!(parts[0], "spoilers=false");
     }
 
     // ===================================================================

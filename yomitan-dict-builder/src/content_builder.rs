@@ -884,7 +884,6 @@ mod tests {
             name: "Shinichi Suzuki".to_string(),
             name_original: "須々木 心一".to_string(),
             role: "main".to_string(),
-            source: String::new(),
             sex: Some("m".to_string()),
             age: Some("17".to_string()),
             height: Some(165),
@@ -907,21 +906,7 @@ mod tests {
                 name: "Student".to_string(),
                 spoiler: 0,
             }],
-            engages_in: vec![],
-            subject_of: vec![],
-            image_url: None,
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         }
     }
 
@@ -2114,7 +2099,14 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
+        let content = cb.build_content(
+            &char,
+            Some("img/c1.jpg"),
+            None,
+            None,
+            None,
+            "Game",
+        );
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains(&char.name_original));
         assert!(content_str.contains(&char.name));
@@ -2561,7 +2553,14 @@ mod tests {
     fn test_image_with_zero_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), None, None, "Game");
+        let content = cb.build_content(
+            &char,
+            Some("img/c1.jpg"),
+            Some((0, 0)),
+            None,
+            None,
+            "Game",
+        );
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()
@@ -2605,7 +2604,14 @@ mod tests {
     fn test_image_none_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
+        let content = cb.build_content(
+            &char,
+            Some("img/c1.jpg"),
+            None,
+            None,
+            None,
+            "Game",
+        );
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()

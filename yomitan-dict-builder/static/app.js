@@ -70,6 +70,7 @@ function updatePreviewCard() {
             btn.title = enabled ? 'Click to disable (hide spoilers)' : 'Click to re-enable (show spoilers)';
         }
     }
+
 }
 
 // Build query param string from non-default settings
@@ -131,7 +132,7 @@ function addManualEntry() {
         </div>
         <div class="entry-id">
             <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253">
+            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this)">
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
     `;
@@ -150,6 +151,9 @@ function onEntrySourceChange(select) {
     const row = select.closest('.manual-entry-row');
     const mtWrapper = row.querySelector('[data-wrapper="media-type"]');
     mtWrapper.classList.toggle('hidden', select.value !== 'anilist');
+    // Re-validate the media ID for the new source
+    const idInput = row.querySelector('[data-field="id"]');
+    if (idInput && idInput.value.trim()) validateManualId(idInput);
 }
 
 function updateRemoveButtons() {
@@ -195,6 +199,21 @@ async function fetchLists() {
     const status = document.getElementById('statusUsername');
     const fetchBtn = document.getElementById('fetchListsBtn');
     const preview = document.getElementById('mediaPreview');
+
+    if (!vndbUser && !anilistUser) {
+        status.textContent = 'Please enter at least one username.';
+        status.className = 'status show error';
+        return;
+    }
+
+    // Run validation — show hints but don't block (user may dismiss)
+    const vndbOk = validateVndbUser();
+    const anilistOk = validateAnilistUser();
+    if (!vndbOk || !anilistOk) {
+        status.textContent = 'Check the warnings above — you may have pasted a media URL instead of a username.';
+        status.className = 'status show error';
+        return;
+    }
 
     if (!vndbUser && !anilistUser) {
         status.textContent = 'Please enter at least one username.';
@@ -282,6 +301,15 @@ function generateFromUsername() {
     const fetchBtn = document.getElementById('fetchListsBtn');
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
+
+    // Validate inputs before generating
+    const vndbOk = validateVndbUser();
+    const anilistOk = validateAnilistUser();
+    if (!vndbOk || !anilistOk) {
+        status.textContent = 'Check the warnings above — you may have pasted a media URL instead of a username.';
+        status.className = 'status show error';
+        return;
+    }
 
     genBtn.disabled = true;
     genBtn.textContent = 'Generating...';
@@ -384,6 +412,20 @@ async function generateFromManual() {
         return;
     }
 
+    // Validate all manual entry IDs
+    let allValid = true;
+    document.querySelectorAll('.manual-entry-row').forEach(row => {
+        const idInput = row.querySelector('[data-field="id"]');
+        if (idInput && idInput.value.trim()) {
+            if (!validateManualId(idInput)) allValid = false;
+        }
+    });
+    if (!allValid) {
+        status.textContent = 'Fix the validation errors above before generating.';
+        status.className = 'status show error';
+        return;
+    }
+
     genBtn.disabled = true;
     genBtn.textContent = 'Generating...';
     status.innerHTML = 'Fetching characters and building dictionary... Sorry for the wait — we rate-limit our requests to be kind to VNDB and AniList, who generously provide their APIs for free.';
@@ -441,6 +483,141 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// === Input Validation ===
+
+// Patterns for detecting media URLs/IDs pasted into the wrong field
+const VNDB_VN_URL_RE = /vndb\.org\/v\d+/i;
+const VNDB_VN_ID_RE = /^v\d+$/i;
+const ANILIST_MEDIA_URL_RE = /anilist\.co\/(anime|manga)\/\d+/i;
+
+function setHint(el, input, message, level) {
+    el.innerHTML = message;
+    el.className = 'input-hint show ' + level;
+    input.classList.remove('input-warn', 'input-error');
+    input.classList.add(level === 'warn' ? 'input-warn' : level === 'error' ? 'input-error' : '');
+}
+
+function clearHint(el, input) {
+    el.innerHTML = '';
+    el.className = 'input-hint';
+    input.classList.remove('input-warn', 'input-error');
+}
+
+function switchToManualTab() {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const manualTab = document.querySelector('[data-tab="manual"]');
+    manualTab.classList.add('active');
+    document.getElementById('tab-manual').classList.add('active');
+}
+
+function switchToUsernameTab() {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const usernameTab = document.querySelector('[data-tab="username"]');
+    usernameTab.classList.add('active');
+    document.getElementById('tab-username').classList.add('active');
+}
+
+function validateVndbUser() {
+    const input = document.getElementById('vndbUser');
+    const hint = document.getElementById('vndbUserHint');
+    const val = input.value.trim();
+
+    if (!val) { clearHint(hint, input); return true; }
+
+    // Detect VN URL (vndb.org/v17) pasted into username field
+    if (VNDB_VN_URL_RE.test(val) || VNDB_VN_ID_RE.test(val)) {
+        const label = VNDB_VN_URL_RE.test(val) ? 'a VN URL' : 'a VN ID';
+        setHint(hint, input, `This looks like ${label}, not a username. Use the <a onclick="switchToManualTab()">Media ID tab</a> instead.`, 'warn');
+        return false;
+    }
+
+    clearHint(hint, input);
+    return true;
+}
+
+function validateAnilistUser() {
+    const input = document.getElementById('anilistUser');
+    const hint = document.getElementById('anilistUserHint');
+    const val = input.value.trim();
+
+    if (!val) { clearHint(hint, input); return true; }
+
+    // Detect AniList media URL (anilist.co/anime/9253) pasted into username field
+    if (ANILIST_MEDIA_URL_RE.test(val)) {
+        setHint(hint, input, 'This looks like a media URL, not a username. Use the <a onclick="switchToManualTab()">Media ID tab</a> instead.', 'warn');
+        return false;
+    }
+
+    // Detect bare numeric ID that's likely a media ID
+    if (/^\d+$/.test(val)) {
+        setHint(hint, input, 'This looks like a media ID, not a username. Use the <a onclick="switchToManualTab()">Media ID tab</a> if you meant a media ID.', 'warn');
+        return false;
+    }
+
+    clearHint(hint, input);
+    return true;
+}
+
+function validateManualId(input) {
+    const row = input.closest('.manual-entry-row');
+    const source = row.querySelector('[data-field="source"]').value;
+    const val = input.value.trim();
+    let hint = row.querySelector('.entry-id .input-hint');
+
+    // Create hint element if it doesn't exist yet
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'input-hint';
+        row.querySelector('.entry-id').appendChild(hint);
+    }
+
+    if (!val) { clearHint(hint, input); return true; }
+
+    if (source === 'vndb') {
+        // Accept: v17, V17, 17, vndb.org/v17 URLs
+        if (VNDB_VN_URL_RE.test(val) || VNDB_VN_ID_RE.test(val) || /^\d+$/.test(val)) {
+            clearHint(hint, input);
+            return true;
+        }
+        // Detect user URL pasted into media ID field
+        if (/vndb\.org\/u\d+/i.test(val) || /^u\d+$/i.test(val)) {
+            setHint(hint, input, 'This looks like a VNDB user ID. Use the <a onclick="switchToUsernameTab()">Username tab</a> for user-based generation.', 'warn');
+            return false;
+        }
+        // Detect AniList URL in VNDB field
+        if (/anilist\.co\//i.test(val)) {
+            setHint(hint, input, 'This is an AniList URL. Switch the source to AniList, or paste the VNDB ID.', 'warn');
+            return false;
+        }
+        setHint(hint, input, 'Expected a VNDB VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
+        return false;
+    }
+
+    if (source === 'anilist') {
+        // Accept: 9253, anilist.co/anime/9253 URLs
+        if (/^\d+$/.test(val) || ANILIST_MEDIA_URL_RE.test(val)) {
+            clearHint(hint, input);
+            return true;
+        }
+        // Detect AniList user URL pasted into media ID field
+        if (/anilist\.co\/user\//i.test(val)) {
+            setHint(hint, input, 'This looks like a user profile URL. Use the <a onclick="switchToUsernameTab()">Username tab</a> for user-based generation.', 'warn');
+            return false;
+        }
+        // Detect VNDB URL in AniList field
+        if (/vndb\.org\//i.test(val)) {
+            setHint(hint, input, 'This is a VNDB URL. Switch the source to VNDB, or paste the AniList ID.', 'warn');
+            return false;
+        }
+        setHint(hint, input, 'Expected a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
+        return false;
+    }
+
+    return true;
 }
 
 // Initialize the preview card toggles and first manual entry row on load

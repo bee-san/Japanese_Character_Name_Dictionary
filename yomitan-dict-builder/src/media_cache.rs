@@ -234,9 +234,15 @@ impl MediaCache {
     }
 
     /// Returns the current total cached bytes.
-    #[cfg(test)]
     pub fn total_bytes(&self) -> u64 {
         self.inner.total_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Number of entries currently in the cache.
+    pub fn entry_count(&self) -> u64 {
+        let db = self.inner.db.lock().unwrap();
+        db.query_row("SELECT COUNT(*) FROM media", [], |row| row.get(0))
+            .unwrap_or(0)
     }
 
     /// Trigger eviction if not already running.
@@ -330,7 +336,6 @@ mod tests {
             name: "Test Character".to_string(),
             name_original: "テスト".to_string(),
             role: "main".to_string(),
-            source: String::new(),
             sex: Some("f".to_string()),
             age: Some("17".to_string()),
             height: Some(160),
@@ -343,54 +348,15 @@ mod tests {
                 name: "Kind".to_string(),
                 spoiler: 0,
             }],
-            roles: vec![],
-            engages_in: vec![],
-            subject_of: vec![],
             image_url: Some("https://example.com/img.jpg".to_string()),
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         });
         data.side.push(Character {
             id: "c2".to_string(),
             name: "Side Char".to_string(),
             name_original: "サイド".to_string(),
             role: "side".to_string(),
-            source: String::new(),
-            sex: None,
-            age: None,
-            height: None,
-            weight: None,
-            blood_type: None,
-            birthday: None,
-            description: None,
-            aliases: vec![],
-            personality: vec![],
-            roles: vec![],
-            engages_in: vec![],
-            subject_of: vec![],
-            image_url: None,
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         });
         data
     }
@@ -436,32 +402,8 @@ mod tests {
             name: "Another".to_string(),
             name_original: "アナザー".to_string(),
             role: "main".to_string(),
-            source: String::new(),
-            sex: None,
-            age: None,
-            height: None,
-            weight: None,
-            blood_type: None,
-            birthday: None,
             description: Some("A longer description for size testing".to_string()),
-            aliases: vec![],
-            personality: vec![],
-            roles: vec![],
-            engages_in: vec![],
-            subject_of: vec![],
-            image_url: None,
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         });
 
         cache.put("vndb:v1", "Title 1", &data1);
@@ -543,32 +485,7 @@ mod tests {
             name: "A".to_string(),
             name_original: "A".to_string(),
             role: "main".to_string(),
-            source: String::new(),
-            sex: None,
-            age: None,
-            height: None,
-            weight: None,
-            blood_type: None,
-            birthday: None,
-            description: None,
-            aliases: vec![],
-            personality: vec![],
-            roles: vec![],
-            engages_in: vec![],
-            subject_of: vec![],
-            image_url: None,
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         });
 
         cache.put("vndb:v1", "T", &small);
@@ -677,32 +594,7 @@ mod tests {
             name: "Other".to_string(),
             name_original: "その他".to_string(),
             role: "main".to_string(),
-            source: String::new(),
-            sex: None,
-            age: None,
-            height: None,
-            weight: None,
-            blood_type: None,
-            birthday: None,
-            description: None,
-            aliases: vec![],
-            personality: vec![],
-            roles: vec![],
-            engages_in: vec![],
-            subject_of: vec![],
-            image_url: None,
-            image_bytes: None,
-            image_ext: None,
-            image_width: None,
-            image_height: None,
-            first_name_hint: None,
-            last_name_hint: None,
-            seiyuu: None,
-            seiyuu_image_url: None,
-            seiyuu_image_bytes: None,
-            seiyuu_image_ext: None,
-            seiyuu_image_width: None,
-            seiyuu_image_height: None,
+            ..Character::default()
         });
 
         cache.put("vndb:v17", "Title 1", &data1);
