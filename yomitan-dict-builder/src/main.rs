@@ -383,6 +383,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/custom", get(serve_custom))
+        .route("/custom/", get(serve_custom))
         .route("/api/health", get(health_check))
         .merge(generate_routes)
         .merge(api_routes)
