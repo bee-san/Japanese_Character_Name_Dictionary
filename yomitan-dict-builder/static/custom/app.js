@@ -23,8 +23,8 @@ function openDB() {
         store.createIndex("created_at", "created_at", { unique: false });
       }
     };
-    req.onsuccess  = e => resolve(e.target.result);
-    req.onerror    = e => reject(e.target.error);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
   });
 }
 
@@ -32,9 +32,11 @@ function dbTx(mode, fn) {
   return new Promise((resolve, reject) => {
     const tx    = db.transaction(STORE_NAME, mode);
     const store = tx.objectStore(STORE_NAME);
-    const req   = fn(store);
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
+    let result;
+    fn(store).onsuccess = e => { result = e.target.result; };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror    = () => reject(tx.error);
+    tx.onabort    = () => reject(tx.error);
   });
 }
 
@@ -79,11 +81,6 @@ function incrementHitCount(id) {
 
 // ── Entry parsing ──────────────────────────────────────────────────────────
 
-/**
- * Parse textarea content into [{term, reading, definition}].
- * Format per line: term, reading, definition
- * Lines starting with # are comments. Commas in definition are preserved.
- */
 function parseEntries(rawText) {
   const entries = [];
   for (const raw of rawText.split("\n")) {
@@ -105,15 +102,10 @@ function parseEntries(rawText) {
 
 // ── Yomitan ZIP builder ────────────────────────────────────────────────────
 
-/**
- * Build a valid Yomitan-format ZIP and return it as a Blob.
- * Uses JSZip (loaded globally).
- */
 async function buildZip(dictName, entries) {
   const zip      = new JSZip();
   const revision = Math.floor(Date.now() / 1000);
 
-  // index.json
   zip.file("index.json", JSON.stringify({
     title:    dictName,
     author:   AUTHOR_TAG,
@@ -121,12 +113,10 @@ async function buildZip(dictName, entries) {
     revision: String(revision),
   }, null, 2));
 
-  // tag_bank_1.json
   zip.file("tag_bank_1.json", JSON.stringify([
     [TAG_NAME, "meta", 0, AUTHOR_TAG, 0],
   ]));
 
-  // term_bank_N.json — chunk into groups of TERM_LIMIT
   for (let i = 0; i < entries.length; i += TERM_LIMIT) {
     const chunk     = entries.slice(i, i + TERM_LIMIT);
     const bankIndex = Math.floor(i / TERM_LIMIT) + 1;
@@ -141,10 +131,6 @@ async function buildZip(dictName, entries) {
 
 // ── Yomitan ZIP parser ─────────────────────────────────────────────────────
 
-/**
- * Validate and parse an uploaded ZIP.
- * Returns { dictName, rawText } or throws with a user-friendly message.
- */
 async function parseZip(file) {
   let zip;
   try {
@@ -167,7 +153,6 @@ async function parseZip(file) {
     throw new Error("This dictionary was not created by Bee's Custom Yomitan Dict Maker and cannot be edited here.");
   }
 
-  // Collect all term_bank_N.json files, sorted numerically
   const bankFiles = Object.keys(zip.files)
     .filter(n => /^term_bank_\d+\.json$/.test(n))
     .sort((a, b) => {
@@ -278,7 +263,6 @@ async function renderHistory() {
     list.appendChild(item);
   }
 
-  // Attach listeners
   list.querySelectorAll(".btn-hist-load").forEach(btn =>
     btn.addEventListener("click", e => { e.stopPropagation(); histLoad(btn.dataset.id); })
   );
@@ -297,8 +281,8 @@ function escHtml(str) {
 async function histLoad(id) {
   const record = await getDict(id);
   if (!record) return;
-  document.getElementById("dict-name").value   = record.dict_name;
-  document.getElementById("entry-area").value  = record.raw_text;
+  document.getElementById("dict-name").value  = record.dict_name;
+  document.getElementById("entry-area").value = record.raw_text;
   updateEntryCount();
   setStatus(`Loaded "${record.dict_name}" for editing.`, "success");
   document.getElementById("entry-area").focus();
@@ -342,10 +326,9 @@ async function handleGenerate() {
   setStatus("Building dictionary…", "info", false);
 
   try {
-    const blob    = await buildZip(dictName, entries);
-    const arrBuf  = await blob.arrayBuffer();
+    const blob   = await buildZip(dictName, entries);
+    const arrBuf = await blob.arrayBuffer();
 
-    // Store in IndexedDB
     const record = {
       id:         crypto.randomUUID(),
       dict_name:  dictName,
@@ -357,7 +340,6 @@ async function handleGenerate() {
     await saveDict(record);
     await renderHistory();
 
-    // Trigger download
     const safe = dictName.replace(/[^a-zA-Z0-9\u3000-\u9fff\s_-]/g, "").trim() || "dictionary";
     triggerDownload(blob, `${safe}.zip`);
 
@@ -389,7 +371,7 @@ async function handleUpload(file) {
     console.error(err);
   } finally {
     setLoading(false);
-    // Reset file input so the same file can be re-uploaded if needed
+    // Reset so the same file can be re-uploaded if needed
     document.getElementById("file-input").value = "";
   }
 }
