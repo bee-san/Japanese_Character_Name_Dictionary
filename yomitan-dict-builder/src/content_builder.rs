@@ -2099,14 +2099,7 @@ mod tests {
             ..DictSettings::default()
         });
         let char = make_test_character();
-        let content = cb.build_content(
-            &char,
-            Some("img/c1.jpg"),
-            None,
-            None,
-            None,
-            "Game",
-        );
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(content_str.contains(&char.name_original));
         assert!(content_str.contains(&char.name));
@@ -2553,14 +2546,7 @@ mod tests {
     fn test_image_with_zero_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(
-            &char,
-            Some("img/c1.jpg"),
-            Some((0, 0)),
-            None,
-            None,
-            "Game",
-        );
+        let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()
@@ -2604,14 +2590,7 @@ mod tests {
     fn test_image_none_dimensions_uses_fallback() {
         let cb = ContentBuilder::new(DictSettings::default());
         let char = make_test_character();
-        let content = cb.build_content(
-            &char,
-            Some("img/c1.jpg"),
-            None,
-            None,
-            None,
-            "Game",
-        );
+        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
         let img = items
             .iter()

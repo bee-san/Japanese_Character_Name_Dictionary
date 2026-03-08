@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bee's Custom Yomitan Dict Maker</title>
+  <meta name="description" content="Create and edit custom Yomitan dictionaries with plaintext.">
+  <meta name="theme-color" content="#e84393">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="manifest" href="/static/site.webmanifest">
+  <link rel="icon" href="/static/favicon.ico">
+  <link rel="stylesheet" href="/static/custom/style.css">
+</head>
+<body>
+
+  <header>
+    <h1>Bee's <span>Custom Yomitan Dict</span> Maker</h1>
+    <p class="subtitle">Create and edit custom Yomitan dictionaries with plaintext.</p>
+    <a class="back-link" href="/">← Back to Character Dictionary</a>
+  </header>
+
+  <div class="layout">
+
+    <!-- ── Editor pane ── -->
+    <main class="editor-pane">
+
+      <!-- Dictionary name -->
+      <div class="field-row">
+        <label for="dict-name">Dict Name</label>
+        <input
+          id="dict-name"
+          type="text"
+          placeholder="My Custom Dictionary"
+          maxlength="200"
+          spellcheck="false"
+          autocomplete="off"
+        >
+      </div>
+
+      <!-- Textarea -->
+      <div class="editor-wrap">
+        <textarea
+          id="entry-area"
+          placeholder="雪, ゆき, snow&#10;愛, あい, love, affection&#10;猫, ねこ, cat&#10;東京, とうきょう, Tokyo"
+          spellcheck="false"
+          autocomplete="off"
+        ></textarea>
+        <div class="editor-footer">
+          <span class="hint">
+            Format: <code>term, reading, definition</code> &mdash;
+            commas in definitions are fine
+          </span>
+          <span id="entry-count">0 entries</span>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div id="status-bar" aria-live="polite"></div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button id="btn-generate" class="btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Generate &amp; Download
+        </button>
+
+        <button id="btn-upload-trigger" class="btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Upload &amp; Edit
+        </button>
+
+        <input id="file-input" type="file" accept=".zip" hidden aria-label="Upload dictionary ZIP">
+
+        <button id="btn-clear" class="btn-ghost">Clear</button>
+      </div>
+
+    </main>
+
+    <!-- ── Sidebar: history ── -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Saved Dictionaries</span>
+        <span style="font-weight:400;font-size:0.72rem;color:var(--text-muted)">stored locally</span>
+      </div>
+      <div id="history-list" class="history-list">
+        <div class="history-empty">No dictionaries yet.<br>Generate one to see it here.</div>
+      </div>
+
+      <!-- ChatGPT tip -->
+      <div class="chatgpt-tip">
+        <div class="chatgpt-tip-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          ChatGPT is great at generating entries
+        </div>
+        <p class="chatgpt-tip-body">
+          Ask it to output entries in the <code>term, reading, definition</code> format and paste them straight in. Example prompt:
+        </p>
+        <div class="chatgpt-prompt">
+          List me abilities from Naruto.<br><br>
+          Output EXACTLY one per line in this format:<br>
+          <em>term, reading, definition</em><br><br>
+          Requirements:<br>
+          - term: the Japanese name (kanji/kana as used in the series)<br>
+          - reading: hiragana only<br>
+          - definition: concise English explanation (under 10 words)<br>
+          - media-specific terms only — not common words found in a standard dictionary<br>
+          - no numbering<br>
+          - no extra text<br><br>
+          Example:<br>
+          螺旋丸, らせんがん, Rotating chakra sphere attack<br>
+          影分身の術, かげぶんしんのじゅつ, Creates solid shadow clones<br>
+          千鳥, ちどり, Lightning chakra thrust attack
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- JSZip (local copy) -->
+  <script src="/static/custom/jszip.min.js"></script>
+  <script src="/static/custom/app.js"></script>
+
+</body>
+</html>

@@ -382,6 +382,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/custom", get(serve_custom))
+        .route("/custom/", get(serve_custom))
         .route("/api/health", get(health_check))
         .merge(generate_routes)
         .merge(api_routes)
@@ -415,6 +417,19 @@ async fn serve_index() -> impl IntoResponse {
         )
             .into_response(),
         Err(_) => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
+    }
+}
+
+async fn serve_custom() -> impl IntoResponse {
+    let path = static_dir().join("custom").join("index.html");
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "custom/index.html not found").into_response(),
     }
 }
 
