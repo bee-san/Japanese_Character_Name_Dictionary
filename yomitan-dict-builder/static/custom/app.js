@@ -263,6 +263,9 @@ async function renderHistory() {
     list.appendChild(item);
   }
 
+  list.querySelectorAll(".history-item").forEach(item =>
+    item.addEventListener("click", () => histLoad(item.dataset.id))
+  );
   list.querySelectorAll(".btn-hist-load").forEach(btn =>
     btn.addEventListener("click", e => { e.stopPropagation(); histLoad(btn.dataset.id); })
   );
