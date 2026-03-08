@@ -338,10 +338,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .chatgpt-tip-title {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   font-weight: 700;
   color: var(--accent);
   margin-bottom: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chatgpt-tip-toggle {
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chatgpt-tip.collapsed .chatgpt-tip-content {
+  display: none;
+}
+
+.chatgpt-tip.collapsed .chatgpt-tip-toggle {
+  transform: rotate(-90deg);
+}
+
+.chatgpt-tip.collapsed .chatgpt-tip-title {
+  margin-bottom: 0;
 }
 
 .chatgpt-tip-body {

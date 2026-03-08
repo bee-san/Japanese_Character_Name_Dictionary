@@ -376,11 +376,33 @@ async function handleUpload(file) {
   }
 }
 
+// ── ChatGPT prompt collapse ─────────────────────────────────────────────────
+
+function initPromptCollapse() {
+  const tip = document.querySelector(".chatgpt-tip");
+  if (!tip) return;
+  try {
+    if (localStorage.getItem("beeCustomDict_promptCollapsed") === "true") {
+      tip.classList.add("collapsed");
+    }
+  } catch (e) {}
+}
+
+function togglePromptCollapse() {
+  const tip = document.querySelector(".chatgpt-tip");
+  if (!tip) return;
+  const collapsed = tip.classList.toggle("collapsed");
+  try {
+    localStorage.setItem("beeCustomDict_promptCollapsed", collapsed ? "true" : "false");
+  } catch (e) {}
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 
 async function init() {
   db = await openDB();
   await renderHistory();
+  initPromptCollapse();
 
   const textarea = document.getElementById("entry-area");
   textarea.addEventListener("input", updateEntryCount);
