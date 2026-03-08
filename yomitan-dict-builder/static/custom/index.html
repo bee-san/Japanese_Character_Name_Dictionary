@@ -98,28 +98,34 @@
 
       <!-- ChatGPT tip -->
       <div class="chatgpt-tip">
-        <div class="chatgpt-tip-title">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          ChatGPT is great at generating entries
+        <div class="chatgpt-tip-title" onclick="togglePromptCollapse()">
+          <span style="display:flex;align-items:center;gap:6px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ChatGPT is great at generating entries
+          </span>
+          <span class="chatgpt-tip-toggle">▼</span>
         </div>
-        <p class="chatgpt-tip-body">
-          Ask it to output entries in the <code>term, reading, definition</code> format and paste them straight in. Example prompt:
-        </p>
-        <div class="chatgpt-prompt">
-          List me abilities from Naruto.<br><br>
-          Output EXACTLY one per line in this format:<br>
-          <em>term, reading, definition</em><br><br>
-          Requirements:<br>
-          - term: the Japanese name (kanji/kana as used in the series)<br>
-          - reading: hiragana only<br>
-          - definition: concise English explanation (under 10 words)<br>
-          - media-specific terms only — not common words found in a standard dictionary<br>
-          - no numbering<br>
-          - no extra text<br><br>
-          Example:<br>
-          螺旋丸, らせんがん, Rotating chakra sphere attack<br>
-          影分身の術, かげぶんしんのじゅつ, Creates solid shadow clones<br>
-          千鳥, ちどり, Lightning chakra thrust attack
+        <div class="chatgpt-tip-content">
+          <p class="chatgpt-tip-body">
+            Ask it to output entries in the <code>term, reading, definition</code> format and paste them straight in. Example prompt:
+          </p>
+          <div class="chatgpt-prompt">
+            List me abilities from Naruto.<br><br>
+            Output EXACTLY one per line in this format:<br>
+            <em>term, reading, definition</em><br><br>
+            Requirements:<br>
+            - term: the Japanese name (kanji/kana as used in the series)<br>
+            - reading: hiragana only<br>
+            - definition: concise English explanation (under 10 words)<br>
+            - media-specific terms only — not common words found in a standard dictionary<br>
+            - no numbering<br>
+            - no extra text<br>
+            - Include as many terms as possible. The user wants a complete glossary.<br><br>
+            Example:<br>
+            螺旋丸, らせんがん, Rotating chakra sphere attack<br>
+            影分身の術, かげぶんしんのじゅつ, Creates solid shadow clones<br>
+            千鳥, ちどり, Lightning chakra thrust attack
+          </div>
         </div>
       </div>
 
