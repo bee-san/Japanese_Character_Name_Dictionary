@@ -43,14 +43,15 @@
       <div class="editor-wrap">
         <textarea
           id="entry-area"
-          placeholder="雪, ゆき, snow&#10;愛, あい, love, affection&#10;猫, ねこ, cat&#10;東京, とうきょう, Tokyo"
+          placeholder="雪, ゆき, snow&#10;愛, あい, love, affection&#10;猫, ねこ, cat&#10;  A domesticated carnivore.&#10;東京, とうきょう, Tokyo"
           spellcheck="false"
           autocomplete="off"
         ></textarea>
         <div class="editor-footer">
           <span class="hint">
             Format: <code>term, reading, definition</code> &mdash;
-            commas in definitions are fine
+            commas in definitions are fine &mdash;
+            indent a line to add a line break to the previous definition
           </span>
           <span id="entry-count">0 entries</span>
         </div>
@@ -107,17 +108,22 @@
         </div>
         <div class="chatgpt-tip-content">
           <p class="chatgpt-tip-body">
-            Ask it to output entries in the <code>term, reading, definition</code> format and paste them straight in. Example prompt:
+            Ask it to output entries in the <code>term, reading, definition</code> format and paste them straight in. Indent continuation lines to add line breaks to a definition. Example prompt:
           </p>
           <pre class="chatgpt-prompt">List me abilities from Naruto.
 
-Output EXACTLY one per line in this format:
+Output entries in this format:
 term, reading, definition
+
+For longer definitions, indent continuation lines with two spaces:
+term, reading, First line of definition.
+  Second line.
+  Third line.
 
 Requirements:
 - term: the Japanese name (kanji/kana as used in the series)
 - reading: hiragana only
-- definition: concise English explanation (under 10 words)
+- definition: concise English explanation
 - media-specific terms only — not common words found in a standard dictionary
 - no numbering
 - no extra text
@@ -126,6 +132,7 @@ Requirements:
 Example:
 螺旋丸, らせんがん, Rotating chakra sphere attack
 影分身の術, かげぶんしんのじゅつ, Creates solid shadow clones
+  Each clone is fully physical and can fight.
 千鳥, ちどり, Lightning chakra thrust attack</pre>
         </div>
       </div>

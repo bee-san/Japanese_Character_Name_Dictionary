@@ -197,6 +197,41 @@ The image cache (`/var/cache/yomitan`) persists downloaded character portraits a
 5. Click "Generate Dictionary"
 6. Import the downloaded ZIP file into Yomitan
 
+## Custom Yomitan Dict Maker
+
+Visit `/custom` to create standalone Yomitan dictionaries from plaintext — no API keys or media IDs required. Useful for game-specific glossaries, character name lists, or any term set you want to look up in Yomitan.
+
+### Entry format
+
+```
+term, reading, definition
+```
+
+- **term** — the word to look up (kanji, kana, or romaji)
+- **reading** — hiragana reading (leave blank if the term is already kana)
+- **definition** — English (or any language) explanation; commas inside are fine
+
+### Multi-line definitions
+
+Indent a line with spaces or a tab to continue the previous entry's definition. Each indented line becomes a new line in the Yomitan popup.
+
+```
+猫, ねこ, cat
+  A small, domesticated carnivore.
+  Lives both indoors and outdoors.
+螺旋丸, らせんがん, Rotating chakra sphere
+  Created by concentrating chakra in the palm.
+  Signature technique of Uzumaki Naruto.
+雪, ゆき, snow
+```
+
+### Other notes
+
+- Lines starting with `#` are treated as comments and ignored.
+- Up to 2,000 entries per dictionary.
+- Dictionaries are saved locally in your browser (IndexedDB) so you can re-load and edit them later.
+- You can upload an existing `.zip` made by this tool to edit and re-generate it.
+
 ## Architecture
 
 ```

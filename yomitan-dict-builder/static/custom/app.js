@@ -82,26 +82,64 @@ function incrementHitCount(id) {
 
 // ── Entry parsing ──────────────────────────────────────────────────────────
 
+// Entries follow the format:  term, reading, definition
+// Continuation lines (indented with spaces or a tab) are appended to the
+// previous entry's definition as line breaks.  Example:
+//
+//   猫, ねこ, cat
+//     A small, domesticated carnivore.
+//     Lives both indoors and outdoors.
+//   雪, ゆき, snow
+//
 function parseEntries(rawText) {
   const entries = [];
+  let current   = null;
+
   for (const raw of rawText.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const firstComma  = line.indexOf(",");
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    // A line that starts with whitespace is a continuation of the last entry.
+    const isContinuation = raw.length > 0 && (raw[0] === " " || raw[0] === "\t");
+    if (isContinuation && current) {
+      current.definition += "\n" + trimmed;
+      continue;
+    }
+
+    // Otherwise parse as a new entry header: term, reading, definition
+    const firstComma  = trimmed.indexOf(",");
     if (firstComma === -1) continue;
-    const secondComma = line.indexOf(",", firstComma + 1);
+    const secondComma = trimmed.indexOf(",", firstComma + 1);
     if (secondComma === -1) continue;
 
-    const term       = line.slice(0, firstComma).trim();
-    const reading    = line.slice(firstComma + 1, secondComma).trim();
-    const definition = line.slice(secondComma + 1).trim();
+    const term       = trimmed.slice(0, firstComma).trim();
+    const reading    = trimmed.slice(firstComma + 1, secondComma).trim();
+    const definition = trimmed.slice(secondComma + 1).trim();
     if (!term) continue;
-    entries.push({ term, reading, definition });
+
+    if (current) entries.push(current);
+    current = { term, reading, definition };
   }
+
+  if (current) entries.push(current);
   return entries;
 }
 
 // ── Yomitan ZIP builder ────────────────────────────────────────────────────
+
+// Convert a definition string to a Yomitan definitions array.
+// Multi-line definitions (containing "\n") become structured content with
+// <br> elements so each line renders on its own line in the popup.
+function definitionToYomitan(definition) {
+  if (!definition.includes("\n")) return [definition];
+  const lines   = definition.split("\n");
+  const content = [];
+  lines.forEach((line, i) => {
+    if (line) content.push({ "tag": "span", "content": line });
+    if (i < lines.length - 1) content.push({ "tag": "br" });
+  });
+  return [{ "type": "structured-content", "content": content }];
+}
 
 async function buildZip(dictName, entries) {
   const zip      = new JSZip();
@@ -122,7 +160,7 @@ async function buildZip(dictName, entries) {
     const chunk     = entries.slice(i, i + TERM_LIMIT);
     const bankIndex = Math.floor(i / TERM_LIMIT) + 1;
     const bank      = chunk.map(({ term, reading, definition }) =>
-      [term, reading, TAG_NAME, "", 0, [definition], 0, ""]
+      [term, reading, TAG_NAME, "", 0, definitionToYomitan(definition), 0, ""]
     );
     zip.file(`term_bank_${bankIndex}.json`, JSON.stringify(bank));
   }
@@ -131,6 +169,31 @@ async function buildZip(dictName, entries) {
 }
 
 // ── Yomitan ZIP parser ─────────────────────────────────────────────────────
+
+// Reconstruct a plain definition string from a Yomitan definitions array.
+// Handles both plain strings and structured-content objects (produced by
+// definitionToYomitan above), recovering "\n" for <br> elements so the
+// text can be round-tripped back into the editor as indented continuation lines.
+function yomitanToDefinition(defs) {
+  if (!Array.isArray(defs) || defs.length === 0) return "";
+  const first = defs[0];
+  if (typeof first === "string") return defs.join(" / ");
+  if (first && first.type === "structured-content" && Array.isArray(first.content)) {
+    // Walk the structured content and collect text, using "\n" for <br> nodes.
+    const parts = [];
+    for (const node of first.content) {
+      if (typeof node === "string") {
+        parts.push(node);
+      } else if (node && node.tag === "br") {
+        parts.push("\n");
+      } else if (node && node.tag === "span" && typeof node.content === "string") {
+        parts.push(node.content);
+      }
+    }
+    return parts.join("");
+  }
+  return String(first);
+}
 
 async function parseZip(file) {
   let zip;
@@ -174,11 +237,16 @@ async function parseZip(file) {
     }
     for (const entry of bank) {
       // entry: [term, reading, tags, rules, score, [defs], seq, termTags]
-      const term       = entry[0] ?? "";
-      const reading    = entry[1] ?? "";
-      const defs       = entry[5];
-      const definition = Array.isArray(defs) ? defs.join(" / ") : (defs ?? "");
-      lines.push(`${term}, ${reading}, ${definition}`);
+      const term  = entry[0] ?? "";
+      const reading = entry[1] ?? "";
+      const defs  = entry[5];
+      const definition = yomitanToDefinition(defs);
+      // Emit the header line followed by any continuation lines (indented).
+      const defLines = definition.split("\n");
+      lines.push(`${term}, ${reading}, ${defLines[0]}`);
+      for (let i = 1; i < defLines.length; i++) {
+        lines.push(`  ${defLines[i]}`);
+      }
     }
   }
 
