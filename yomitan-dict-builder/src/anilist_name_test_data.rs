@@ -455,6 +455,116 @@ mod tests {
         assert!(!parts.has_space);
     }
 
+    // --- Iteration mark (々) handling ---
+    //
+    // 々 (U+3005, IDEOGRAPHIC ITERATION MARK) is not classified as kanji by
+    // `is_kanji` (it falls outside the CJK Unified Ideographs range 0x4E00–
+    // 0x9FFF). The split heuristics use kanji→kana transitions to find name
+    // boundaries, so 々 can be misidentified as a kana boundary and end up as
+    // an isolated `given` part. When `contains_kanji("々")` returns false,
+    // `kata_to_hira("々")` is called which passes the iteration mark through
+    // unchanged — producing a literal 々 in the reading instead of the correct
+    // kana.  These tests guard against that regression.
+
+    #[test]
+    fn test_nene_iteration_mark_given_name_only() {
+        // 寧々 (Nene) — 々 repeats 寧, so the full name is read as ねね.
+        // With no last-name hint this takes the single-name path; the romaji
+        // hint must be used without 々 leaking into the output.
+        let readings =
+            name_parser::generate_name_readings("寧々", "Nene", Some("Nene"), None);
+        assert_eq!(readings.full, "ねね", "寧々 should read as ねね");
+        assert!(
+            !readings.full.contains('々'),
+            "Reading must not contain the raw iteration mark 々"
+        );
+    }
+
+    #[test]
+    fn test_nene_iteration_mark_both_hints_triggers_split() {
+        // This is the exact failure mode from the bug report: some databases
+        // (or malformed AniList entries) supply a last-name hint even for a
+        // single-name character, causing split_japanese_name_with_hints to
+        // attempt a split of 寧々. Strategy 2 scores split_pos=1 as the best
+        // candidate (family="寧", given="々"). Because contains_kanji("々") is
+        // false (U+3005 is outside all CJK ranges), kata_to_hira("々") returns
+        // "々" unchanged — the iteration mark leaks directly into the reading.
+        //
+        // Fix: is_kanji() must return true for U+3005 so that 々 is never
+        // treated as a kana character in either the boundary heuristic or the
+        // reading-generation fallback.
+        let readings = name_parser::generate_name_readings(
+            "寧々",
+            "Nene",
+            Some("Nene"),
+            Some("Nene"), // same value forced as last — triggers the split path
+        );
+        assert!(
+            !readings.full.contains('々'),
+            "Reading must not contain the raw iteration mark 々 — got: '{}'",
+            readings.full
+        );
+        assert!(!readings.full.is_empty());
+    }
+
+    #[test]
+    fn test_nene_iteration_mark_with_family_name() {
+        // 田中寧々 — family 田中 (Tanaka) + given 寧々 (Nene).
+        // Strategy 1 sees 々 as a non-kanji char and might set a boundary at
+        // position 3 (after 田中寧), leaving given = "々". The split scoring
+        // should instead prefer the boundary at position 2 so that given =
+        // "寧々" which contains_kanji → true and uses the hint reading ねね.
+        let readings = name_parser::generate_name_readings(
+            "田中寧々",
+            "Nene Tanaka",
+            Some("Nene"),
+            Some("Tanaka"),
+        );
+        assert!(
+            !readings.full.contains('々'),
+            "Reading of 田中寧々 must not contain the raw iteration mark 々"
+        );
+        assert!(
+            !readings.family.contains('々'),
+            "Family reading must not contain 々"
+        );
+        assert!(
+            !readings.given.contains('々'),
+            "Given reading must not contain 々"
+        );
+        assert!(!readings.full.is_empty());
+    }
+
+    #[test]
+    fn test_ririko_iteration_mark_in_name() {
+        // 莉々子 (Ririko) — 々 repeats 莉, so the name is 莉莉子 phonetically.
+        // Single given-name; the iteration mark must not appear in the reading.
+        let readings =
+            name_parser::generate_name_readings("莉々子", "Ririko", Some("Ririko"), None);
+        assert!(
+            !readings.full.contains('々'),
+            "Reading of 莉々子 must not contain the raw iteration mark 々"
+        );
+        assert!(!readings.full.is_empty(), "Reading of 莉々子 must be non-empty");
+    }
+
+    #[test]
+    fn test_iteration_mark_in_family_name_with_space() {
+        // 須々木 心一 — 々 already covered by split_no_hints test, but verify
+        // that hints-based reading generation also keeps 々 out of the output.
+        let readings = name_parser::generate_name_readings(
+            "須々木 心一",
+            "Shinichi Suzuki",
+            Some("Shinichi"),
+            Some("Suzuki"),
+        );
+        assert!(
+            !readings.full.contains('々'),
+            "Reading of 須々木 心一 must not contain the raw iteration mark 々"
+        );
+        assert!(!readings.full.is_empty());
+    }
+
     // --- Whitespace handling ---
 
     #[test]
