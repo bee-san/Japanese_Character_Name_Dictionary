@@ -34,6 +34,13 @@ fn is_kanji(c: char) -> bool {
     || (0xF900..=0xFAFF).contains(&code)
     // CJK Compatibility Ideographs Supplement
     || (0x2F800..=0x2FA1F).contains(&code)
+    // Ideographic Iteration Mark (々, U+3005).
+    // Not in any CJK Ideographs block but behaves like kanji in names:
+    // it repeats the preceding character (e.g. 寧々 = 寧寧 = "nene").
+    // Classifying it as kanji prevents the split heuristic from treating
+    // it as a kana boundary and stops kata_to_hira from passing it through
+    // unchanged into readings.
+    || code == 0x3005
 }
 
 /// Convert katakana to hiragana.

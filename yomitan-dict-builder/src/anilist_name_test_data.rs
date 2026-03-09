@@ -481,6 +481,33 @@ mod tests {
     }
 
     #[test]
+    fn test_nene_iteration_mark_both_hints_triggers_split() {
+        // This is the exact failure mode from the bug report: some databases
+        // (or malformed AniList entries) supply a last-name hint even for a
+        // single-name character, causing split_japanese_name_with_hints to
+        // attempt a split of 寧々. Strategy 2 scores split_pos=1 as the best
+        // candidate (family="寧", given="々"). Because contains_kanji("々") is
+        // false (U+3005 is outside all CJK ranges), kata_to_hira("々") returns
+        // "々" unchanged — the iteration mark leaks directly into the reading.
+        //
+        // Fix: is_kanji() must return true for U+3005 so that 々 is never
+        // treated as a kana character in either the boundary heuristic or the
+        // reading-generation fallback.
+        let readings = name_parser::generate_name_readings(
+            "寧々",
+            "Nene",
+            Some("Nene"),
+            Some("Nene"), // same value forced as last — triggers the split path
+        );
+        assert!(
+            !readings.full.contains('々'),
+            "Reading must not contain the raw iteration mark 々 — got: '{}'",
+            readings.full
+        );
+        assert!(!readings.full.is_empty());
+    }
+
+    #[test]
     fn test_nene_iteration_mark_with_family_name() {
         // 田中寧々 — family 田中 (Tanaka) + given 寧々 (Nene).
         // Strategy 1 sees 々 as a non-kanji char and might set a boundary at
