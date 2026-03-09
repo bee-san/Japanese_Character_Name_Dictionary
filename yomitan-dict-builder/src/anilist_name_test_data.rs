@@ -581,6 +581,811 @@ mod tests {
 
     // --- Bulk: all JSONL characters through the unified API ---
 
+    // --- Large-scale test: Popular anime and VN characters from multiple franchises ---
+    //
+    // This test verifies parsing of character names from:
+    // - Jujutsu Kaisen
+    // - Demon Slayer
+    // - Steins;Gate
+    // - Code Geass
+    // - Attack on Titan
+    // - My Hero Academia
+    // - Fate series
+    // - Original anime and more
+    //
+    // Covers diverse patterns: kanji names, katakana names, mixed kana/kanji,
+    // single names, family names with complex kanji, etc.
+
+    #[test]
+    fn test_popular_anime_vn_characters() {
+        struct Case {
+            native: Option<&'static str>,
+            full: &'static str,
+            first: &'static str,
+            last: Option<&'static str>,
+        }
+
+        let cases = vec![
+            // === Jujutsu Kaisen ===
+            Case {
+                native: Some("虎杖悠仁"),
+                full: "Yuji Itadori",
+                first: "Yuji",
+                last: Some("Itadori"),
+            },
+            Case {
+                native: Some("伏黒恵"),
+                full: "Megumi Fushiguro",
+                first: "Megumi",
+                last: Some("Fushiguro"),
+            },
+            Case {
+                native: Some("釘崎野薔薇"),
+                full: "Nobara Kugisaki",
+                first: "Nobara",
+                last: Some("Kugisaki"),
+            },
+            Case {
+                native: Some("両面宿儺"),
+                full: "Sukuna Ryomen",
+                first: "Sukuna",
+                last: Some("Ryomen"),
+            },
+            Case {
+                native: Some("狗巻棘"),
+                full: "Maki Zenin",
+                first: "Maki",
+                last: Some("Zenin"),
+            },
+            Case {
+                native: Some("禅院真希"),
+                full: "Maki Zenin",
+                first: "Maki",
+                last: Some("Zenin"),
+            },
+            // === Demon Slayer ===
+            Case {
+                native: Some("竈門炭治郎"),
+                full: "Tanjiro Kamado",
+                first: "Tanjiro",
+                last: Some("Kamado"),
+            },
+            Case {
+                native: Some("竈門禰豆子"),
+                full: "Nezuko Kamado",
+                first: "Nezuko",
+                last: Some("Kamado"),
+            },
+            Case {
+                native: Some("我妻善逸"),
+                full: "Zenitsu Agatsuma",
+                first: "Zenitsu",
+                last: Some("Agatsuma"),
+            },
+            Case {
+                native: Some("嘴平伊之助"),
+                full: "Inosuke Hashibira",
+                first: "Inosuke",
+                last: Some("Hashibira"),
+            },
+            Case {
+                native: Some("鬼舞辻無惨"),
+                full: "Muzan Kibutsuji",
+                first: "Muzan",
+                last: Some("Kibutsuji"),
+            },
+            Case {
+                native: Some("胡蝶しのぶ"),
+                full: "Shinobu Kochou",
+                first: "Shinobu",
+                last: Some("Kochou"),
+            },
+            Case {
+                native: Some("栗花落カナヲ"),
+                full: "Kanao Tsuyuri",
+                first: "Kanao",
+                last: Some("Tsuyuri"),
+            },
+            // === Steins;Gate ===
+            Case {
+                native: Some("岡部倫太郎"),
+                full: "Rintaro Okabe",
+                first: "Rintaro",
+                last: Some("Okabe"),
+            },
+            Case {
+                native: Some("牧瀬紅莉栖"),
+                full: "Kurisu Makise",
+                first: "Kurisu",
+                last: Some("Makise"),
+            },
+            Case {
+                native: Some("橋田至"),
+                full: "Itaru Hashida",
+                first: "Itaru",
+                last: Some("Hashida"),
+            },
+            Case {
+                native: Some("椎名まゆり"),
+                full: "Mayuri Shiina",
+                first: "Mayuri",
+                last: Some("Shiina"),
+            },
+            Case {
+                native: Some("鈴羽"),
+                full: "Suzuha Amane",
+                first: "Suzuha",
+                last: Some("Amane"),
+            },
+            // === Code Geass ===
+            Case {
+                native: Some("ルルーシュ・ヴィ・ブリタニア"),
+                full: "Lelouch vi Britannia",
+                first: "Lelouch",
+                last: Some("Britannia"),
+            },
+            Case {
+                native: Some("枢木スザク"),
+                full: "Suzaku Kururugi",
+                first: "Suzaku",
+                last: Some("Kururugi"),
+            },
+            Case {
+                native: Some("紅月カレン"),
+                full: "Kallen Kozuki",
+                first: "Kallen",
+                last: Some("Kozuki"),
+            },
+            Case {
+                native: Some("藤堂鏡志郎"),
+                full: "Kyoshiro Tohdoh",
+                first: "Kyoshiro",
+                last: Some("Tohdoh"),
+            },
+            // === Attack on Titan ===
+            Case {
+                native: Some("エレン・イェーガー"),
+                full: "Eren Yeager",
+                first: "Eren",
+                last: Some("Yeager"),
+            },
+            Case {
+                native: Some("ミカサ・アッカーマン"),
+                full: "Mikasa Ackerman",
+                first: "Mikasa",
+                last: Some("Ackerman"),
+            },
+            Case {
+                native: Some("アルミン・アルレルト"),
+                full: "Armin Arlert",
+                first: "Armin",
+                last: Some("Arlert"),
+            },
+            Case {
+                native: Some("リヴァイ・アッカーマン"),
+                full: "Levi Ackerman",
+                first: "Levi",
+                last: Some("Ackerman"),
+            },
+            // === My Hero Academia ===
+            Case {
+                native: Some("緑谷出久"),
+                full: "Midoriya Deku",
+                first: "Midoriya",
+                last: Some("Deku"),
+            },
+            Case {
+                native: Some("爆豪勝己"),
+                full: "Bakugo Katsuki",
+                first: "Bakugo",
+                last: Some("Katsuki"),
+            },
+            Case {
+                native: Some("麗日お茶子"),
+                full: "Uraraka Ochako",
+                first: "Uraraka",
+                last: Some("Ochako"),
+            },
+            Case {
+                native: Some("飯田天哉"),
+                full: "Iida Tenya",
+                first: "Iida",
+                last: Some("Tenya"),
+            },
+            Case {
+                native: Some("轟焦凍"),
+                full: "Todoroki Shoto",
+                first: "Todoroki",
+                last: Some("Shoto"),
+            },
+            // === Haikyu!! ===
+            Case {
+                native: Some("烏野日向翔陽"),
+                full: "Shoyo Hinata",
+                first: "Shoyo",
+                last: Some("Hinata"),
+            },
+            Case {
+                native: Some("宮侑"),
+                full: "Issei Miyagi",
+                first: "Issei",
+                last: Some("Miyagi"),
+            },
+            Case {
+                native: Some("及川徹"),
+                full: "Tooru Oikawa",
+                first: "Tooru",
+                last: Some("Oikawa"),
+            },
+            // === Fate Series ===
+            Case {
+                native: Some("衛宮士郎"),
+                full: "Shirou Emiya",
+                first: "Shirou",
+                last: Some("Emiya"),
+            },
+            Case {
+                native: Some("遠坂凛"),
+                full: "Rin Tohsaka",
+                first: "Rin",
+                last: Some("Tohsaka"),
+            },
+            Case {
+                native: Some("間桐慎二"),
+                full: "Shinji Matou",
+                first: "Shinji",
+                last: Some("Matou"),
+            },
+            // === Solo Leveling ===
+            Case {
+                native: Some("キムチホ"),
+                full: "Jinwoo Kim",
+                first: "Jinwoo",
+                last: Some("Kim"),
+            },
+            // === Assassination Classroom ===
+            Case {
+                native: Some("渚"),
+                full: "Nagisa Shiota",
+                first: "Nagisa",
+                last: Some("Shiota"),
+            },
+            Case {
+                native: Some("烏間惟臣"),
+                full: "Tadaomi Karasuma",
+                first: "Tadaomi",
+                last: Some("Karasuma"),
+            },
+            // === Sword Art Online ===
+            Case {
+                native: Some("キリト"),
+                full: "Kazuto Kirigaya",
+                first: "Kazuto",
+                last: Some("Kirigaya"),
+            },
+            Case {
+                native: Some("アスナ"),
+                full: "Asuna Yuuki",
+                first: "Asuna",
+                last: Some("Yuuki"),
+            },
+            // === Tokyo Ghoul ===
+            Case {
+                native: Some("金木研"),
+                full: "Kaneki Ken",
+                first: "Kaneki",
+                last: Some("Ken"),
+            },
+            Case {
+                native: Some("霧島董香"),
+                full: "Touka Kirishima",
+                first: "Touka",
+                last: Some("Kirishima"),
+            },
+            // === Death Note ===
+            Case {
+                native: Some("夜神月"),
+                full: "Light Yagami",
+                first: "Light",
+                last: Some("Yagami"),
+            },
+            Case {
+                native: Some("L・ローライト"),
+                full: "L Lawliet",
+                first: "L",
+                last: Some("Lawliet"),
+            },
+            // === Fullmetal Alchemist ===
+            Case {
+                native: Some("エドワード・エルリック"),
+                full: "Edward Elric",
+                first: "Edward",
+                last: Some("Elric"),
+            },
+            Case {
+                native: Some("アルフォンス・エルリック"),
+                full: "Alphonse Elric",
+                first: "Alphonse",
+                last: Some("Elric"),
+            },
+            // === Mob Psycho 100 ===
+            Case {
+                native: Some("モブ"),
+                full: "Mob Kageyama",
+                first: "Mob",
+                last: Some("Kageyama"),
+            },
+            // === One Punch Man ===
+            Case {
+                native: Some("サイタマ"),
+                full: "Saitama",
+                first: "Saitama",
+                last: None,
+            },
+            Case {
+                native: Some("ジェノス"),
+                full: "Genos",
+                first: "Genos",
+                last: None,
+            },
+            // === Bleach ===
+            Case {
+                native: Some("黒崎一護"),
+                full: "Ichigo Kurosaki",
+                first: "Ichigo",
+                last: Some("Kurosaki"),
+            },
+            Case {
+                native: Some("朽木ルキア"),
+                full: "Rukia Kuchiki",
+                first: "Rukia",
+                last: Some("Kuchiki"),
+            },
+            // === Naruto ===
+            Case {
+                native: Some("うずまきナルト"),
+                full: "Naruto Uzumaki",
+                first: "Naruto",
+                last: Some("Uzumaki"),
+            },
+            Case {
+                native: Some("うちはサスケ"),
+                full: "Sasuke Uchiha",
+                first: "Sasuke",
+                last: Some("Uchiha"),
+            },
+            // === Mixed kana/kanji names ===
+            Case {
+                native: Some("水波レナ"),
+                full: "Rena Mizunami",
+                first: "Rena",
+                last: Some("Mizunami"),
+            },
+            Case {
+                native: Some("新城ユノ"),
+                full: "Yuno Shinshiro",
+                first: "Yuno",
+                last: Some("Shinshiro"),
+            },
+            // === Complex family names ===
+            Case {
+                native: Some("四乃森蒼紫"),
+                full: "Aoshi Shinomori",
+                first: "Aoshi",
+                last: Some("Shinomori"),
+            },
+            Case {
+                native: Some("須々木心一"),
+                full: "Shinichi Suzuki",
+                first: "Shinichi",
+                last: Some("Suzuki"),
+            },
+            // === Names with iteration marks ===
+            Case {
+                native: Some("長々間巡"),
+                full: "Meguru Naganaima",
+                first: "Meguru",
+                last: Some("Naganaima"),
+            },
+            // === Single names from various franchises ===
+            Case {
+                native: Some("スネイプ"),
+                full: "Snape",
+                first: "Snape",
+                last: None,
+            },
+            Case {
+                native: Some("レオン"),
+                full: "Leon",
+                first: "Leon",
+                last: None,
+            },
+        ];
+
+        for (i, case) in cases.iter().enumerate() {
+            let native = case.native.map(|n| n.trim()).unwrap_or("");
+            let readings = name_parser::generate_name_readings(
+                native,
+                case.full.trim(),
+                Some(case.first),
+                case.last,
+            );
+            if !native.is_empty() {
+                assert!(
+                    !readings.full.is_empty(),
+                    "Character {} ({}, native={}) should produce a non-empty reading",
+                    i,
+                    case.full,
+                    native
+                );
+                // Verify no invalid characters in readings
+                assert!(
+                    !readings.full.contains('々'),
+                    "Character {} ({}, native={}): Reading contains iteration mark: {}",
+                    i,
+                    case.full,
+                    native,
+                    readings.full
+                );
+            }
+        }
+    }
+
+    // --- Advanced anime character parsing tests ---
+    // Tests for complex kanji combinations, special characters, and regional variations
+
+    #[test]
+    fn test_complex_kanji_names() {
+        // Three-character family names and longer given names
+        let cases = vec![
+            ("四乃森蒼紫", "Aoshi", Some("Shinomori")),  // 4 chars family + 1 char given
+            ("薫桜町火家", "Kae", Some("Kaore")),         // Complex kanji
+            ("五条悟", "Satoru", Some("Gojo")),           // Gojo Satoru from JJK
+            ("夏油傑", "Geto", Some("Getsuga")),          // Geto from JJK
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Complex name {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_long_katakana_names() {
+        // Foreign names in katakana with various structures
+        let cases = vec![
+            ("シャーロック・ホームズ", "Sherlock", Some("Holmes")),
+            ("アレキサンダー・アンダーソン", "Alexander", Some("Anderson")),
+            ("フェリックス・アルジャンダー", "Felix", Some("Argyndale")),
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Katakana name {} should produce readings",
+                native
+            );
+            assert!(
+                !readings.full.contains('々'),
+                "Katakana name {} should not contain iteration marks",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_special_character_sequences() {
+        // Names with special patterns like small kana, prolonged sounds, etc.
+        let cases = vec![
+            ("藤和エリオ", "Elio", Some("Fujiwara")),     // Small kana
+            ("ティナ", "Tina", None),                     // Small ti sound
+            ("ヴァイオレット", "Violet", None),           // Special katakana combinations
+            ("シュヴァリエ", "Chevalier", None),          // More special combinations
+        ];
+
+        for (native, first, last) in &cases {
+            let full_name = if let Some(l) = last {
+                format!("{} {}", first, l)
+            } else {
+                first.to_string()
+            };
+            let readings = name_parser::generate_name_readings(
+                native,
+                &full_name,
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Special sequence name {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_historical_and_traditional_names() {
+        // Names from historical/traditional anime (samurai, etc.)
+        let cases = vec![
+            ("桂小五郎", "Kousaku", Some("Katsura")),     // Historical name
+            ("坂本龍馬", "Ryouma", Some("Sakamoto")),      // Sakamoto Ryouma
+            ("新選組局長近藤勇", "Isamu", Some("Kondo")),  // Kondo Isami
+            ("高杉晋作", "Shinsaku", Some("Takasugi")),    // Takasugi Shinsaku
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            if !native.is_empty() {
+                assert!(
+                    !readings.full.is_empty(),
+                    "Historical name {} should produce readings",
+                    native
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_mixed_cjk_characters() {
+        // Names mixing different Japanese scripts
+        let cases = vec![
+            ("猫田 虎之助", "Toranosuke", Some("Nekota")),  // Kanji with space
+            ("小田切 敏也", "Toshiya", Some("Odagiri")),    // Kanji family + space
+            ("竜嶺 透", "Toru", Some("Ryumine")),          // Mixed stroke counts
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Mixed CJK name {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_unusual_given_names() {
+        // Unique given names from anime (sometimes single character or unusual)
+        let cases = vec![
+            ("結城梨斗", "Rito", Some("Yuuki")),           // Unique katakana/kanji mix
+            ("佐藤和真", "Kazuma", Some("Satou")),         // Complex reading
+            ("春日野さくら", "Sakura", Some("Kasugano")), // Hiragana given name
+            ("一ノ瀬京", "Kyou", Some("Ichinose")),        // One-character given name
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Unusual given name {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_phonetic_name_variations() {
+        // Names where hiragana/katakana phonetic spelling is used
+        let cases = vec![
+            ("日向ひなた", "Hinata", Some("Hinata")),     // Same family/given
+            ("桃井りんご", "Ringo", Some("Momoi")),       // Hiragana given
+            ("楠木ともり", "Tomori", Some("Kusunoki")),   // Hiragana given with marks
+        ];
+
+        for (native, first, last) in &cases {
+            let readings = name_parser::generate_name_readings(
+                native,
+                &format!("{} {}", first, last.unwrap_or("")),
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Phonetic variation {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_visual_novel_specific_names() {
+        // Names from key visual novel titles
+        struct Case {
+            native: &'static str,
+            first: &'static str,
+            last: Option<&'static str>,
+        }
+
+        let cases = vec![
+            // Clannad
+            Case {
+                native: "岡崎朋也",
+                first: "Tomoya",
+                last: Some("Okazaki"),
+            },
+            Case {
+                native: "古河渚",
+                first: "Nagisa",
+                last: Some("Furukawa"),
+            },
+            // Little Busters
+            Case {
+                native: "直枝理樹",
+                first: "Riki",
+                last: Some("Naoe"),
+            },
+            // Ever17
+            Case {
+                native: "吉川拓也",
+                first: "Takuya",
+                last: Some("Yoshikawa"),
+            },
+            // Danganronpa
+            Case {
+                native: "苗木誠",
+                first: "Makoto",
+                last: Some("Naegi"),
+            },
+            Case {
+                native: "江ノ島盾子",
+                first: "Junko",
+                last: Some("Enoshima"),
+            },
+            // Umineko
+            Case {
+                native: "右代宫家",
+                first: "Battler",
+                last: Some("Ushiromiya"),
+            },
+        ];
+
+        for case in &cases {
+            let full_name = if let Some(l) = case.last {
+                format!("{} {}", case.first, l)
+            } else {
+                case.first.to_string()
+            };
+            let readings = name_parser::generate_name_readings(
+                case.native,
+                &full_name,
+                Some(case.first),
+                case.last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Visual novel name {} should produce readings",
+                case.native
+            );
+        }
+    }
+
+    #[test]
+    fn test_western_inspired_anime_names() {
+        // Names that are transliterations or inspired by Western names
+        let cases = vec![
+            ("シャーロット", "Charlotte", None),
+            ("ヴィクトル・ニキフォロフ", "Victor", Some("Nikiforov")),
+            ("カルロス・パレロ", "Carlos", Some("Parero")),
+            ("レイラ・シイサ", "Layla", Some("Shiisa")),
+        ];
+
+        for (native, first, last) in &cases {
+            let full_name = if let Some(l) = last {
+                format!("{} {}", first, l)
+            } else {
+                first.to_string()
+            };
+            let readings = name_parser::generate_name_readings(
+                native,
+                &full_name,
+                Some(first),
+                *last,
+            );
+            assert!(
+                !readings.full.is_empty(),
+                "Western-inspired name {} should produce readings",
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn test_year_2024_2025_popular_anime() {
+        // Recent popular anime characters (2024-2025)
+        struct Case {
+            native: Option<&'static str>,
+            full: &'static str,
+            first: &'static str,
+            last: Option<&'static str>,
+        }
+
+        let cases = vec![
+            // Frieren: Beyond Journey's End
+            Case {
+                native: Some("フリーレン"),
+                full: "Frieren",
+                first: "Frieren",
+                last: None,
+            },
+            // The Apothecary Diaries
+            Case {
+                native: Some("猫猫"),
+                full: "Maomao",
+                first: "Maomao",
+                last: None,
+            },
+            Case {
+                native: Some("羅漢"),
+                full: "Rakan",
+                first: "Rakan",
+                last: None,
+            },
+            // Tsurune
+            Case {
+                native: Some("鶴見知利"),
+                full: "Chiri Tsurumi",
+                first: "Chiri",
+                last: Some("Tsurumi"),
+            },
+            // Dandadan
+            Case {
+                native: Some("真子"),
+                full: "Mako",
+                first: "Mako",
+                last: None,
+            },
+        ];
+
+        for (i, case) in cases.iter().enumerate() {
+            let native = case.native.unwrap_or("");
+            let readings = name_parser::generate_name_readings(
+                native,
+                case.full.trim(),
+                Some(case.first),
+                case.last,
+            );
+            if !native.is_empty() {
+                assert!(
+                    !readings.full.is_empty(),
+                    "Recent anime character {} ({}) should produce readings",
+                    i,
+                    case.full
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_bulk_all_characters() {
         struct Case {
