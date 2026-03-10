@@ -35,6 +35,8 @@ pub struct Character {
     pub birthday: Option<Vec<u32>>, // [month, day]
     pub description: Option<String>,
     pub aliases: Vec<String>,
+    #[serde(default)]
+    pub spoiler_aliases: Vec<String>, // Alternative names marked as spoilers (AniList only)
     pub personality: Vec<CharacterTrait>,
     pub roles: Vec<CharacterTrait>,
     pub engages_in: Vec<CharacterTrait>,

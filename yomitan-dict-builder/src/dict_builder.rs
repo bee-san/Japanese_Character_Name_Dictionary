@@ -303,6 +303,16 @@ impl DictBuilder {
                 }
             }
         }
+
+        // Spoiler aliases: union (deduplicated)
+        if !other.spoiler_aliases.is_empty() {
+            let existing: HashSet<String> = base.spoiler_aliases.iter().cloned().collect();
+            for alias in &other.spoiler_aliases {
+                if !alias.is_empty() && !existing.contains(alias) {
+                    base.spoiler_aliases.push(alias.clone());
+                }
+            }
+        }
     }
 
     /// Generate all term entries from merged characters.
@@ -675,7 +685,14 @@ impl DictBuilder {
         }
 
         // --- Alias entries ---
-        for alias in &char.aliases {
+        // Include spoiler aliases when the user has enabled spoilers
+        let all_aliases: Box<dyn Iterator<Item = &String>> = if self.settings.show_spoilers {
+            Box::new(char.aliases.iter().chain(char.spoiler_aliases.iter()))
+        } else {
+            Box::new(char.aliases.iter())
+        };
+
+        for alias in all_aliases {
             if alias.is_empty() {
                 continue;
             }
@@ -3937,5 +3954,98 @@ mod tests {
             .unwrap()
             .clone();
         assert_eq!(entry[1].as_str().unwrap(), "あおきうみ");
+    }
+
+    // === Spoiler alias tests ===
+
+    #[test]
+    fn test_spoiler_aliases_included_when_enabled() {
+        let settings = DictSettings {
+            honorifics: false,
+            show_spoilers: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_test_character("c1", "Test Name", "テスト", "main");
+        ch.aliases = vec!["通常名".to_string()];
+        ch.spoiler_aliases = vec!["秘密名".to_string()];
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .base_entries()
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(
+            terms.contains(&"通常名".to_string()),
+            "Normal alias should be present"
+        );
+        assert!(
+            terms.contains(&"秘密名".to_string()),
+            "Spoiler alias should be present when spoilers enabled"
+        );
+    }
+
+    #[test]
+    fn test_spoiler_aliases_excluded_when_disabled() {
+        let settings = DictSettings {
+            honorifics: false,
+            show_spoilers: false,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+        let mut ch = make_test_character("c1", "Test Name", "テスト", "main");
+        ch.aliases = vec!["通常名".to_string()];
+        ch.spoiler_aliases = vec!["秘密名".to_string()];
+        builder.add_character(&ch, "Test");
+
+        let terms: Vec<String> = builder
+            .base_entries()
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(
+            terms.contains(&"通常名".to_string()),
+            "Normal alias should be present"
+        );
+        assert!(
+            !terms.contains(&"秘密名".to_string()),
+            "Spoiler alias should NOT be present when spoilers disabled"
+        );
+    }
+
+    #[test]
+    fn test_spoiler_aliases_merged() {
+        let settings = DictSettings {
+            honorifics: false,
+            show_spoilers: true,
+            ..DictSettings::default()
+        };
+        let mut builder = DictBuilder::new(settings, None, "Test".to_string());
+
+        let mut char1 = make_test_character("c1", "Name", "テスト", "main");
+        char1.source = "anilist".to_string();
+        char1.spoiler_aliases = vec!["秘密一".to_string()];
+
+        let mut char2 = make_test_character("c1", "Name", "テスト", "side");
+        char2.source = "anilist".to_string();
+        char2.spoiler_aliases = vec!["秘密二".to_string(), "秘密一".to_string()];
+
+        builder.add_character(&char1, "Game A");
+        builder.add_character(&char2, "Game B");
+
+        let terms: Vec<String> = builder
+            .base_entries()
+            .iter()
+            .filter_map(|e| e[0].as_str().map(|s| s.to_string()))
+            .collect();
+
+        assert!(terms.contains(&"秘密一".to_string()));
+        assert!(terms.contains(&"秘密二".to_string()));
+        // Deduplicated
+        let count = terms.iter().filter(|t| t.as_str() == "秘密一").count();
+        assert_eq!(count, 1, "Spoiler aliases should be deduplicated");
     }
 }
