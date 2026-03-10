@@ -384,9 +384,10 @@ mod tests {
     fn test_no_hints_no_space_kanji() {
         let readings =
             name_parser::generate_name_readings("幸平創真", "Souma Yukihira", None, None);
-        assert_eq!(readings.full, "そうま ゆきひら");
-        assert_eq!(readings.family, "そうま ゆきひら");
-        assert_eq!(readings.given, "そうま ゆきひら");
+        // Whitespace is stripped from readings — romaji spaces should not appear in kana
+        assert_eq!(readings.full, "そうまゆきひら");
+        assert_eq!(readings.family, "そうまゆきひら");
+        assert_eq!(readings.given, "そうまゆきひら");
     }
 
     // --- Split function with hints ---

@@ -451,6 +451,7 @@ impl VndbClient {
             birthday,
             description: data["description"].as_str().map(|s| s.to_string()),
             aliases,
+            spoiler_aliases: Vec::new(), // VNDB has no spoiler alternative names
             personality,
             roles,
             engages_in,

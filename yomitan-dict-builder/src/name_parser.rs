@@ -817,6 +817,25 @@ pub fn generate_name_readings(
     first_name_hint: Option<&str>,
     last_name_hint: Option<&str>,
 ) -> NameReadings {
+    let mut readings =
+        generate_name_readings_inner(name_original, romanized_name, first_name_hint, last_name_hint);
+
+    // Strip internal whitespace from readings — romaji→kana conversion can
+    // introduce spaces from multi-word romanized names (e.g. "Elaina no Haha"
+    // would produce "えらいな の はは" instead of "えらいなのはは").
+    readings.full = readings.full.split_whitespace().collect();
+    readings.family = readings.family.split_whitespace().collect();
+    readings.given = readings.given.split_whitespace().collect();
+
+    readings
+}
+
+fn generate_name_readings_inner(
+    name_original: &str,
+    romanized_name: &str,
+    first_name_hint: Option<&str>,
+    last_name_hint: Option<&str>,
+) -> NameReadings {
     // Handle empty native name
     if name_original.is_empty() {
         return NameReadings {
@@ -1721,5 +1740,41 @@ mod tests {
         assert_eq!(r1.family, r2.family);
         assert_eq!(r1.given, r2.given);
         assert_eq!(r1.full, r2.full);
+    }
+
+    // === Reading whitespace stripping ===
+
+    #[test]
+    fn test_readings_have_no_internal_whitespace() {
+        // Multi-word romanized names should not produce readings with spaces
+        // e.g. "Elaina no Haha" should produce "えれいなのはは", not "えれいな の はは"
+        let readings = generate_name_readings("イレイナの母", "Elaina no Haha", None, None);
+        assert!(
+            !readings.full.contains(' '),
+            "Full reading should not contain spaces, got: '{}'",
+            readings.full
+        );
+        assert!(
+            !readings.family.contains(' '),
+            "Family reading should not contain spaces, got: '{}'",
+            readings.family
+        );
+        assert!(
+            !readings.given.contains(' '),
+            "Given reading should not contain spaces, got: '{}'",
+            readings.given
+        );
+    }
+
+    #[test]
+    fn test_readings_with_hints_no_whitespace() {
+        // With hints, multi-word hints should also not produce spaces
+        let readings =
+            generate_name_readings("須々木 心一", "Shinichi Suzuki", Some("Shinichi"), Some("Suzuki"));
+        assert!(
+            !readings.full.contains(' '),
+            "Full reading should not contain spaces, got: '{}'",
+            readings.full
+        );
     }
 }

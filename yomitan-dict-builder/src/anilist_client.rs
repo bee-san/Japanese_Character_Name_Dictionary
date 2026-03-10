@@ -268,6 +268,7 @@ impl AnilistClient {
                             full
                             native
                             alternative
+                            alternativeSpoiler
                             first
                             last
                         }
@@ -412,6 +413,16 @@ impl AnilistClient {
             })
             .unwrap_or_default();
 
+        let spoiler_alternatives: Vec<String> = name_data["alternativeSpoiler"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Gender: "Male" → "m", "Female" → "f"
         let sex = node.get("gender").and_then(|g| g.as_str()).and_then(|g| {
             match g.to_lowercase().chars().next() {
@@ -482,6 +493,7 @@ impl AnilistClient {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
             aliases: alternatives,
+            spoiler_aliases: spoiler_alternatives,
             personality: Vec::new(), // AniList has no trait categories
             roles: Vec::new(),
             engages_in: Vec::new(),
@@ -1636,6 +1648,77 @@ mod tests {
         let ch = client.process_character(&edge).unwrap();
         // filter_map(|v| v.as_str()) skips nulls
         assert_eq!(ch.aliases, vec!["Valid", "Also Valid"]);
+    }
+
+    #[test]
+    fn test_process_character_spoiler_alternatives() {
+        let client = make_client();
+        let mut edge = make_edge(
+            ROLE_MAIN,
+            1,
+            "Test Character",
+            "テスト",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec!["Normal Alt"],
+            None,
+        );
+        edge["node"]["name"]["alternativeSpoiler"] =
+            serde_json::json!(["Spoiler Name", "Another Spoiler"]);
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.aliases, vec!["Normal Alt"]);
+        assert_eq!(
+            ch.spoiler_aliases,
+            vec!["Spoiler Name", "Another Spoiler"]
+        );
+    }
+
+    #[test]
+    fn test_process_character_spoiler_alternatives_with_nulls() {
+        let client = make_client();
+        let mut edge = make_edge(
+            ROLE_MAIN,
+            1,
+            "A",
+            "あ",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        edge["node"]["name"]["alternativeSpoiler"] =
+            serde_json::json!([null, "Valid Spoiler", null, ""]);
+        let ch = client.process_character(&edge).unwrap();
+        assert_eq!(ch.spoiler_aliases, vec!["Valid Spoiler"]);
+    }
+
+    #[test]
+    fn test_process_character_no_spoiler_alternatives() {
+        let client = make_client();
+        let edge = make_edge(
+            ROLE_MAIN,
+            1,
+            "A",
+            "あ",
+            None,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            None,
+        );
+        let ch = client.process_character(&edge).unwrap();
+        assert!(
+            ch.spoiler_aliases.is_empty(),
+            "Missing alternativeSpoiler should produce empty vec"
+        );
     }
 
     // === Edge case: hasNextPage missing ===

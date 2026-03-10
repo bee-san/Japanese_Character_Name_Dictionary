@@ -43,6 +43,22 @@ fn is_kanji(c: char) -> bool {
     || code == 0x3005
 }
 
+/// Returns true if the character is hiragana (U+3041–U+3096).
+fn is_hiragana(c: char) -> bool {
+    (0x3041..=0x3096).contains(&(c as u32))
+}
+
+/// Returns true if the character is katakana (U+30A1–U+30F6, plus ー U+30FC).
+fn is_katakana(c: char) -> bool {
+    let code = c as u32;
+    (0x30A1..=0x30F6).contains(&code) || code == 0x30FC
+}
+
+/// Check if text contains any Japanese characters (kanji, hiragana, or katakana).
+pub fn contains_japanese(text: &str) -> bool {
+    text.chars().any(|c| is_kanji(c) || is_hiragana(c) || is_katakana(c))
+}
+
 /// Convert katakana to hiragana.
 /// Katakana range: U+30A1 (ァ) to U+30F6 (ヶ). Subtract 0x60 to get hiragana equivalent.
 pub fn kata_to_hira(text: &str) -> String {
