@@ -77,6 +77,7 @@ pub const HONORIFIC_SUFFIXES: &[(&str, &str, &str)] = &[
     ),
     ("たん", "たん", "Baby-talk version of ちゃん"),
     ("ちん", "ちん", "Cutesy/playful variant of ちゃん"),
+    ("ちょる", "ちょる", "Playful/cutesy nickname suffix"),
     ("りん", "りん", "Cutesy suffix (internet/otaku culture)"),
     ("っち", "っち", "Playful/affectionate suffix"),
     ("ぴょん", "ぴょん", "Cutesy/bouncy suffix"),
