@@ -472,8 +472,7 @@ mod tests {
         // 寧々 (Nene) — 々 repeats 寧, so the full name is read as ねね.
         // With no last-name hint this takes the single-name path; the romaji
         // hint must be used without 々 leaking into the output.
-        let readings =
-            name_parser::generate_name_readings("寧々", "Nene", Some("Nene"), None);
+        let readings = name_parser::generate_name_readings("寧々", "Nene", Some("Nene"), None);
         assert_eq!(readings.full, "ねね", "寧々 should read as ねね");
         assert!(
             !readings.full.contains('々'),
@@ -546,7 +545,10 @@ mod tests {
             !readings.full.contains('々'),
             "Reading of 莉々子 must not contain the raw iteration mark 々"
         );
-        assert!(!readings.full.is_empty(), "Reading of 莉々子 must be non-empty");
+        assert!(
+            !readings.full.is_empty(),
+            "Reading of 莉々子 must be non-empty"
+        );
     }
 
     #[test]
@@ -1039,10 +1041,10 @@ mod tests {
     fn test_complex_kanji_names() {
         // Three-character family names and longer given names
         let cases = vec![
-            ("四乃森蒼紫", "Aoshi", Some("Shinomori")),  // 4 chars family + 1 char given
-            ("薫桜町火家", "Kae", Some("Kaore")),         // Complex kanji
-            ("五条悟", "Satoru", Some("Gojo")),           // Gojo Satoru from JJK
-            ("夏油傑", "Geto", Some("Getsuga")),          // Geto from JJK
+            ("四乃森蒼紫", "Aoshi", Some("Shinomori")), // 4 chars family + 1 char given
+            ("薫桜町火家", "Kae", Some("Kaore")),       // Complex kanji
+            ("五条悟", "Satoru", Some("Gojo")),         // Gojo Satoru from JJK
+            ("夏油傑", "Geto", Some("Getsuga")),        // Geto from JJK
         ];
 
         for (native, first, last) in &cases {
@@ -1065,7 +1067,11 @@ mod tests {
         // Foreign names in katakana with various structures
         let cases = vec![
             ("シャーロック・ホームズ", "Sherlock", Some("Holmes")),
-            ("アレキサンダー・アンダーソン", "Alexander", Some("Anderson")),
+            (
+                "アレキサンダー・アンダーソン",
+                "Alexander",
+                Some("Anderson"),
+            ),
             ("フェリックス・アルジャンダー", "Felix", Some("Argyndale")),
         ];
 
@@ -1093,10 +1099,10 @@ mod tests {
     fn test_special_character_sequences() {
         // Names with special patterns like small kana, prolonged sounds, etc.
         let cases = vec![
-            ("藤和エリオ", "Elio", Some("Fujiwara")),     // Small kana
-            ("ティナ", "Tina", None),                     // Small ti sound
-            ("ヴァイオレット", "Violet", None),           // Special katakana combinations
-            ("シュヴァリエ", "Chevalier", None),          // More special combinations
+            ("藤和エリオ", "Elio", Some("Fujiwara")), // Small kana
+            ("ティナ", "Tina", None),                 // Small ti sound
+            ("ヴァイオレット", "Violet", None),       // Special katakana combinations
+            ("シュヴァリエ", "Chevalier", None),      // More special combinations
         ];
 
         for (native, first, last) in &cases {
@@ -1105,12 +1111,8 @@ mod tests {
             } else {
                 first.to_string()
             };
-            let readings = name_parser::generate_name_readings(
-                native,
-                &full_name,
-                Some(first),
-                *last,
-            );
+            let readings =
+                name_parser::generate_name_readings(native, &full_name, Some(first), *last);
             assert!(
                 !readings.full.is_empty(),
                 "Special sequence name {} should produce readings",
@@ -1123,10 +1125,10 @@ mod tests {
     fn test_historical_and_traditional_names() {
         // Names from historical/traditional anime (samurai, etc.)
         let cases = vec![
-            ("桂小五郎", "Kousaku", Some("Katsura")),     // Historical name
-            ("坂本龍馬", "Ryouma", Some("Sakamoto")),      // Sakamoto Ryouma
-            ("新選組局長近藤勇", "Isamu", Some("Kondo")),  // Kondo Isami
-            ("高杉晋作", "Shinsaku", Some("Takasugi")),    // Takasugi Shinsaku
+            ("桂小五郎", "Kousaku", Some("Katsura")), // Historical name
+            ("坂本龍馬", "Ryouma", Some("Sakamoto")), // Sakamoto Ryouma
+            ("新選組局長近藤勇", "Isamu", Some("Kondo")), // Kondo Isami
+            ("高杉晋作", "Shinsaku", Some("Takasugi")), // Takasugi Shinsaku
         ];
 
         for (native, first, last) in &cases {
@@ -1150,8 +1152,8 @@ mod tests {
     fn test_mixed_cjk_characters() {
         // Names mixing different Japanese scripts
         let cases = vec![
-            ("猫田 虎之助", "Toranosuke", Some("Nekota")),  // Kanji with space
-            ("小田切 敏也", "Toshiya", Some("Odagiri")),    // Kanji family + space
+            ("猫田 虎之助", "Toranosuke", Some("Nekota")), // Kanji with space
+            ("小田切 敏也", "Toshiya", Some("Odagiri")),   // Kanji family + space
             ("竜嶺 透", "Toru", Some("Ryumine")),          // Mixed stroke counts
         ];
 
@@ -1174,10 +1176,10 @@ mod tests {
     fn test_unusual_given_names() {
         // Unique given names from anime (sometimes single character or unusual)
         let cases = vec![
-            ("結城梨斗", "Rito", Some("Yuuki")),           // Unique katakana/kanji mix
-            ("佐藤和真", "Kazuma", Some("Satou")),         // Complex reading
+            ("結城梨斗", "Rito", Some("Yuuki")), // Unique katakana/kanji mix
+            ("佐藤和真", "Kazuma", Some("Satou")), // Complex reading
             ("春日野さくら", "Sakura", Some("Kasugano")), // Hiragana given name
-            ("一ノ瀬京", "Kyou", Some("Ichinose")),        // One-character given name
+            ("一ノ瀬京", "Kyou", Some("Ichinose")), // One-character given name
         ];
 
         for (native, first, last) in &cases {
@@ -1199,9 +1201,9 @@ mod tests {
     fn test_phonetic_name_variations() {
         // Names where hiragana/katakana phonetic spelling is used
         let cases = vec![
-            ("日向ひなた", "Hinata", Some("Hinata")),     // Same family/given
-            ("桃井りんご", "Ringo", Some("Momoi")),       // Hiragana given
-            ("楠木ともり", "Tomori", Some("Kusunoki")),   // Hiragana given with marks
+            ("日向ひなた", "Hinata", Some("Hinata")), // Same family/given
+            ("桃井りんご", "Ringo", Some("Momoi")),   // Hiragana given
+            ("楠木ともり", "Tomori", Some("Kusunoki")), // Hiragana given with marks
         ];
 
         for (native, first, last) in &cases {
@@ -1307,12 +1309,8 @@ mod tests {
             } else {
                 first.to_string()
             };
-            let readings = name_parser::generate_name_readings(
-                native,
-                &full_name,
-                Some(first),
-                *last,
-            );
+            let readings =
+                name_parser::generate_name_readings(native, &full_name, Some(first), *last);
             assert!(
                 !readings.full.is_empty(),
                 "Western-inspired name {} should produce readings",

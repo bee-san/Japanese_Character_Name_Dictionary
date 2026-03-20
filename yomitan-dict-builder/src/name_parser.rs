@@ -77,6 +77,7 @@ pub const HONORIFIC_SUFFIXES: &[(&str, &str, &str)] = &[
     ),
     ("たん", "たん", "Baby-talk version of ちゃん"),
     ("ちん", "ちん", "Cutesy/playful variant of ちゃん"),
+    ("ちょ", "ちょ", "Playful/cutesy clipped nickname suffix"),
     ("ちょる", "ちょる", "Playful/cutesy nickname suffix"),
     ("りん", "りん", "Cutesy suffix (internet/otaku culture)"),
     ("っち", "っち", "Playful/affectionate suffix"),
@@ -818,8 +819,12 @@ pub fn generate_name_readings(
     first_name_hint: Option<&str>,
     last_name_hint: Option<&str>,
 ) -> NameReadings {
-    let mut readings =
-        generate_name_readings_inner(name_original, romanized_name, first_name_hint, last_name_hint);
+    let mut readings = generate_name_readings_inner(
+        name_original,
+        romanized_name,
+        first_name_hint,
+        last_name_hint,
+    );
 
     // Strip internal whitespace from readings — romaji→kana conversion can
     // introduce spaces from multi-word romanized names (e.g. "Elaina no Haha"
@@ -1615,6 +1620,8 @@ mod tests {
         assert!(displays.contains(&"さん"), "Missing さん");
         assert!(displays.contains(&"君"), "Missing 君");
         assert!(displays.contains(&"ちゃん"), "Missing ちゃん");
+        assert!(displays.contains(&"ちょ"), "Missing ちょ");
+        assert!(displays.contains(&"ちょる"), "Missing ちょる");
         assert!(displays.contains(&"様"), "Missing 様");
         assert!(displays.contains(&"先生"), "Missing 先生");
         assert!(displays.contains(&"先輩"), "Missing 先輩");
@@ -1770,8 +1777,12 @@ mod tests {
     #[test]
     fn test_readings_with_hints_no_whitespace() {
         // With hints, multi-word hints should also not produce spaces
-        let readings =
-            generate_name_readings("須々木 心一", "Shinichi Suzuki", Some("Shinichi"), Some("Suzuki"));
+        let readings = generate_name_readings(
+            "須々木 心一",
+            "Shinichi Suzuki",
+            Some("Shinichi"),
+            Some("Suzuki"),
+        );
         assert!(
             !readings.full.contains(' '),
             "Full reading should not contain spaces, got: '{}'",

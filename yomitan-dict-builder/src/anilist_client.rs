@@ -1670,10 +1670,7 @@ mod tests {
             serde_json::json!(["Spoiler Name", "Another Spoiler"]);
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.aliases, vec!["Normal Alt"]);
-        assert_eq!(
-            ch.spoiler_aliases,
-            vec!["Spoiler Name", "Another Spoiler"]
-        );
+        assert_eq!(ch.spoiler_aliases, vec!["Spoiler Name", "Another Spoiler"]);
     }
 
     #[test]

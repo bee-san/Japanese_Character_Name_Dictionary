@@ -56,7 +56,8 @@ fn is_katakana(c: char) -> bool {
 
 /// Check if text contains any Japanese characters (kanji, hiragana, or katakana).
 pub fn contains_japanese(text: &str) -> bool {
-    text.chars().any(|c| is_kanji(c) || is_hiragana(c) || is_katakana(c))
+    text.chars()
+        .any(|c| is_kanji(c) || is_hiragana(c) || is_katakana(c))
 }
 
 /// Convert katakana to hiragana.
