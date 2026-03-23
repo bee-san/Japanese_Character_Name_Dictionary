@@ -116,6 +116,8 @@ pub struct DictBuilder {
     merged_characters: Vec<MergedCharacter>,
     /// Whether finalize() has been called (entries generated from merged_characters).
     finalized: bool,
+    /// Counts of skipped characters with no Japanese name, grouped by media title.
+    skipped_no_japanese_by_title: HashMap<String, usize>,
 
     settings: DictSettings,
     revision: String,
@@ -139,10 +141,35 @@ impl DictBuilder {
             seen_by_name: HashMap::new(),
             merged_characters: Vec::new(),
             finalized: false,
+            skipped_no_japanese_by_title: HashMap::new(),
             settings,
             revision: format!("{:012}", revision),
             download_url,
             game_title,
+        }
+    }
+
+    pub fn skipped_no_japanese_count(&self) -> usize {
+        self.skipped_no_japanese_by_title.values().sum()
+    }
+
+    pub fn skipped_no_japanese_summary(&self) -> Vec<(String, usize)> {
+        let mut summary: Vec<(String, usize)> = self
+            .skipped_no_japanese_by_title
+            .iter()
+            .map(|(title, count)| (title.clone(), *count))
+            .collect();
+        summary.sort_by(|a, b| a.0.cmp(&b.0));
+        summary
+    }
+
+    pub fn log_skipped_no_japanese_summary(&self) {
+        for (game_title, skipped_count) in self.skipped_no_japanese_summary() {
+            tracing::warn!(
+                game_title = %game_title,
+                skipped_count = skipped_count,
+                "Skipped characters with no Japanese name"
+            );
         }
     }
 
@@ -156,9 +183,14 @@ impl DictBuilder {
     pub fn add_character(&mut self, char: &Character, game_title: &str) {
         let name_original = &char.name_original;
         if name_original.is_empty() {
-            tracing::warn!(
+            *self
+                .skipped_no_japanese_by_title
+                .entry(game_title.to_string())
+                .or_insert(0) += 1;
+            tracing::debug!(
                 id = %char.id,
                 name = %char.name,
+                game_title = %game_title,
                 "Skipping character with no Japanese name (name_original is empty)"
             );
             return;
@@ -1037,6 +1069,20 @@ mod tests {
             builder.base_entries().len(),
             0,
             "Empty name_original should produce no entries"
+        );
+    }
+
+    #[test]
+    fn test_skipped_no_japanese_summary_groups_by_title() {
+        let mut builder = DictBuilder::new(s(), None, "Test".to_string());
+        builder.add_character(&make_test_character("c1", "Name 1", "", "main"), "Game A");
+        builder.add_character(&make_test_character("c2", "Name 2", "", "side"), "Game A");
+        builder.add_character(&make_test_character("c3", "Name 3", "", "side"), "Game B");
+
+        assert_eq!(builder.skipped_no_japanese_count(), 3);
+        assert_eq!(
+            builder.skipped_no_japanese_summary(),
+            vec![("Game A".to_string(), 2), ("Game B".to_string(), 1)]
         );
     }
 

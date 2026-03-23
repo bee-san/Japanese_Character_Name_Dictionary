@@ -1,43 +1,110 @@
 use reqwest::Client;
 use std::collections::HashMap;
+use tracing::warn;
 
 use crate::models::*;
 
 /// Maximum number of retries on HTTP 429 (rate limited).
 const MAX_RETRIES: u32 = 3;
 
+#[derive(Debug)]
+enum RequestError {
+    Transport(reqwest::Error),
+    RateLimited { attempts: u32, last_wait_ms: u64 },
+}
+
+impl From<reqwest::Error> for RequestError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::Transport(value)
+    }
+}
+
+impl std::fmt::Display for RequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(err) => write!(f, "{}", err),
+            Self::RateLimited {
+                attempts,
+                last_wait_ms,
+            } => write!(
+                f,
+                "VNDB rate limited after {} attempts (last wait {}ms)",
+                attempts, last_wait_ms
+            ),
+        }
+    }
+}
+
+fn map_request_error(err: RequestError) -> String {
+    match err {
+        RequestError::Transport(err) => format!("UPSTREAM: VNDB request failed: {}", err),
+        RequestError::RateLimited {
+            attempts,
+            last_wait_ms,
+        } => format!(
+            "RATE_LIMIT: VNDB temporarily rate limited requests after {} attempts (last wait {}ms)",
+            attempts, last_wait_ms
+        ),
+    }
+}
+
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
 /// Uses exponential backoff: 1s, 2s, 4s.
 async fn send_with_retry(
     request_builder: reqwest::RequestBuilder,
     client: &Client,
-) -> Result<reqwest::Response, reqwest::Error> {
+) -> Result<reqwest::Response, RequestError> {
     // We need to clone the request for retries, so build it first
     let request = request_builder.build()?;
     let mut delay_ms = 1000u64;
+    let mut last_wait_ms = 0u64;
 
     for attempt in 0..=MAX_RETRIES {
         let req_clone = request.try_clone().expect("Request body must be cloneable");
         let response = client.execute(req_clone).await?;
 
-        if response.status() == 429 && attempt < MAX_RETRIES {
-            // Check for Retry-After header
-            if let Some(retry_after) = response.headers().get("retry-after") {
-                if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(secs.min(10))).await;
-                    continue;
-                }
+        if response.status() == 429 {
+            if attempt < MAX_RETRIES {
+                // Check for Retry-After header
+                let wait_ms = if let Some(retry_after) = response.headers().get("retry-after") {
+                    if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
+                        secs.min(10) * 1000
+                    } else {
+                        delay_ms
+                    }
+                } else {
+                    delay_ms
+                };
+                last_wait_ms = wait_ms;
+                warn!(
+                    attempt = attempt + 1,
+                    max_retries = MAX_RETRIES,
+                    wait_ms = wait_ms,
+                    "VNDB rate limited request, retrying"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+                delay_ms *= 2;
+                continue;
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-            delay_ms *= 2;
-            continue;
+
+            warn!(
+                attempts = attempt + 1,
+                last_wait_ms = last_wait_ms,
+                "VNDB rate limit retries exhausted"
+            );
+            return Err(RequestError::RateLimited {
+                attempts: attempt + 1,
+                last_wait_ms,
+            });
         }
 
         return Ok(response);
     }
 
-    // Shouldn't reach here, but just in case
-    client.execute(request).await
+    Err(RequestError::RateLimited {
+        attempts: MAX_RETRIES + 1,
+        last_wait_ms,
+    })
 }
 
 /// Parsed result from user input: either a direct user ID or a username to resolve.
@@ -60,6 +127,13 @@ pub struct VnInfo {
 impl VndbClient {
     pub fn with_client(client: Client) -> Self {
         Self { client }
+    }
+
+    pub fn normalize_user_input(input: &str) -> String {
+        match Self::parse_user_input(input) {
+            ParsedUserInput::UserId(id) => id,
+            ParsedUserInput::Username(name) => name,
+        }
     }
 
     /// Parse a VNDB user input which may be a URL, user ID, or username.
@@ -126,11 +200,11 @@ impl VndbClient {
             &self.client,
         )
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(map_request_error)?;
 
         if response.status() != 200 {
             return Err(format!(
-                "VNDB user API returned status {}",
+                "UPSTREAM: VNDB user API returned status {}",
                 response.status()
             ));
         }
@@ -138,7 +212,7 @@ impl VndbClient {
         let data: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
 
         // The response has the query as key, value is null or {id, username}
         let user_data = data.get(username).or_else(|| {
@@ -150,8 +224,8 @@ impl VndbClient {
             Some(val) if !val.is_null() => val["id"]
                 .as_str()
                 .map(|s| s.to_string())
-                .ok_or_else(|| "User ID not found in response".to_string()),
-            _ => Err(format!("VNDB user '{}' not found", username)),
+                .ok_or_else(|| "UPSTREAM: User ID not found in VNDB response".to_string()),
+            _ => Err(format!("INVALID_INPUT: VNDB user '{}' not found", username)),
         }
     }
 
@@ -185,11 +259,11 @@ impl VndbClient {
                 &self.client,
             )
             .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+            .map_err(map_request_error)?;
 
             if response.status() != 200 {
                 return Err(format!(
-                    "VNDB ulist API returned status {}",
+                    "UPSTREAM: VNDB ulist API returned status {}",
                     response.status()
                 ));
             }
@@ -197,11 +271,11 @@ impl VndbClient {
             let data: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
 
             let results = data["results"]
                 .as_array()
-                .ok_or("Invalid ulist response format")?;
+                .ok_or("UPSTREAM: Invalid VNDB ulist response format")?;
 
             for item in results {
                 let id = item["id"].as_str().unwrap_or("").to_string();
@@ -249,6 +323,53 @@ impl VndbClient {
         }
     }
 
+    /// Parse a VN ID from "17", "v17", or a full VNDB URL like
+    /// "https://vndb.org/v17/..." and return a normalized "v17" form.
+    pub fn parse_vn_id(input: &str) -> Result<String, String> {
+        let input = input.trim();
+        if input.is_empty() {
+            return Err("Invalid VNDB ID: value is empty".to_string());
+        }
+
+        if input.contains("vndb.org/") {
+            if let Some(pos) = input.rfind("vndb.org/") {
+                let after = &input[pos + "vndb.org/".len()..];
+                let segment = after
+                    .split(&['/', '?', '#'][..])
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if segment.len() > 1
+                    && segment.to_lowercase().starts_with('v')
+                    && segment[1..].chars().all(|c| c.is_ascii_digit())
+                {
+                    return Ok(format!("v{}", &segment[1..]));
+                }
+            }
+
+            return Err(format!(
+                "Invalid VNDB ID '{}': could not extract a vNNN ID from the URL",
+                input
+            ));
+        }
+
+        if input.len() > 1
+            && input.to_lowercase().starts_with('v')
+            && input[1..].chars().all(|c| c.is_ascii_digit())
+        {
+            return Ok(format!("v{}", &input[1..]));
+        }
+
+        if input.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(format!("v{}", input));
+        }
+
+        Err(format!(
+            "Invalid VNDB ID '{}': must be a number, vNNN, or VNDB URL",
+            input
+        ))
+    }
+
     /// Fetch VN info including title and voice actor mapping.
     pub async fn fetch_vn_info(&self, vn_id: &str) -> Result<VnInfo, String> {
         let vn_id = Self::normalize_id(vn_id);
@@ -264,20 +385,25 @@ impl VndbClient {
             &self.client,
         )
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(map_request_error)?;
 
         if response.status() != 200 {
-            return Err(format!("VNDB VN API returned status {}", response.status()));
+            return Err(format!(
+                "UPSTREAM: VNDB VN API returned status {}",
+                response.status()
+            ));
         }
 
         let data: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
 
-        let results = data["results"].as_array().ok_or("No results")?;
+        let results = data["results"]
+            .as_array()
+            .ok_or("UPSTREAM: VNDB VN response did not include results")?;
         if results.is_empty() {
-            return Err("VN not found".to_string());
+            return Err(format!("INVALID_INPUT: VNDB media '{}' was not found", vn_id));
         }
 
         let vn = &results[0];
@@ -330,20 +456,23 @@ impl VndbClient {
                 &self.client,
             )
             .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+            .map_err(map_request_error)?;
 
             if response.status() != 200 {
-                return Err(format!("VNDB API returned status {}", response.status()));
+                return Err(format!(
+                    "UPSTREAM: VNDB API returned status {}",
+                    response.status()
+                ));
             }
 
             let data: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
 
             let results = data["results"]
                 .as_array()
-                .ok_or("Invalid response format")?;
+                .ok_or("UPSTREAM: Invalid VNDB character response format")?;
 
             for char_json in results {
                 if let Some(character) = self.process_character(char_json, &vn_id) {
@@ -500,6 +629,37 @@ mod tests {
     #[test]
     fn test_normalize_id_large_number() {
         assert_eq!(VndbClient::normalize_id("58641"), "v58641");
+    }
+
+    #[test]
+    fn test_parse_vn_id_bare_number() {
+        assert_eq!(VndbClient::parse_vn_id("17").unwrap(), "v17");
+    }
+
+    #[test]
+    fn test_parse_vn_id_prefixed_value() {
+        assert_eq!(VndbClient::parse_vn_id("v17").unwrap(), "v17");
+    }
+
+    #[test]
+    fn test_parse_vn_id_full_url() {
+        assert_eq!(
+            VndbClient::parse_vn_id("https://vndb.org/v17").unwrap(),
+            "v17"
+        );
+    }
+
+    #[test]
+    fn test_parse_vn_id_full_url_with_slug_and_query() {
+        assert_eq!(
+            VndbClient::parse_vn_id("https://vndb.org/v17/steins-gate?view=chars").unwrap(),
+            "v17"
+        );
+    }
+
+    #[test]
+    fn test_parse_vn_id_invalid_string() {
+        assert!(VndbClient::parse_vn_id("hello").is_err());
     }
 
     // Helper to assert parse_user_input results

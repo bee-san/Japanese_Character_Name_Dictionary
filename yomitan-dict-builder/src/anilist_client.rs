@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use rand::Rng;
 use reqwest::Client;
+use tracing::warn;
 
 use crate::models::*;
 
@@ -18,40 +19,106 @@ const ROLE_SUPPORTING: &str = "SUPPORTING";
 /// Role string returned by AniList for background characters.
 const ROLE_BACKGROUND: &str = "BACKGROUND";
 
+#[derive(Debug)]
+enum RequestError {
+    Transport(reqwest::Error),
+    RateLimited { attempts: u32, last_wait_ms: u64 },
+}
+
+impl From<reqwest::Error> for RequestError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::Transport(value)
+    }
+}
+
+impl std::fmt::Display for RequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(err) => write!(f, "{}", err),
+            Self::RateLimited {
+                attempts,
+                last_wait_ms,
+            } => write!(
+                f,
+                "AniList rate limited after {} attempts (last wait {}ms)",
+                attempts, last_wait_ms
+            ),
+        }
+    }
+}
+
+fn map_request_error(err: RequestError) -> String {
+    match err {
+        RequestError::Transport(err) => format!("UPSTREAM: AniList request failed: {}", err),
+        RequestError::RateLimited {
+            attempts,
+            last_wait_ms,
+        } => format!(
+            "RATE_LIMIT: AniList temporarily rate limited requests after {} attempts (last wait {}ms)",
+            attempts, last_wait_ms
+        ),
+    }
+}
+
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
 /// Uses exponential backoff with jitter: 5s, 10s, 20s, 40s, 80s (capped at 90s).
 async fn send_with_retry(
     request_builder: reqwest::RequestBuilder,
     client: &Client,
-) -> Result<reqwest::Response, reqwest::Error> {
+) -> Result<reqwest::Response, RequestError> {
     let request = request_builder.build()?;
     let mut delay_ms = 5000u64;
+    let mut last_wait_ms = 0u64;
 
     for attempt in 0..=MAX_RETRIES {
         let req_clone = request.try_clone().expect("Request body must be cloneable");
         let response = client.execute(req_clone).await?;
 
-        if response.status() == 429 && attempt < MAX_RETRIES {
-            // Add random jitter (0-500ms) to avoid thundering herd
-            let jitter_ms: u64 = rand::thread_rng().gen_range(0..500);
+        if response.status() == 429 {
+            if attempt < MAX_RETRIES {
+                // Add random jitter (0-500ms) to avoid thundering herd
+                let jitter_ms: u64 = rand::thread_rng().gen_range(0..500);
 
-            if let Some(retry_after) = response.headers().get("retry-after") {
-                if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
-                    let wait = (secs * 1000).min(MAX_BACKOFF_MS) + jitter_ms;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(wait)).await;
-                    continue;
-                }
+                let wait_ms = if let Some(retry_after) = response.headers().get("retry-after") {
+                    if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
+                        (secs * 1000).min(MAX_BACKOFF_MS) + jitter_ms
+                    } else {
+                        delay_ms.min(MAX_BACKOFF_MS) + jitter_ms
+                    }
+                } else {
+                    delay_ms.min(MAX_BACKOFF_MS) + jitter_ms
+                };
+
+                last_wait_ms = wait_ms;
+                warn!(
+                    attempt = attempt + 1,
+                    max_retries = MAX_RETRIES,
+                    wait_ms = wait_ms,
+                    "AniList rate limited request, retrying"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+                delay_ms *= 2;
+                continue;
             }
-            let wait = delay_ms.min(MAX_BACKOFF_MS) + jitter_ms;
-            tokio::time::sleep(tokio::time::Duration::from_millis(wait)).await;
-            delay_ms *= 2;
-            continue;
+
+            warn!(
+                attempts = attempt + 1,
+                last_wait_ms = last_wait_ms,
+                "AniList rate limit retries exhausted"
+            );
+            return Err(RequestError::RateLimited {
+                attempts: attempt + 1,
+                last_wait_ms,
+            });
         }
 
         return Ok(response);
     }
 
-    client.execute(request).await
+    Err(RequestError::RateLimited {
+        attempts: MAX_RETRIES + 1,
+        last_wait_ms,
+    })
 }
 
 pub struct AnilistClient {
@@ -61,6 +128,10 @@ pub struct AnilistClient {
 impl AnilistClient {
     pub fn with_client(client: Client) -> Self {
         Self { client }
+    }
+
+    pub fn normalize_user_input(input: &str) -> String {
+        Self::parse_user_input(input)
     }
 
     /// Parse AniList user input that may be a plain username or a profile URL.
@@ -200,20 +271,23 @@ impl AnilistClient {
                 &self.client,
             )
             .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+            .map_err(map_request_error)?;
 
             if response.status() != 200 {
                 // AniList returns 404 for non-existent users
                 if response.status() == 404 {
-                    return Err(format!("AniList user '{}' not found", username));
+                    return Err(format!("INVALID_INPUT: AniList user '{}' not found", username));
                 }
-                return Err(format!("AniList API returned status {}", response.status()));
+                return Err(format!(
+                    "UPSTREAM: AniList API returned status {}",
+                    response.status()
+                ));
             }
 
             let data: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                .map_err(|e| format!("UPSTREAM: Failed to parse AniList JSON: {}", e))?;
 
             if data["errors"].is_array() {
                 let errors = &data["errors"];
@@ -221,10 +295,13 @@ impl AnilistClient {
                 if let Some(first_err) = errors.as_array().and_then(|a| a.first()) {
                     let msg = first_err["message"].as_str().unwrap_or("");
                     if msg.contains("not found") || msg.contains("Private") {
-                        return Err(format!("AniList user '{}' not found or private", username));
+                        return Err(format!(
+                            "INVALID_INPUT: AniList user '{}' not found or private",
+                            username
+                        ));
                     }
                 }
-                return Err(format!("GraphQL error: {:?}", errors));
+                return Err(format!("UPSTREAM: AniList GraphQL error: {:?}", errors));
             }
 
             let media_type_entries = Self::parse_user_lists(&data, media_type_label, &mut seen);
@@ -319,19 +396,38 @@ impl AnilistClient {
                 &self.client,
             )
             .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+            .map_err(map_request_error)?;
 
             if response.status() != 200 {
-                return Err(format!("AniList API returned status {}", response.status()));
+                if response.status() == 404 {
+                    return Err(format!(
+                        "INVALID_INPUT: AniList media '{}' was not found",
+                        media_id
+                    ));
+                }
+                return Err(format!(
+                    "UPSTREAM: AniList API returned status {}",
+                    response.status()
+                ));
             }
 
             let data: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                .map_err(|e| format!("UPSTREAM: Failed to parse AniList JSON: {}", e))?;
 
             if data["errors"].is_array() {
-                return Err(format!("GraphQL error: {:?}", data["errors"]));
+                let errors = &data["errors"];
+                if let Some(first_err) = errors.as_array().and_then(|arr| arr.first()) {
+                    let message = first_err["message"].as_str().unwrap_or("");
+                    if message.contains("not found") || message.contains("No such media") {
+                        return Err(format!(
+                            "INVALID_INPUT: AniList media '{}' was not found",
+                            media_id
+                        ));
+                    }
+                }
+                return Err(format!("UPSTREAM: AniList GraphQL error: {:?}", errors));
             }
 
             let media = &data["data"]["Media"];

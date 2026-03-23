@@ -70,6 +70,9 @@ const DOWNLOAD_CLEANUP_INTERVAL_SECS: u64 = 60;
 
 /// Max age for download tokens (5 minutes).
 const DOWNLOAD_TOKEN_MAX_AGE_SECS: u64 = 300;
+const INVALID_INPUT_PREFIX: &str = "INVALID_INPUT:";
+const RATE_LIMIT_PREFIX: &str = "RATE_LIMIT:";
+const UPSTREAM_PREFIX: &str = "UPSTREAM:";
 
 #[derive(Clone)]
 struct AppState {
@@ -82,10 +85,12 @@ struct AppState {
     media_cache: MediaCache,
     /// Server start time for uptime reporting.
     started_at: std::time::Instant,
+    /// Boot identifier for correlating lifecycle logs across restarts.
+    boot_id: String,
 }
 
 impl AppState {
-    fn new() -> Self {
+    fn new(boot_id: String) -> Self {
         let downloads: DownloadStore = Arc::new(Mutex::new(HashMap::new()));
 
         // Spawn periodic cleanup for download tokens
@@ -122,25 +127,97 @@ impl AppState {
             }
         });
         let image_cache = ImageCache::open(std::path::Path::new(&cache_dir)).unwrap_or_else(|e| {
-            error!("Image cache initialization failed: {}", e);
+            error!(boot_id = %boot_id, error = %e, "Image cache initialization failed");
             std::process::exit(1)
         });
         let media_cache = MediaCache::open(std::path::Path::new(&cache_dir)).unwrap_or_else(|e| {
-            error!("Media cache initialization failed: {}", e);
+            error!(boot_id = %boot_id, error = %e, "Media cache initialization failed");
             std::process::exit(1)
         });
 
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|e| {
+                error!(boot_id = %boot_id, error = %e, "HTTP client initialization failed");
+                std::process::exit(1)
+            });
+
         Self {
             downloads,
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()
-                .expect("Failed to build HTTP client"),
+            http_client,
             image_cache,
             media_cache,
             started_at: std::time::Instant::now(),
+            boot_id,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServiceErrorKind {
+    InvalidInput,
+    RateLimit,
+    Upstream,
+    Internal,
+}
+
+#[derive(Default)]
+struct GenerationStats {
+    media_total: usize,
+    vndb_cache_hits: usize,
+    vndb_cache_misses: usize,
+    anilist_cache_hits: usize,
+    anilist_cache_misses: usize,
+    invalid_input_failures: usize,
+    upstream_failures: usize,
+    rate_limit_failures: usize,
+}
+
+impl GenerationStats {
+    fn record_vndb_fetch(&mut self, cached: bool) {
+        if cached {
+            self.vndb_cache_hits += 1;
+        } else {
+            self.vndb_cache_misses += 1;
+        }
+    }
+
+    fn record_anilist_fetch(&mut self, cached: bool) {
+        if cached {
+            self.anilist_cache_hits += 1;
+        } else {
+            self.anilist_cache_misses += 1;
+        }
+    }
+
+    fn record_failure(&mut self, error: &str) {
+        match classify_service_error_kind(error) {
+            ServiceErrorKind::InvalidInput => self.invalid_input_failures += 1,
+            ServiceErrorKind::RateLimit => self.rate_limit_failures += 1,
+            ServiceErrorKind::Upstream => self.upstream_failures += 1,
+            ServiceErrorKind::Internal => {}
+        }
+    }
+
+    fn total_cache_hits(&self) -> usize {
+        self.vndb_cache_hits + self.anilist_cache_hits
+    }
+
+    fn total_cache_misses(&self) -> usize {
+        self.vndb_cache_misses + self.anilist_cache_misses
+    }
+
+    fn total_external_failures(&self) -> usize {
+        self.invalid_input_failures + self.upstream_failures + self.rate_limit_failures
+    }
+}
+
+#[derive(Clone)]
+struct NormalizedManualEntry {
+    source: String,
+    id: String,
+    media_type: String,
 }
 
 // === Query parameter structs ===
@@ -310,6 +387,226 @@ fn parse_anilist_id(input: &str) -> Result<i32, String> {
     })
 }
 
+fn classify_service_error_kind(error: &str) -> ServiceErrorKind {
+    if error.starts_with(INVALID_INPUT_PREFIX) {
+        ServiceErrorKind::InvalidInput
+    } else if error.starts_with(RATE_LIMIT_PREFIX) {
+        ServiceErrorKind::RateLimit
+    } else if error.starts_with(UPSTREAM_PREFIX) {
+        ServiceErrorKind::Upstream
+    } else {
+        ServiceErrorKind::Internal
+    }
+}
+
+fn strip_service_error_prefix(error: &str) -> &str {
+    error
+        .strip_prefix(INVALID_INPUT_PREFIX)
+        .or_else(|| error.strip_prefix(RATE_LIMIT_PREFIX))
+        .or_else(|| error.strip_prefix(UPSTREAM_PREFIX))
+        .map(str::trim)
+        .unwrap_or(error)
+}
+
+fn status_code_for_error(error: &str) -> StatusCode {
+    match classify_service_error_kind(error) {
+        ServiceErrorKind::InvalidInput => StatusCode::BAD_REQUEST,
+        ServiceErrorKind::RateLimit => StatusCode::SERVICE_UNAVAILABLE,
+        ServiceErrorKind::Upstream => StatusCode::BAD_GATEWAY,
+        ServiceErrorKind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+fn public_error_message(error: &str) -> String {
+    match classify_service_error_kind(error) {
+        ServiceErrorKind::InvalidInput => strip_service_error_prefix(error).to_string(),
+        ServiceErrorKind::RateLimit => {
+            "Upstream service is temporarily rate limiting requests. Please try again shortly."
+                .to_string()
+        }
+        ServiceErrorKind::Upstream => {
+            "Failed to fetch data from an upstream service. Please try again shortly."
+                .to_string()
+        }
+        ServiceErrorKind::Internal => "Internal server error".to_string(),
+    }
+}
+
+fn aggregate_status_code(errors: &[String]) -> StatusCode {
+    if errors
+        .iter()
+        .any(|error| classify_service_error_kind(error) == ServiceErrorKind::RateLimit)
+    {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else if errors
+        .iter()
+        .any(|error| classify_service_error_kind(error) == ServiceErrorKind::Upstream)
+    {
+        StatusCode::BAD_GATEWAY
+    } else if !errors.is_empty()
+        && errors
+            .iter()
+            .all(|error| classify_service_error_kind(error) == ServiceErrorKind::InvalidInput)
+    {
+        StatusCode::BAD_REQUEST
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    }
+}
+
+fn combine_service_errors(errors: &[String]) -> String {
+    if errors.is_empty() {
+        return "Internal server error".to_string();
+    }
+
+    let prefix = match aggregate_status_code(errors) {
+        StatusCode::BAD_REQUEST => INVALID_INPUT_PREFIX,
+        StatusCode::SERVICE_UNAVAILABLE => RATE_LIMIT_PREFIX,
+        StatusCode::BAD_GATEWAY => UPSTREAM_PREFIX,
+        _ => "",
+    };
+
+    let details = errors
+        .iter()
+        .map(|error| strip_service_error_prefix(error))
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    if prefix.is_empty() {
+        details
+    } else {
+        format!("{} {}", prefix, details)
+    }
+}
+
+fn normalize_vndb_user_input(input: &str) -> String {
+    VndbClient::normalize_user_input(input)
+}
+
+fn normalize_anilist_user_input(input: &str) -> String {
+    AnilistClient::normalize_user_input(input)
+}
+
+fn normalize_vndb_id_for_url(input: &str) -> String {
+    VndbClient::parse_vn_id(input).unwrap_or_else(|_| input.trim().to_string())
+}
+
+fn normalize_anilist_id_for_url(input: &str) -> String {
+    parse_anilist_id(input)
+        .map(|id| id.to_string())
+        .unwrap_or_else(|_| input.trim().to_string())
+}
+
+fn normalize_manual_entry(entry: &ManualEntry) -> Result<NormalizedManualEntry, String> {
+    let source = entry.source.trim().to_lowercase();
+    match source.as_str() {
+        "vndb" => Ok(NormalizedManualEntry {
+            source,
+            id: VndbClient::parse_vn_id(&entry.id)
+                .map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?,
+            media_type: "vn".to_string(),
+        }),
+        "anilist" => Ok(NormalizedManualEntry {
+            source,
+            id: parse_anilist_id(&entry.id)
+                .map(|id| id.to_string())
+                .map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?,
+            media_type: match entry.media_type.to_uppercase().as_str() {
+                "MANGA" => "MANGA".to_string(),
+                _ => "ANIME".to_string(),
+            },
+        }),
+        _ => Err(format!(
+            "{} source must be 'vndb' or 'anilist'",
+            INVALID_INPUT_PREFIX
+        )),
+    }
+}
+
+fn normalize_entries_json_for_url(entries_json: &str) -> String {
+    let entries = match serde_json::from_str::<Vec<ManualEntry>>(entries_json) {
+        Ok(entries) => entries,
+        Err(_) => return entries_json.to_string(),
+    };
+
+    let normalized_entries: Vec<serde_json::Value> = entries
+        .iter()
+        .filter_map(|entry| normalize_manual_entry(entry).ok())
+        .map(|entry| {
+            let mut value = serde_json::json!({
+                "source": entry.source,
+                "id": entry.id,
+            });
+            if entry.source == "anilist" {
+                value["media_type"] = serde_json::json!(entry.media_type);
+            }
+            value
+        })
+        .collect();
+
+    if normalized_entries.is_empty() {
+        entries_json.to_string()
+    } else {
+        serde_json::to_string(&normalized_entries).unwrap_or_else(|_| entries_json.to_string())
+    }
+}
+
+fn log_generation_summary(
+    state: &AppState,
+    mode: &str,
+    started_at: std::time::Instant,
+    stats: &GenerationStats,
+    builder: Option<&DictBuilder>,
+    zip_size_bytes: Option<usize>,
+    error: Option<&str>,
+) {
+    let skipped_no_japanese_count = builder
+        .map(DictBuilder::skipped_no_japanese_count)
+        .unwrap_or(0);
+    let duration_ms = started_at.elapsed().as_millis() as u64;
+    let zip_size_bytes = zip_size_bytes.unwrap_or(0);
+
+    match error {
+        Some(error) => warn!(
+            boot_id = %state.boot_id,
+            mode = mode,
+            media_total = stats.media_total,
+            cache_hits = stats.total_cache_hits(),
+            cache_misses = stats.total_cache_misses(),
+            vndb_cache_hits = stats.vndb_cache_hits,
+            vndb_cache_misses = stats.vndb_cache_misses,
+            anilist_cache_hits = stats.anilist_cache_hits,
+            anilist_cache_misses = stats.anilist_cache_misses,
+            upstream_failures = stats.total_external_failures(),
+            rate_limit_failures = stats.rate_limit_failures,
+            invalid_input_failures = stats.invalid_input_failures,
+            skipped_no_japanese_count = skipped_no_japanese_count,
+            zip_size_bytes = zip_size_bytes,
+            duration_ms = duration_ms,
+            error = %error,
+            "Dictionary generation failed"
+        ),
+        None => info!(
+            boot_id = %state.boot_id,
+            mode = mode,
+            media_total = stats.media_total,
+            cache_hits = stats.total_cache_hits(),
+            cache_misses = stats.total_cache_misses(),
+            vndb_cache_hits = stats.vndb_cache_hits,
+            vndb_cache_misses = stats.vndb_cache_misses,
+            anilist_cache_hits = stats.anilist_cache_hits,
+            anilist_cache_misses = stats.anilist_cache_misses,
+            upstream_failures = stats.total_external_failures(),
+            rate_limit_failures = stats.rate_limit_failures,
+            invalid_input_failures = stats.invalid_input_failures,
+            skipped_no_japanese_count = skipped_no_japanese_count,
+            zip_size_bytes = zip_size_bytes,
+            duration_ms = duration_ms,
+            "Dictionary generation completed"
+        ),
+    }
+}
+
 /// Get the base URL for auto-update URLs.
 /// Reads from BASE_URL env var, defaults to http://127.0.0.1:3000.
 fn base_url() -> String {
@@ -322,6 +619,46 @@ fn base_url() -> String {
     })
 }
 
+async fn shutdown_signal(boot_id: String) {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            error!(
+                boot_id = %boot_id,
+                error = %error,
+                "Failed to install Ctrl+C signal handler"
+            );
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                error!(
+                    boot_id = %boot_id,
+                    error = %error,
+                    "Failed to install SIGTERM signal handler"
+                );
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!(boot_id = %boot_id, "Received Ctrl+C shutdown signal");
+        }
+        _ = terminate => {
+            info!(boot_id = %boot_id, "Received SIGTERM shutdown signal");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Initialize structured logging
@@ -332,7 +669,39 @@ async fn main() {
         )
         .init();
 
-    let state = AppState::new();
+    let boot_id = uuid::Uuid::new_v4().to_string();
+
+    {
+        let panic_boot_id = boot_id.clone();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let location = panic_info
+                .location()
+                .map(|location| {
+                    format!(
+                        "{}:{}:{}",
+                        location.file(),
+                        location.line(),
+                        location.column()
+                    )
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+            let message = panic_info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_string())
+                .or_else(|| panic_info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".to_string());
+
+            error!(
+                boot_id = %panic_boot_id,
+                location = %location,
+                message = %message,
+                "Unhandled panic"
+            );
+        }));
+    }
+
+    let state = AppState::new(boot_id.clone());
 
     // Rate limiting: strict for expensive generation endpoints
     let generate_governor = GovernorConfigBuilder::default()
@@ -396,15 +765,41 @@ async fn main() {
         .unwrap_or(3000);
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let addr = format!("{}:{}", host, port);
-    info!("Server running on http://{}", addr);
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            error!(
+                boot_id = %boot_id,
+                address = %addr,
+                error = %error,
+                "Failed to bind TCP listener"
+            );
+            return;
+        }
+    };
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(
+    info!(
+        boot_id = %boot_id,
+        address = %addr,
+        "Server listening"
+    );
+
+    let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await
-    .unwrap();
+    .with_graceful_shutdown(shutdown_signal(boot_id.clone()));
+
+    if let Err(error) = server.await {
+        error!(
+            boot_id = %boot_id,
+            error = %error,
+            "Server exited with error"
+        );
+        return;
+    }
+
+    info!(boot_id = %boot_id, "Server shutdown complete");
 }
 
 async fn serve_index() -> impl IntoResponse {
@@ -456,6 +851,7 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
 
     axum::Json(serde_json::json!({
         "status": "ok",
+        "boot_id": state.boot_id,
         "uptime": format!("{}h {}m {}s", hours, minutes, seconds),
         "uptime_seconds": uptime_secs,
         "cache": {
@@ -479,13 +875,8 @@ async fn fetch_user_lists(
     Query(params): Query<UserListQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let vndb_user = params.vndb_user.as_deref().unwrap_or("").trim().to_string();
-    let anilist_user = params
-        .anilist_user
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
+    let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
 
     if vndb_user.is_empty() && anilist_user.is_empty() {
         return (
@@ -501,13 +892,24 @@ async fn fetch_user_lists(
     }
 
     let mut all_entries: Vec<UserMediaEntry> = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
+    let mut raw_errors: Vec<String> = Vec::new();
+    let mut response_errors: Vec<String> = Vec::new();
 
     if !vndb_user.is_empty() {
         let client = VndbClient::with_client(state.http_client.clone());
         match client.fetch_user_playing_list(&vndb_user).await {
             Ok(entries) => all_entries.extend(entries),
-            Err(e) => errors.push(format!("VNDB: {}", e)),
+            Err(e) => {
+                warn!(
+                    boot_id = %state.boot_id,
+                    source = "vndb",
+                    user = %vndb_user,
+                    error = %e,
+                    "User list fetch failed"
+                );
+                response_errors.push(format!("VNDB: {}", public_error_message(&e)));
+                raw_errors.push(e);
+            }
         }
     }
 
@@ -515,14 +917,25 @@ async fn fetch_user_lists(
         let client = AnilistClient::with_client(state.http_client.clone());
         match client.fetch_user_current_list(&anilist_user).await {
             Ok(entries) => all_entries.extend(entries),
-            Err(e) => errors.push(format!("AniList: {}", e)),
+            Err(e) => {
+                warn!(
+                    boot_id = %state.boot_id,
+                    source = "anilist",
+                    user = %anilist_user,
+                    error = %e,
+                    "User list fetch failed"
+                );
+                response_errors.push(format!("AniList: {}", public_error_message(&e)));
+                raw_errors.push(e);
+            }
         }
     }
 
-    if all_entries.is_empty() && !errors.is_empty() {
-        let error_msg = errors.join("; ");
+    if all_entries.is_empty() && !raw_errors.is_empty() {
+        let status = aggregate_status_code(&raw_errors);
+        let error_msg = response_errors.join("; ");
         return (
-            StatusCode::BAD_REQUEST,
+            status,
             [
                 ("content-type", "application/json"),
                 ("access-control-allow-origin", "*"),
@@ -534,7 +947,7 @@ async fn fetch_user_lists(
 
     let response = serde_json::json!({
         "entries": all_entries,
-        "errors": errors,
+        "errors": response_errors,
         "count": all_entries.len()
     });
 
@@ -557,8 +970,8 @@ async fn generate_stream(
 ) -> Sse<ReceiverStream<Result<Event, std::convert::Infallible>>> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(100);
     let settings = params.to_settings();
-    let vndb_user = params.vndb_user.unwrap_or_default().trim().to_string();
-    let anilist_user = params.anilist_user.unwrap_or_default().trim().to_string();
+    let vndb_user = normalize_vndb_user_input(&params.vndb_user.unwrap_or_default());
+    let anilist_user = normalize_anilist_user_input(&params.anilist_user.unwrap_or_default());
 
     tokio::spawn(async move {
         let result =
@@ -586,7 +999,11 @@ async fn generate_stream(
                 let _ = tx
                     .send(Ok(Event::default()
                         .event("error")
-                        .data(serde_json::json!({"error": e}).to_string())))
+                        .data(serde_json::json!({
+                            "error": public_error_message(&e),
+                            "status": status_code_for_error(&e).as_u16()
+                        })
+                        .to_string())))
                     .await;
             }
         }
@@ -767,31 +1184,63 @@ async fn generate_dict_from_usernames(
     progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
+    let started_at = std::time::Instant::now();
+    let vndb_user = normalize_vndb_user_input(vndb_user);
+    let anilist_user = normalize_anilist_user_input(anilist_user);
+    let mut stats = GenerationStats::default();
+    let mut collected_errors: Vec<String> = Vec::new();
+
     // Step 1: Collect all media entries from user lists
     let mut media_entries: Vec<UserMediaEntry> = Vec::new();
 
     if !vndb_user.is_empty() {
         let client = VndbClient::with_client(state.http_client.clone());
-        match client.fetch_user_playing_list(vndb_user).await {
+        match client.fetch_user_playing_list(&vndb_user).await {
             Ok(entries) => media_entries.extend(entries),
             Err(e) => {
+                stats.record_failure(&e);
+                collected_errors.push(e.clone());
                 if anilist_user.is_empty() {
-                    return Err(format!("VNDB error: {}", e));
+                    log_generation_summary(
+                        state,
+                        "usernames",
+                        started_at,
+                        &stats,
+                        None,
+                        None,
+                        Some(&e),
+                    );
+                    return Err(e);
                 }
-                warn!(user = vndb_user, error = %e, "VNDB list fetch error (continuing)");
+                warn!(user = %vndb_user, error = %e, "VNDB list fetch error (continuing)");
             }
         }
     }
 
     if !anilist_user.is_empty() {
         let client = AnilistClient::with_client(state.http_client.clone());
-        match client.fetch_user_current_list(anilist_user).await {
+        match client.fetch_user_current_list(&anilist_user).await {
             Ok(entries) => media_entries.extend(entries),
             Err(e) => {
+                stats.record_failure(&e);
+                collected_errors.push(e.clone());
                 if vndb_user.is_empty() || media_entries.is_empty() {
-                    return Err(format!("AniList error: {}", e));
+                    log_generation_summary(
+                        state,
+                        "usernames",
+                        started_at,
+                        &stats,
+                        None,
+                        None,
+                        Some(&e),
+                    );
+                    return Err(e);
                 }
-                warn!(user = anilist_user, error = %e, "AniList list fetch error (continuing)");
+                warn!(
+                    user = %anilist_user,
+                    error = %e,
+                    "AniList list fetch error (continuing)"
+                );
             }
         }
     }
@@ -805,21 +1254,39 @@ async fn generate_dict_from_usernames(
     }
 
     if media_entries.is_empty() {
-        return Err("No in-progress media found in user lists".to_string());
+        let error = if collected_errors.is_empty() {
+            format!(
+                "{} No in-progress media found in the requested user lists",
+                INVALID_INPUT_PREFIX
+            )
+        } else {
+            combine_service_errors(&collected_errors)
+        };
+        log_generation_summary(
+            state,
+            "usernames",
+            started_at,
+            &stats,
+            None,
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
     let total = media_entries.len();
+    stats.media_total = total;
 
     // Build download URL with usernames for auto-update (percent-encoded)
     let base = base_url();
     let mut url_parts = Vec::new();
     if !vndb_user.is_empty() {
-        url_parts.push(format!("vndb_user={}", urlencoding::encode(vndb_user)));
+        url_parts.push(format!("vndb_user={}", urlencoding::encode(&vndb_user)));
     }
     if !anilist_user.is_empty() {
         url_parts.push(format!(
             "anilist_user={}",
-            urlencoding::encode(anilist_user)
+            urlencoding::encode(&anilist_user)
         ));
     }
     // Append non-default settings
@@ -877,6 +1344,7 @@ async fn generate_dict_from_usernames(
             "vndb" => {
                 match fetch_vndb_cached(&entry.id, state).await {
                     Ok((title, mut char_data, cached)) => {
+                        stats.record_vndb_fetch(cached);
                         download_images_concurrent(
                             &mut char_data,
                             &state.http_client,
@@ -902,14 +1370,22 @@ async fn generate_dict_from_usernames(
                         }
                     }
                     Err(e) => {
+                        stats.record_failure(&e);
+                        collected_errors.push(e.clone());
                         warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
                     }
                 }
             }
             "anilist" => {
-                let media_id: i32 = match entry.id.parse() {
+                let media_id: i32 = match parse_anilist_id(&entry.id) {
                     Ok(id) => id,
                     Err(_) => {
+                        let error = format!(
+                            "{} Invalid AniList media ID '{}'",
+                            INVALID_INPUT_PREFIX, entry.id
+                        );
+                        stats.record_failure(&error);
+                        collected_errors.push(error.clone());
                         warn!(id = %entry.id, "Invalid AniList media ID");
                         continue;
                     }
@@ -923,6 +1399,7 @@ async fn generate_dict_from_usernames(
 
                 match fetch_anilist_cached(media_id, media_type, state).await {
                     Ok((title, mut char_data, cached)) => {
+                        stats.record_anilist_fetch(cached);
                         download_images_concurrent(
                             &mut char_data,
                             &state.http_client,
@@ -948,6 +1425,8 @@ async fn generate_dict_from_usernames(
                         }
                     }
                     Err(e) => {
+                        stats.record_failure(&e);
+                        collected_errors.push(e.clone());
                         warn!(media_id = %entry.id, error = %e, "Failed to fetch AniList characters");
                     }
                 }
@@ -958,11 +1437,54 @@ async fn generate_dict_from_usernames(
         }
     }
 
+    builder.log_skipped_no_japanese_summary();
+
     if !builder.has_entries() {
-        return Err("No character entries generated from any media".to_string());
+        let error = if !collected_errors.is_empty() {
+            combine_service_errors(&collected_errors)
+        } else {
+            format!(
+                "{} No character entries were generated from the requested media",
+                INVALID_INPUT_PREFIX
+            )
+        };
+        log_generation_summary(
+            state,
+            "usernames",
+            started_at,
+            &stats,
+            Some(&builder),
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
-    let zip_bytes = builder.export_bytes()?;
+    let zip_bytes = match builder.export_bytes() {
+        Ok(zip_bytes) => zip_bytes,
+        Err(error) => {
+            log_generation_summary(
+                state,
+                "usernames",
+                started_at,
+                &stats,
+                Some(&builder),
+                None,
+                Some(&error),
+            );
+            return Err(error);
+        }
+    };
+
+    log_generation_summary(
+        state,
+        "usernames",
+        started_at,
+        &stats,
+        Some(&builder),
+        Some(zip_bytes.len()),
+        None,
+    );
 
     Ok(zip_bytes)
 }
@@ -974,18 +1496,53 @@ async fn generate_dict_from_entries(
     settings: DictSettings,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    // Deduplicate entries by (source, id)
+    let started_at = std::time::Instant::now();
+    let mut stats = GenerationStats::default();
+    let mut collected_errors: Vec<String> = Vec::new();
+
+    // Normalize + deduplicate entries by (source, id)
     let mut seen = HashSet::new();
-    let unique_entries: Vec<&ManualEntry> = entries
-        .iter()
-        .filter(|e| seen.insert((e.source.to_lowercase(), e.id.clone())))
-        .collect();
+    let mut unique_entries: Vec<NormalizedManualEntry> = Vec::new();
+    for entry in entries {
+        match normalize_manual_entry(entry) {
+            Ok(entry) => {
+                if seen.insert((entry.source.clone(), entry.id.clone())) {
+                    unique_entries.push(entry);
+                }
+            }
+            Err(error) => {
+                stats.record_failure(&error);
+                collected_errors.push(error.clone());
+                warn!(
+                    source = %entry.source,
+                    id = %entry.id,
+                    error = %error,
+                    "Skipping invalid manual entry"
+                );
+            }
+        }
+    }
 
     if unique_entries.is_empty() {
-        return Err("No valid entries provided".to_string());
+        let error = if collected_errors.is_empty() {
+            format!("{} No valid entries provided", INVALID_INPUT_PREFIX)
+        } else {
+            combine_service_errors(&collected_errors)
+        };
+        log_generation_summary(
+            state,
+            "manual_entries",
+            started_at,
+            &stats,
+            None,
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
     let total = unique_entries.len();
+    stats.media_total = total;
 
     // Build download URL with entries JSON for auto-update
     let base = base_url();
@@ -996,7 +1553,7 @@ async fn generate_dict_from_entries(
                 "source": e.source,
                 "id": e.id,
             });
-            if e.source.to_lowercase() == "anilist" {
+            if e.source == "anilist" {
                 obj["media_type"] = serde_json::json!(e.media_type);
             }
             obj
@@ -1032,10 +1589,11 @@ async fn generate_dict_from_entries(
     let description = format!("Character Dictionary ({} titles)", total);
     let mut builder = DictBuilder::new(settings, Some(download_url), description);
 
-    for entry in &unique_entries {
-        match entry.source.to_lowercase().as_str() {
+    for entry in unique_entries.iter() {
+        match entry.source.as_str() {
             "vndb" => match fetch_vndb_cached(&entry.id, state).await {
                 Ok((title, mut char_data, cached)) => {
+                    stats.record_vndb_fetch(cached);
                     download_images_concurrent(
                         &mut char_data,
                         &state.http_client,
@@ -1060,6 +1618,8 @@ async fn generate_dict_from_entries(
                     }
                 }
                 Err(e) => {
+                    stats.record_failure(&e);
+                    collected_errors.push(e.clone());
                     warn!(vn_id = %entry.id, error = %e, "Failed to fetch VNDB characters");
                 }
             },
@@ -1067,24 +1627,22 @@ async fn generate_dict_from_entries(
                 let media_id: i32 = match entry.id.parse() {
                     Ok(id) => id,
                     Err(_) => {
-                        // Try parsing as AniList URL
-                        match parse_anilist_id(&entry.id) {
-                            Ok(id) => id,
-                            Err(_) => {
-                                warn!(id = %entry.id, "Invalid AniList media ID");
-                                continue;
-                            }
-                        }
+                        let error = format!(
+                            "{} Invalid AniList media ID '{}'",
+                            INVALID_INPUT_PREFIX, entry.id
+                        );
+                        stats.record_failure(&error);
+                        collected_errors.push(error.clone());
+                        warn!(id = %entry.id, error = %error, "Invalid AniList media ID");
+                        continue;
                     }
                 };
 
-                let media_type = match entry.media_type.to_uppercase().as_str() {
-                    "MANGA" => "MANGA",
-                    _ => "ANIME",
-                };
+                let media_type = entry.media_type.as_str();
 
                 match fetch_anilist_cached(media_id, media_type, state).await {
                     Ok((title, mut char_data, cached)) => {
+                        stats.record_anilist_fetch(cached);
                         download_images_concurrent(
                             &mut char_data,
                             &state.http_client,
@@ -1109,6 +1667,8 @@ async fn generate_dict_from_entries(
                         }
                     }
                     Err(e) => {
+                        stats.record_failure(&e);
+                        collected_errors.push(e.clone());
                         warn!(media_id = %entry.id, error = %e, "Failed to fetch AniList characters");
                     }
                 }
@@ -1119,11 +1679,54 @@ async fn generate_dict_from_entries(
         }
     }
 
+    builder.log_skipped_no_japanese_summary();
+
     if !builder.has_entries() {
-        return Err("No character entries generated from any media".to_string());
+        let error = if !collected_errors.is_empty() {
+            combine_service_errors(&collected_errors)
+        } else {
+            format!(
+                "{} No character entries were generated from the requested media",
+                INVALID_INPUT_PREFIX
+            )
+        };
+        log_generation_summary(
+            state,
+            "manual_entries",
+            started_at,
+            &stats,
+            Some(&builder),
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
-    let zip_bytes = builder.export_bytes()?;
+    let zip_bytes = match builder.export_bytes() {
+        Ok(zip_bytes) => zip_bytes,
+        Err(error) => {
+            log_generation_summary(
+                state,
+                "manual_entries",
+                started_at,
+                &stats,
+                Some(&builder),
+                None,
+                Some(&error),
+            );
+            return Err(error);
+        }
+    };
+
+    log_generation_summary(
+        state,
+        "manual_entries",
+        started_at,
+        &stats,
+        Some(&builder),
+        Some(zip_bytes.len()),
+        None,
+    );
     Ok(zip_bytes)
 }
 
@@ -1135,13 +1738,8 @@ async fn generate_dict(
 ) -> impl IntoResponse {
     let settings = params.to_settings();
 
-    let vndb_user = params.vndb_user.as_deref().unwrap_or("").trim().to_string();
-    let anilist_user = params
-        .anilist_user
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
+    let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
 
     if !vndb_user.is_empty() || !anilist_user.is_empty() {
         match generate_dict_from_usernames(&vndb_user, &anilist_user, settings, None, &state).await
@@ -1162,7 +1760,14 @@ async fn generate_dict(
                     .into_response();
             }
             Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+                warn!(
+                    boot_id = %state.boot_id,
+                    vndb_user = %vndb_user,
+                    anilist_user = %anilist_user,
+                    error = %e,
+                    "Dictionary generation request failed"
+                );
+                return (status_code_for_error(&e), public_error_message(&e)).into_response();
             }
         }
     }
@@ -1202,7 +1807,12 @@ async fn generate_dict(
                     .into_response();
             }
             Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+                warn!(
+                    boot_id = %state.boot_id,
+                    error = %e,
+                    "Manual dictionary generation request failed"
+                );
+                return (status_code_for_error(&e), public_error_message(&e)).into_response();
             }
         }
     }
@@ -1219,21 +1829,24 @@ async fn generate_dict(
             .into_response();
     }
 
-    let download_url = {
-        let base = base_url();
-        let mut parts = vec![
-            format!("source={}", urlencoding::encode(source)),
-            format!("id={}", urlencoding::encode(id)),
-            format!("media_type={}", urlencoding::encode(&params.media_type)),
-        ];
-        params.append_settings_params(&mut parts);
-        format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
-    };
-
-    let settings = params.to_settings();
-
     let result = match source.to_lowercase().as_str() {
-        "vndb" => generate_vndb_dict(id, settings, &download_url, &state).await,
+        "vndb" => {
+            let normalized_id = match VndbClient::parse_vn_id(id) {
+                Ok(id) => id,
+                Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+            };
+            let download_url = {
+                let base = base_url();
+                let mut parts = vec![
+                    format!("source={}", urlencoding::encode(source)),
+                    format!("id={}", urlencoding::encode(&normalized_id)),
+                    format!("media_type={}", urlencoding::encode(&params.media_type)),
+                ];
+                params.append_settings_params(&mut parts);
+                format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
+            };
+            generate_vndb_dict(&normalized_id, settings, &download_url, &state).await
+        }
         "anilist" => {
             let media_id: i32 = match parse_anilist_id(id) {
                 Ok(id) => id,
@@ -1244,6 +1857,16 @@ async fn generate_dict(
                 return (StatusCode::BAD_REQUEST, "media_type must be ANIME or MANGA")
                     .into_response();
             }
+            let download_url = {
+                let base = base_url();
+                let mut parts = vec![
+                    format!("source={}", urlencoding::encode(source)),
+                    format!("id={}", urlencoding::encode(&media_id.to_string())),
+                    format!("media_type={}", urlencoding::encode(&media_type)),
+                ];
+                params.append_settings_params(&mut parts);
+                format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
+            };
             generate_anilist_dict(media_id, &media_type, settings, &download_url, &state).await
         }
         _ => {
@@ -1269,19 +1892,23 @@ async fn generate_dict(
             bytes,
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => {
+            warn!(
+                boot_id = %state.boot_id,
+                source = %source,
+                id = %id,
+                error = %e,
+                "Single-media dictionary generation request failed"
+            );
+            (status_code_for_error(&e), public_error_message(&e)).into_response()
+        }
     }
 }
 
 /// Lightweight endpoint: returns just the index.json metadata as JSON.
 async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
-    let vndb_user = params.vndb_user.as_deref().unwrap_or("").trim().to_string();
-    let anilist_user = params
-        .anilist_user
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
+    let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
 
     let download_url = if !vndb_user.is_empty() || !anilist_user.is_empty() {
         let base = base_url();
@@ -1300,16 +1927,24 @@ async fn generate_index(Query(params): Query<DictQuery>) -> impl IntoResponse {
     } else if let Some(ref entries_json) = params.entries {
         // Multi-entry mode: pass entries JSON through to download URL
         let base = base_url();
-        let mut parts = vec![format!("entries={}", urlencoding::encode(entries_json))];
+        let normalized_entries_json = normalize_entries_json_for_url(entries_json);
+        let mut parts = vec![format!(
+            "entries={}",
+            urlencoding::encode(&normalized_entries_json)
+        )];
         params.append_settings_params(&mut parts);
         format!("{}/api/yomitan-dict?{}", base, parts.join("&"))
     } else {
         let base = base_url();
         let source = params.source.as_deref().unwrap_or("");
-        let id = params.id.as_deref().unwrap_or("");
+        let id = match source.to_lowercase().as_str() {
+            "vndb" => normalize_vndb_id_for_url(params.id.as_deref().unwrap_or("")),
+            "anilist" => normalize_anilist_id_for_url(params.id.as_deref().unwrap_or("")),
+            _ => params.id.as_deref().unwrap_or("").trim().to_string(),
+        };
         let mut parts = vec![
             format!("source={}", urlencoding::encode(source)),
-            format!("id={}", urlencoding::encode(id)),
+            format!("id={}", urlencoding::encode(&id)),
             format!("media_type={}", urlencoding::encode(&params.media_type)),
         ];
         params.append_settings_params(&mut parts);
@@ -1343,6 +1978,7 @@ async fn fetch_vndb_cached(
     vn_id: &str,
     state: &AppState,
 ) -> Result<(String, models::CharacterData, bool), String> {
+    let vn_id = VndbClient::parse_vn_id(vn_id).map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?;
     let cache_key = format!("vndb:{}", vn_id);
 
     // Check cache first (blocking SQLite read, but fast).
@@ -1360,7 +1996,7 @@ async fn fetch_vndb_cached(
     let client = VndbClient::with_client(state.http_client.clone());
 
     let vn_info = client
-        .fetch_vn_info(vn_id)
+        .fetch_vn_info(&vn_id)
         .await
         .unwrap_or_else(|_| vndb_client::VnInfo {
             title: "Unknown VN".to_string(),
@@ -1373,7 +2009,7 @@ async fn fetch_vndb_cached(
         vn_info.title
     };
 
-    let mut char_data = client.fetch_characters(vn_id).await?;
+    let mut char_data = client.fetch_characters(&vn_id).await?;
 
     // Apply voice actor data from VN endpoint to characters
     for c in char_data.all_characters_mut() {
@@ -1464,7 +2100,28 @@ async fn generate_vndb_dict(
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    let (game_title, mut char_data, _cached) = fetch_vndb_cached(vn_id, state).await?;
+    let started_at = std::time::Instant::now();
+    let mut stats = GenerationStats {
+        media_total: 1,
+        ..GenerationStats::default()
+    };
+    let (game_title, mut char_data, cached) = match fetch_vndb_cached(vn_id, state).await {
+        Ok(result) => result,
+        Err(error) => {
+            stats.record_failure(&error);
+            log_generation_summary(
+                state,
+                "single_vndb",
+                started_at,
+                &stats,
+                None,
+                None,
+                Some(&error),
+            );
+            return Err(error);
+        }
+    };
+    stats.record_vndb_fetch(cached);
 
     // Concurrent image downloads with resize
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 8).await;
@@ -1477,11 +2134,52 @@ async fn generate_vndb_dict(
         builder.add_character(character, &game_title);
     }
 
+    builder.log_skipped_no_japanese_summary();
+
     if !builder.has_entries() {
-        return Err("No character entries generated".to_string());
+        let error = format!(
+            "{} No character entries were generated for the requested VNDB media",
+            INVALID_INPUT_PREFIX
+        );
+        log_generation_summary(
+            state,
+            "single_vndb",
+            started_at,
+            &stats,
+            Some(&builder),
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
-    builder.export_bytes()
+    let zip_bytes = match builder.export_bytes() {
+        Ok(zip_bytes) => zip_bytes,
+        Err(error) => {
+            log_generation_summary(
+                state,
+                "single_vndb",
+                started_at,
+                &stats,
+                Some(&builder),
+                None,
+                Some(&error),
+            );
+            return Err(error);
+        }
+    };
+
+    log_generation_summary(
+        state,
+        "single_vndb",
+        started_at,
+        &stats,
+        Some(&builder),
+        Some(zip_bytes.len()),
+        None,
+    );
+
+    Ok(zip_bytes)
 }
 
 async fn generate_anilist_dict(
@@ -1491,8 +2189,29 @@ async fn generate_anilist_dict(
     download_url: &str,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
-    let (game_title, mut char_data, _cached) =
-        fetch_anilist_cached(media_id, media_type, state).await?;
+    let started_at = std::time::Instant::now();
+    let mut stats = GenerationStats {
+        media_total: 1,
+        ..GenerationStats::default()
+    };
+    let (game_title, mut char_data, cached) =
+        match fetch_anilist_cached(media_id, media_type, state).await {
+            Ok(result) => result,
+            Err(error) => {
+                stats.record_failure(&error);
+                log_generation_summary(
+                    state,
+                    "single_anilist",
+                    started_at,
+                    &stats,
+                    None,
+                    None,
+                    Some(&error),
+                );
+                return Err(error);
+            }
+        };
+    stats.record_anilist_fetch(cached);
 
     // Concurrent image downloads with resize
     download_images_concurrent(&mut char_data, &state.http_client, &state.image_cache, 6).await;
@@ -1505,16 +2224,81 @@ async fn generate_anilist_dict(
         builder.add_character(character, &game_title);
     }
 
+    builder.log_skipped_no_japanese_summary();
+
     if !builder.has_entries() {
-        return Err("No character entries generated".to_string());
+        let error = format!(
+            "{} No character entries were generated for the requested AniList media",
+            INVALID_INPUT_PREFIX
+        );
+        log_generation_summary(
+            state,
+            "single_anilist",
+            started_at,
+            &stats,
+            Some(&builder),
+            None,
+            Some(&error),
+        );
+        return Err(error);
     }
 
-    builder.export_bytes()
+    let zip_bytes = match builder.export_bytes() {
+        Ok(zip_bytes) => zip_bytes,
+        Err(error) => {
+            log_generation_summary(
+                state,
+                "single_anilist",
+                started_at,
+                &stats,
+                Some(&builder),
+                None,
+                Some(&error),
+            );
+            return Err(error);
+        }
+    };
+
+    log_generation_summary(
+        state,
+        "single_anilist",
+        started_at,
+        &stats,
+        Some(&builder),
+        Some(zip_bytes.len()),
+        None,
+    );
+
+    Ok(zip_bytes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_status_code_for_invalid_input_error() {
+        assert_eq!(
+            status_code_for_error("INVALID_INPUT: bad request"),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn test_status_code_for_rate_limit_error() {
+        assert_eq!(
+            status_code_for_error("RATE_LIMIT: upstream busy"),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn test_status_code_for_upstream_error() {
+        assert_eq!(
+            status_code_for_error("UPSTREAM: request failed"),
+            StatusCode::BAD_GATEWAY
+        );
+    }
 
     #[test]
     fn test_parse_anilist_id_plain_number() {
