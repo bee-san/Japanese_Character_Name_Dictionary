@@ -403,7 +403,10 @@ impl VndbClient {
             .as_array()
             .ok_or("UPSTREAM: VNDB VN response did not include results")?;
         if results.is_empty() {
-            return Err(format!("INVALID_INPUT: VNDB media '{}' was not found", vn_id));
+            return Err(format!(
+                "INVALID_INPUT: VNDB media '{}' was not found",
+                vn_id
+            ));
         }
 
         let vn = &results[0];

@@ -425,8 +425,7 @@ fn public_error_message(error: &str) -> String {
                 .to_string()
         }
         ServiceErrorKind::Upstream => {
-            "Failed to fetch data from an upstream service. Please try again shortly."
-                .to_string()
+            "Failed to fetch data from an upstream service. Please try again shortly.".to_string()
         }
         ServiceErrorKind::Internal => "Internal server error".to_string(),
     }
@@ -997,13 +996,13 @@ async fn generate_stream(
             }
             Err(e) => {
                 let _ = tx
-                    .send(Ok(Event::default()
-                        .event("error")
-                        .data(serde_json::json!({
+                    .send(Ok(Event::default().event("error").data(
+                        serde_json::json!({
                             "error": public_error_message(&e),
                             "status": status_code_for_error(&e).as_u16()
                         })
-                        .to_string())))
+                        .to_string(),
+                    )))
                     .await;
             }
         }
@@ -1978,7 +1977,8 @@ async fn fetch_vndb_cached(
     vn_id: &str,
     state: &AppState,
 ) -> Result<(String, models::CharacterData, bool), String> {
-    let vn_id = VndbClient::parse_vn_id(vn_id).map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?;
+    let vn_id =
+        VndbClient::parse_vn_id(vn_id).map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?;
     let cache_key = format!("vndb:{}", vn_id);
 
     // Check cache first (blocking SQLite read, but fast).

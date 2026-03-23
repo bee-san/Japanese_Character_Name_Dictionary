@@ -276,7 +276,10 @@ impl AnilistClient {
             if response.status() != 200 {
                 // AniList returns 404 for non-existent users
                 if response.status() == 404 {
-                    return Err(format!("INVALID_INPUT: AniList user '{}' not found", username));
+                    return Err(format!(
+                        "INVALID_INPUT: AniList user '{}' not found",
+                        username
+                    ));
                 }
                 return Err(format!(
                     "UPSTREAM: AniList API returned status {}",
