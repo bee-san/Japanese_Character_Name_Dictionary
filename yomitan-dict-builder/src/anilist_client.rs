@@ -6,11 +6,70 @@ use tracing::warn;
 
 use crate::models::*;
 
-/// Maximum number of retries on HTTP 429 (rate limited).
-const MAX_RETRIES: u32 = 5;
+const PREVIEW_BACKOFF_SCHEDULE_MS: [u64; 5] = [5_000, 10_000, 20_000, 40_000, 80_000];
+const GENERATION_BACKOFF_SCHEDULE_MS: [u64; 6] = [5_000, 15_000, 45_000, 135_000, 300_000, 300_000];
+const RETRY_JITTER_UPPER_BOUND_MS: u64 = 500;
 
-/// Maximum backoff cap per retry: 1 minute 30 seconds.
-const MAX_BACKOFF_MS: u64 = 90_000;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnilistRetryPolicy {
+    Preview,
+    Generation,
+}
+
+impl AnilistRetryPolicy {
+    pub(crate) fn request_timeout(self) -> std::time::Duration {
+        match self {
+            Self::Preview => std::time::Duration::from_secs(60),
+            Self::Generation => std::time::Duration::from_secs(120),
+        }
+    }
+
+    fn max_retries(self) -> u32 {
+        match self {
+            Self::Preview => 5,
+            Self::Generation => 6,
+        }
+    }
+
+    fn backoff_cap_ms(self) -> u64 {
+        match self {
+            Self::Preview => 90_000,
+            Self::Generation => 300_000,
+        }
+    }
+
+    fn backoff_schedule_ms(self) -> &'static [u64] {
+        match self {
+            Self::Preview => &PREVIEW_BACKOFF_SCHEDULE_MS,
+            Self::Generation => &GENERATION_BACKOFF_SCHEDULE_MS,
+        }
+    }
+
+    fn backoff_for_retry_ms(self, attempt: u32) -> u64 {
+        self.backoff_schedule_ms()
+            .get(attempt as usize)
+            .copied()
+            .unwrap_or_else(|| *self.backoff_schedule_ms().last().unwrap_or(&0))
+    }
+
+    fn wait_before_jitter_ms(self, attempt: u32, retry_after_ms: Option<u64>) -> u64 {
+        let policy_backoff_ms = self.backoff_for_retry_ms(attempt);
+        std::cmp::min(
+            std::cmp::max(
+                retry_after_ms.unwrap_or(policy_backoff_ms),
+                policy_backoff_ms,
+            ),
+            self.backoff_cap_ms(),
+        )
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Preview => "preview",
+            Self::Generation => "generation",
+        }
+    }
+}
 
 /// Role string returned by AniList for main characters.
 const ROLE_MAIN: &str = "MAIN";
@@ -61,48 +120,52 @@ fn map_request_error(err: RequestError) -> String {
 }
 
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
-/// Uses exponential backoff with jitter: 5s, 10s, 20s, 40s, 80s (capped at 90s).
+/// Uses the configured retry profile's exponential backoff with jitter.
 async fn send_with_retry(
     request_builder: reqwest::RequestBuilder,
     client: &Client,
+    retry_policy: AnilistRetryPolicy,
 ) -> Result<reqwest::Response, RequestError> {
     let request = request_builder.build()?;
-    let mut delay_ms = 5000u64;
     let mut last_wait_ms = 0u64;
 
-    for attempt in 0..=MAX_RETRIES {
+    for attempt in 0..=retry_policy.max_retries() {
         let req_clone = request.try_clone().expect("Request body must be cloneable");
         let response = client.execute(req_clone).await?;
 
         if response.status() == 429 {
-            if attempt < MAX_RETRIES {
-                // Add random jitter (0-500ms) to avoid thundering herd
-                let jitter_ms: u64 = rand::thread_rng().gen_range(0..500);
-
-                let wait_ms = if let Some(retry_after) = response.headers().get("retry-after") {
-                    if let Ok(secs) = retry_after.to_str().unwrap_or("").parse::<u64>() {
-                        (secs * 1000).min(MAX_BACKOFF_MS) + jitter_ms
-                    } else {
-                        delay_ms.min(MAX_BACKOFF_MS) + jitter_ms
-                    }
-                } else {
-                    delay_ms.min(MAX_BACKOFF_MS) + jitter_ms
-                };
+            if attempt < retry_policy.max_retries() {
+                let jitter_ms: u64 = rand::thread_rng().gen_range(0..RETRY_JITTER_UPPER_BOUND_MS);
+                let retry_after_ms = response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|retry_after| retry_after.to_str().ok())
+                    .and_then(|raw| raw.parse::<u64>().ok())
+                    .map(|secs| secs.saturating_mul(1000));
+                let policy_backoff_ms = retry_policy.backoff_for_retry_ms(attempt);
+                let wait_without_jitter_ms =
+                    retry_policy.wait_before_jitter_ms(attempt, retry_after_ms);
+                let wait_ms = wait_without_jitter_ms + jitter_ms;
 
                 last_wait_ms = wait_ms;
                 warn!(
+                    retry_profile = retry_policy.label(),
                     attempt = attempt + 1,
-                    max_retries = MAX_RETRIES,
+                    max_retries = retry_policy.max_retries(),
+                    policy_backoff_ms = policy_backoff_ms,
+                    retry_after_ms = retry_after_ms,
+                    wait_without_jitter_ms = wait_without_jitter_ms,
                     wait_ms = wait_ms,
                     "AniList rate limited request, retrying"
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
-                delay_ms *= 2;
                 continue;
             }
 
             warn!(
+                retry_profile = retry_policy.label(),
                 attempts = attempt + 1,
+                max_retries = retry_policy.max_retries(),
                 last_wait_ms = last_wait_ms,
                 "AniList rate limit retries exhausted"
             );
@@ -116,18 +179,31 @@ async fn send_with_retry(
     }
 
     Err(RequestError::RateLimited {
-        attempts: MAX_RETRIES + 1,
+        attempts: retry_policy.max_retries() + 1,
         last_wait_ms,
     })
 }
 
 pub struct AnilistClient {
     client: Client,
+    retry_policy: AnilistRetryPolicy,
 }
 
 impl AnilistClient {
     pub fn with_client(client: Client) -> Self {
-        Self { client }
+        Self::with_retry_policy(client, AnilistRetryPolicy::Preview)
+    }
+
+    pub fn with_retry_policy(client: Client, retry_policy: AnilistRetryPolicy) -> Self {
+        Self {
+            client,
+            retry_policy,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retry_policy(&self) -> AnilistRetryPolicy {
+        self.retry_policy
     }
 
     pub fn normalize_user_input(input: &str) -> String {
@@ -269,6 +345,7 @@ impl AnilistClient {
                         "variables": variables
                     })),
                 &self.client,
+                self.retry_policy,
             )
             .await
             .map_err(map_request_error)?;
@@ -397,6 +474,7 @@ impl AnilistClient {
                         "variables": variables
                     })),
                 &self.client,
+                self.retry_policy,
             )
             .await
             .map_err(map_request_error)?;
@@ -620,6 +698,95 @@ mod tests {
 
     fn make_client() -> AnilistClient {
         AnilistClient::with_client(Client::new())
+    }
+
+    #[test]
+    fn test_preview_retry_policy_matches_current_timeout_and_retries() {
+        assert_eq!(
+            AnilistRetryPolicy::Preview.request_timeout(),
+            std::time::Duration::from_secs(60)
+        );
+        assert_eq!(AnilistRetryPolicy::Preview.max_retries(), 5);
+        assert_eq!(
+            AnilistRetryPolicy::Preview.backoff_schedule_ms(),
+            &PREVIEW_BACKOFF_SCHEDULE_MS
+        );
+        assert_eq!(AnilistRetryPolicy::Preview.backoff_cap_ms(), 90_000);
+    }
+
+    #[test]
+    fn test_generation_retry_policy_is_more_patient() {
+        assert_eq!(
+            AnilistRetryPolicy::Generation.request_timeout(),
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(AnilistRetryPolicy::Generation.max_retries(), 6);
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_schedule_ms(),
+            &GENERATION_BACKOFF_SCHEDULE_MS
+        );
+        assert_eq!(AnilistRetryPolicy::Generation.backoff_cap_ms(), 300_000);
+    }
+
+    #[test]
+    fn test_generation_retry_policy_backoff_schedule() {
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(0),
+            5_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(1),
+            15_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(2),
+            45_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(3),
+            135_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(4),
+            300_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.backoff_for_retry_ms(5),
+            300_000
+        );
+    }
+
+    #[test]
+    fn test_retry_policy_wait_uses_larger_of_retry_after_and_policy_backoff() {
+        assert_eq!(
+            AnilistRetryPolicy::Generation.wait_before_jitter_ms(1, Some(2_000)),
+            15_000
+        );
+        assert_eq!(
+            AnilistRetryPolicy::Generation.wait_before_jitter_ms(1, Some(120_000)),
+            120_000
+        );
+    }
+
+    #[test]
+    fn test_retry_policy_wait_caps_retry_after_before_jitter() {
+        assert_eq!(
+            AnilistRetryPolicy::Generation.wait_before_jitter_ms(0, Some(600_000)),
+            300_000
+        );
+    }
+
+    #[test]
+    fn test_with_client_uses_preview_retry_policy() {
+        let client = AnilistClient::with_client(Client::new());
+        assert_eq!(client.retry_policy(), AnilistRetryPolicy::Preview);
+    }
+
+    #[test]
+    fn test_with_retry_policy_uses_generation_retry_policy() {
+        let client =
+            AnilistClient::with_retry_policy(Client::new(), AnilistRetryPolicy::Generation);
+        assert_eq!(client.retry_policy(), AnilistRetryPolicy::Generation);
     }
 
     // ── process_character tests ──

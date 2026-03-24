@@ -277,30 +277,7 @@ impl VndbClient {
                 .as_array()
                 .ok_or("UPSTREAM: Invalid VNDB ulist response format")?;
 
-            for item in results {
-                let id = item["id"].as_str().unwrap_or("").to_string();
-                if id.is_empty() {
-                    continue;
-                }
-
-                let title_romaji = item["vn"]["title"].as_str().unwrap_or("").to_string();
-                let title_japanese = item["vn"]["alttitle"].as_str().unwrap_or("").to_string();
-
-                // Prefer Japanese title, fall back to romaji
-                let title = if !title_japanese.is_empty() {
-                    title_japanese
-                } else {
-                    title_romaji.clone()
-                };
-
-                entries.push(UserMediaEntry {
-                    id,
-                    title,
-                    title_romaji,
-                    source: "vndb".to_string(),
-                    media_type: "vn".to_string(),
-                });
-            }
+            entries.extend(Self::parse_user_list_results(results));
 
             if !data["more"].as_bool().unwrap_or(false) {
                 break;
@@ -311,6 +288,50 @@ impl VndbClient {
         }
 
         Ok(entries)
+    }
+
+    fn parse_user_list_results(results: &[serde_json::Value]) -> Vec<UserMediaEntry> {
+        let mut entries = Vec::new();
+
+        for item in results {
+            let raw_id = item["id"].as_str().unwrap_or("").trim();
+            if raw_id.is_empty() {
+                continue;
+            }
+
+            let title_romaji = item["vn"]["title"].as_str().unwrap_or("").to_string();
+            let title_japanese = item["vn"]["alttitle"].as_str().unwrap_or("").to_string();
+
+            // Prefer Japanese title, fall back to romaji
+            let title = if !title_japanese.is_empty() {
+                title_japanese
+            } else {
+                title_romaji.clone()
+            };
+
+            let id = match Self::parse_vn_id(raw_id) {
+                Ok(id) => id,
+                Err(error) => {
+                    warn!(
+                        raw_id = raw_id,
+                        title = %title,
+                        error = %error,
+                        "Skipping VNDB list entry with invalid media ID"
+                    );
+                    continue;
+                }
+            };
+
+            entries.push(UserMediaEntry {
+                id,
+                title,
+                title_romaji,
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+            });
+        }
+
+        entries
     }
 
     /// Normalize VN ID: accepts "17", "v17", "V17" → always returns "v17".
@@ -663,6 +684,22 @@ mod tests {
     #[test]
     fn test_parse_vn_id_invalid_string() {
         assert!(VndbClient::parse_vn_id("hello").is_err());
+    }
+
+    #[test]
+    fn test_parse_user_list_results_normalizes_url_ids() {
+        let results = vec![serde_json::json!({
+            "id": "https://vndb.org/v17763",
+            "vn": {
+                "title": "Muv-Luv Alternative",
+                "alttitle": "マブラヴ オルタネイティヴ"
+            }
+        })];
+
+        let entries = VndbClient::parse_user_list_results(&results);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "v17763");
+        assert_eq!(entries[0].title, "マブラヴ オルタネイティヴ");
     }
 
     // Helper to assert parse_user_input results
