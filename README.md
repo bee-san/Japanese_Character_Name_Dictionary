@@ -35,6 +35,10 @@ If you are an application developer (Manabi, JL, Lunatranslator, Manatan etc) po
 
 **All this below is AI slop btw**
 
+## Codex Skills
+
+* [`add-honorifics`](skills/add-honorifics/SKILL.md) helps Codex add or update honorific suffixes, related tests, and honorific-specific card behavior.
+
 ### Building it
 
 Install Rust

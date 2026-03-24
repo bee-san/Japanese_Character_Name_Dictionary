@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Honorifics"
+  short_description: "Add or update honorific suffix support"
+  default_prompt: "Use $add-honorifics to add or update honorific suffix support in this Rust dictionary builder."
