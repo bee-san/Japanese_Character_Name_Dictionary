@@ -66,6 +66,13 @@ const SEX_DISPLAY: &[(&str, &str)] = &[
     ("female", "♀ Female"),
 ];
 
+const ID_NAME: &str = "name";
+const ID_NAME_ROMAJI: &str = "name-romaji";
+const ID_PORTRAIT_CONTAINER: &str = "portrait-container";
+const ID_SOURCE: &str = "source";
+const ID_ROLE_CONTAINER: &str = "role-container";
+const ID_ROLE: &str = "role";
+
 /// Per-dictionary display settings that control which sections appear in
 /// the generated Yomitan structured-content cards.
 #[derive(Clone, Debug)]
@@ -335,7 +342,7 @@ impl ContentBuilder {
         if !char.name_original.is_empty() {
             content.push(json!({
                 "tag": "div",
-                "data": { "id": "name" },
+                "data": { "id": ID_NAME },
                 "style": { "fontWeight": "bold", "fontSize": "1.2em" },
                 "content": &char.name_original
             }));
@@ -345,7 +352,7 @@ impl ContentBuilder {
         if !char.name.is_empty() {
             content.push(json!({
                 "tag": "div",
-                "data": { "id": "name-romaji" },
+                "data": { "id": ID_NAME_ROMAJI },
                 "style": { "fontStyle": "italic", "color": "#666", "marginBottom": "8px" },
                 "content": &char.name
             }));
@@ -363,14 +370,18 @@ impl ContentBuilder {
                     _ => (Self::FALLBACK_DISPLAY_WIDTH, Self::MAX_DISPLAY_HEIGHT),
                 };
                 content.push(json!({
-                    "tag": "img",
-                    "path": path,
-                    "width": display_w,
-                    "height": display_h,
-                    "sizeUnits": "px",
-                    "collapsible": false,
-                    "collapsed": false,
-                    "background": false
+                    "tag": "div",
+                    "data": { "id": ID_PORTRAIT_CONTAINER },
+                    "content": {
+                        "tag": "img",
+                        "path": path,
+                        "width": display_w,
+                        "height": display_h,
+                        "sizeUnits": "px",
+                        "collapsible": false,
+                        "collapsed": false,
+                        "background": false
+                    }
                 }));
             }
         }
@@ -379,6 +390,7 @@ impl ContentBuilder {
         if !game_title.is_empty() {
             content.push(json!({
                 "tag": "div",
+                "data": { "id": ID_SOURCE },
                 "style": { "fontSize": "0.9em", "color": "#888", "marginTop": "4px" },
                 "content": format!("From: {}", game_title)
             }));
@@ -403,7 +415,7 @@ impl ContentBuilder {
             // so we nest a div > span instead of using a single inline div.
             content.push(json!({
                 "tag": "div",
-                "data": { "id": "role-container" },
+                "data": { "id": ID_ROLE_CONTAINER },
                 "content": {
                     "tag": "span",
                     "style": {
@@ -414,7 +426,7 @@ impl ContentBuilder {
                         "fontSize": "0.85em",
                         "marginTop": "4px"
                     },
-                    "data": { "id": "role" },
+                    "data": { "id": ID_ROLE },
                     "content": role_label
                 }
             }));
@@ -562,7 +574,7 @@ impl ContentBuilder {
         if !char.name_original.is_empty() {
             content.push(json!({
                 "tag": "div",
-                "data": { "id": "name" },
+                "data": { "id": ID_NAME },
                 "style": { "fontWeight": "bold", "fontSize": "1.2em" },
                 "content": &char.name_original
             }));
@@ -572,7 +584,7 @@ impl ContentBuilder {
         if !char.name.is_empty() {
             content.push(json!({
                 "tag": "div",
-                "data": { "id": "name-romaji" },
+                "data": { "id": ID_NAME_ROMAJI },
                 "style": { "fontStyle": "italic", "color": "#666", "marginBottom": "8px" },
                 "content": &char.name
             }));
@@ -590,14 +602,18 @@ impl ContentBuilder {
                     _ => (Self::FALLBACK_DISPLAY_WIDTH, Self::MAX_DISPLAY_HEIGHT),
                 };
                 content.push(json!({
-                    "tag": "img",
-                    "path": path,
-                    "width": display_w,
-                    "height": display_h,
-                    "sizeUnits": "px",
-                    "collapsible": false,
-                    "collapsed": false,
-                    "background": false
+                    "tag": "div",
+                    "data": { "id": ID_PORTRAIT_CONTAINER },
+                    "content": {
+                        "tag": "img",
+                        "path": path,
+                        "width": display_w,
+                        "height": display_h,
+                        "sizeUnits": "px",
+                        "collapsible": false,
+                        "collapsed": false,
+                        "background": false
+                    }
                 }));
             }
         }
@@ -625,13 +641,14 @@ impl ContentBuilder {
                         "borderRadius": "3px",
                         "fontSize": "0.85em"
                     },
-                    "data": { "id": "role" },
+                    "data": { "id": ID_ROLE },
                     "content": role_label
                 })];
 
                 if !media_title.is_empty() {
                     row_content.push(json!({
                         "tag": "span",
+                        "data": { "id": ID_SOURCE },
                         "style": { "fontSize": "0.9em", "color": "#888" },
                         "content": format!(" From: {}", media_title)
                     }));
@@ -639,7 +656,7 @@ impl ContentBuilder {
 
                 content.push(json!({
                     "tag": "div",
-                    "data": { "id": "role-container" },
+                    "data": { "id": ID_ROLE_CONTAINER },
                     "style": { "marginTop": "4px" },
                     "content": row_content
                 }));
@@ -647,6 +664,7 @@ impl ContentBuilder {
                 // No role badge, just show the media title
                 content.push(json!({
                     "tag": "div",
+                    "data": { "id": ID_SOURCE },
                     "style": { "fontSize": "0.9em", "color": "#888", "marginTop": "4px" },
                     "content": format!("From: {}", media_title)
                 }));
@@ -1168,16 +1186,23 @@ mod tests {
         // Should contain name and role
         let name = items
             .iter()
-            .find(|v| v["data"]["id"].as_str() == Some("name"))
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME))
             .expect("Name element should exist");
         let name_romaji = items
             .iter()
-            .find(|v| v["data"]["id"].as_str() == Some("name-romaji"))
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME_ROMAJI))
             .expect("Romaji name element should exist");
         let role_container = items
             .iter()
-            .find(|v| v["data"]["id"].as_str() == Some("role-container"))
+            .find(|v| v["data"]["id"].as_str() == Some(ID_ROLE_CONTAINER))
             .expect("Role container element should exist");
+        let source = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_SOURCE))
+            .expect("Source element should exist");
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER));
 
         assert_eq!(
             name["content"].as_str(),
@@ -1193,6 +1218,15 @@ mod tests {
             role_container["content"]["content"].as_str(),
             Some("Protagonist"),
             "Should contain role label"
+        );
+        assert_eq!(
+            source["content"].as_str(),
+            Some("From: Test Game"),
+            "Should contain media source"
+        );
+        assert!(
+            portrait_container.is_none(),
+            "Should not contain portrait image as no image path was provided"
         );
     }
 
@@ -1235,8 +1269,49 @@ mod tests {
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c123.jpg"), None, None, None, "Test Game");
         let items = content["content"].as_array().unwrap();
-        let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
-        assert!(has_img, "Should contain image tag");
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("Portrait container should exist");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
+    }
+
+    #[test]
+    fn test_build_content_and_merged_content_use_same_data_ids() {
+        let cb = ContentBuilder::new(settings_full());
+        let char = make_test_character();
+
+        let single = cb.build_content(
+            &char,
+            Some("img/c123.jpg"),
+            Some((100, 150)),
+            None,
+            None,
+            "Test Game",
+        );
+        let merged = cb.build_merged_content(
+            &char,
+            Some("img/c123.jpg"),
+            Some((100, 150)),
+            None,
+            None,
+            &[("main".to_string(), "Test Game".to_string())],
+        );
+
+        let single_content = serde_json::to_string(&single).unwrap();
+        let merged_content = serde_json::to_string(&merged).unwrap();
+
+        for expected in [
+            ID_NAME,
+            ID_NAME_ROMAJI,
+            ID_PORTRAIT_CONTAINER,
+            ID_SOURCE,
+            ID_ROLE_CONTAINER,
+            ID_ROLE,
+        ] {
+            assert!(single_content.contains(&format!(r#""id":"{}""#, expected)));
+            assert!(merged_content.contains(&format!(r#""id":"{}""#, expected)));
+        }
     }
 
     // === Term entry format tests ===
@@ -1468,7 +1543,7 @@ mod tests {
         // Should use fallback color and "Unknown" label
         let role_container = items
             .iter()
-            .find(|v| v["data"]["id"].as_str() == Some("role-container"))
+            .find(|v| v["data"]["id"].as_str() == Some(ID_ROLE_CONTAINER))
             .expect("Role container element should exist");
         assert_eq!(
             role_container["content"]["style"]["background"].as_str(),
@@ -1796,8 +1871,12 @@ mod tests {
         let cb = ContentBuilder::new(settings_minimal());
         let char = make_test_character();
         let content = cb.build_content(&char, None, None, None, None, "Steins;Gate");
-        let content_str = serde_json::to_string(&content).unwrap();
-        assert!(content_str.contains("Steins;Gate"));
+        let items = content["content"].as_array().unwrap();
+        let source = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_SOURCE))
+            .expect("Source element should exist");
+        assert_eq!(source["content"].as_str(), Some("From: Steins;Gate"));
     }
 
     #[test]
@@ -1849,9 +1928,16 @@ mod tests {
             None,
             "Test",
         );
-        let content_str = serde_json::to_string(&content).unwrap();
-        assert!(content_str.contains("img/c1.jpg"));
-        assert!(content_str.contains("\"tag\":\"img\""));
+        let items = content["content"].as_array().unwrap();
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("Portrait container should exist");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
+        assert_eq!(
+            portrait_container["content"]["path"].as_str(),
+            Some("img/c1.jpg")
+        );
     }
 
     #[test]
@@ -2068,8 +2154,11 @@ mod tests {
             "Game",
         );
         let items = content["content"].as_array().unwrap();
-        let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
-        assert!(has_img, "show_image=true should include img tag");
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("show_image=true should include portrait image");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
     }
 
     #[test]
@@ -2088,21 +2177,38 @@ mod tests {
             "Game",
         );
         let items = content["content"].as_array().unwrap();
-        let has_img = items.iter().any(|v| v["tag"].as_str() == Some("img"));
-        assert!(!has_img, "show_image=false should exclude img tag");
-    }
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER));
+        let name = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME))
+            .expect("Name element should still exist");
+        let name_romaji = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME_ROMAJI))
+            .expect("Romaji name element should still exist");
+        let role_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_ROLE_CONTAINER))
+            .expect("Role container element should still exist");
+        let source = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_SOURCE))
+            .expect("Source element should still exist");
 
-    #[test]
-    fn test_show_image_false_still_shows_name_and_role() {
-        let cb = ContentBuilder::new(DictSettings {
-            show_image: false,
-            ..DictSettings::default()
-        });
-        let char = make_test_character();
-        let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
-        let content_str = serde_json::to_string(&content).unwrap();
-        assert!(content_str.contains(&char.name_original));
-        assert!(content_str.contains(&char.name));
+        assert!(
+            portrait_container.is_none(),
+            "show_image=false should exclude portrait image"
+        );
+        assert_eq!(name["content"].as_str(), Some(char.name_original.as_str()));
+        assert_eq!(name_romaji["content"].as_str(), Some(char.name.as_str()));
+        assert_eq!(
+            role_container["content"]["content"].as_str(),
+            Some("Protagonist"),
+            "Should contain role label"
+        );
+        assert_eq!(source["content"].as_str(), Some("From: Game"));
     }
 
     // --- show_tag toggle ---
@@ -2137,7 +2243,7 @@ mod tests {
         // Role badge uses a div wrapper — verify no role-container exists
         let role_containers: Vec<_> = items
             .iter()
-            .filter(|v| v["data"]["id"].as_str() == Some("role-container"))
+            .filter(|v| v["data"]["id"].as_str() == Some(ID_ROLE_CONTAINER))
             .collect();
         assert!(
             role_containers.is_empty(),
@@ -2365,20 +2471,26 @@ mod tests {
             let tag = item["tag"].as_str().unwrap_or("");
             assert_eq!(tag, "div", "With all sections off, only div elements (names + source) should remain, got tag '{}'", tag);
         }
+        let name = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME))
+            .expect("Japanese name should always be present");
+        let name_romaji = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_NAME_ROMAJI))
+            .expect("Romanized name should always be present");
+        let portrait_container = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER));
+        let source = items
+            .iter()
+            .find(|v| v["data"]["id"].as_str() == Some(ID_SOURCE))
+            .expect("Source element should be present");
         let content_str = serde_json::to_string(&content).unwrap();
-        assert!(
-            content_str.contains(&char.name_original),
-            "Japanese name should always be present"
-        );
-        assert!(
-            content_str.contains(&char.name),
-            "Romanized name should always be present"
-        );
-        assert!(
-            content_str.contains("Game Title"),
-            "Media source should always be present"
-        );
-        assert!(!content_str.contains("\"img\""), "No img tag");
+        assert_eq!(name["content"].as_str(), Some(char.name_original.as_str()));
+        assert_eq!(name_romaji["content"].as_str(), Some(char.name.as_str()));
+        assert_eq!(source["content"].as_str(), Some("From: Game Title"));
+        assert!(portrait_container.is_none(), "No portrait");
         assert!(!content_str.contains("Description"), "No description");
         assert!(!content_str.contains("Character Information"), "No traits");
     }
@@ -2548,17 +2660,18 @@ mod tests {
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c1.jpg"), Some((0, 0)), None, None, "Game");
         let items = content["content"].as_array().unwrap();
-        let img = items
+        let portrait_container = items
             .iter()
-            .find(|v| v["tag"].as_str() == Some("img"))
-            .unwrap();
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("Portrait container should exist");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
         assert_eq!(
-            img["width"].as_u64().unwrap(),
+            portrait_container["content"]["width"].as_u64().unwrap(),
             67,
             "Should use fallback width"
         );
         assert_eq!(
-            img["height"].as_u64().unwrap(),
+            portrait_container["content"]["height"].as_u64().unwrap(),
             100,
             "Should use fallback height"
         );
@@ -2577,13 +2690,17 @@ mod tests {
             "Game",
         );
         let items = content["content"].as_array().unwrap();
-        let img = items
+        let portrait_container = items
             .iter()
-            .find(|v| v["tag"].as_str() == Some("img"))
-            .unwrap();
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("Portrait container should exist");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
         // height capped at 100, so width = (200 * 100 + 200) / 400 = 50
-        assert_eq!(img["height"].as_u64().unwrap(), 100);
-        assert_eq!(img["width"].as_u64().unwrap(), 50);
+        assert_eq!(
+            portrait_container["content"]["height"].as_u64().unwrap(),
+            100
+        );
+        assert_eq!(portrait_container["content"]["width"].as_u64().unwrap(), 50);
     }
 
     #[test]
@@ -2592,12 +2709,16 @@ mod tests {
         let char = make_test_character();
         let content = cb.build_content(&char, Some("img/c1.jpg"), None, None, None, "Game");
         let items = content["content"].as_array().unwrap();
-        let img = items
+        let portrait_container = items
             .iter()
-            .find(|v| v["tag"].as_str() == Some("img"))
-            .unwrap();
-        assert_eq!(img["width"].as_u64().unwrap(), 67);
-        assert_eq!(img["height"].as_u64().unwrap(), 100);
+            .find(|v| v["data"]["id"].as_str() == Some(ID_PORTRAIT_CONTAINER))
+            .expect("Portrait container should exist");
+        assert_eq!(portrait_container["content"]["tag"].as_str(), Some("img"));
+        assert_eq!(portrait_container["content"]["width"].as_u64().unwrap(), 67);
+        assert_eq!(
+            portrait_container["content"]["height"].as_u64().unwrap(),
+            100
+        );
     }
 
     // --- Role color/label mapping ---
