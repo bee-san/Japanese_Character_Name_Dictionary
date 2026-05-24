@@ -729,115 +729,117 @@ fn normalize_entries_json_for_url(entries_json: &str) -> String {
     }
 }
 
-fn log_generation_summary(
-    state: &AppState,
-    request_id: &str,
-    mode: &str,
+struct GenerationSummaryContext<'a> {
+    state: &'a AppState,
+    request_id: &'a str,
+    mode: &'a str,
     started_at: std::time::Instant,
-    stats: &GenerationStats,
-    builder: Option<&DictBuilder>,
-    zip_size_bytes: Option<usize>,
-    error: Option<&str>,
-    media_failures: &[MediaGenerationFailure],
-) {
-    let skipped_no_japanese_count = builder
-        .map(DictBuilder::skipped_no_japanese_count)
-        .unwrap_or(0);
-    let duration_ms = started_at.elapsed().as_millis() as u64;
-    let zip_size_bytes = zip_size_bytes.unwrap_or(0);
-    let (request_id, failed_media_count, failed_media_preview) =
-        generation_summary_failure_context(request_id, media_failures);
-
-    match error {
-        Some(error) => warn!(
-            boot_id = %state.boot_id,
-            request_id = %request_id,
-            mode = mode,
-            media_total = stats.media_total,
-            cache_hits = stats.total_cache_hits(),
-            cache_misses = stats.total_cache_misses(),
-            vndb_cache_hits = stats.vndb_cache_hits,
-            vndb_cache_misses = stats.vndb_cache_misses,
-            anilist_cache_hits = stats.anilist_cache_hits,
-            anilist_cache_misses = stats.anilist_cache_misses,
-            upstream_failures = stats.total_external_failures(),
-            rate_limit_failures = stats.rate_limit_failures,
-            invalid_input_failures = stats.invalid_input_failures,
-            skipped_no_japanese_count = skipped_no_japanese_count,
-            failed_media_count = failed_media_count,
-            failed_media_preview = ?failed_media_preview,
-            zip_size_bytes = zip_size_bytes,
-            duration_ms = duration_ms,
-            error = %error,
-            "Dictionary generation failed"
-        ),
-        None => info!(
-            boot_id = %state.boot_id,
-            request_id = %request_id,
-            mode = mode,
-            media_total = stats.media_total,
-            cache_hits = stats.total_cache_hits(),
-            cache_misses = stats.total_cache_misses(),
-            vndb_cache_hits = stats.vndb_cache_hits,
-            vndb_cache_misses = stats.vndb_cache_misses,
-            anilist_cache_hits = stats.anilist_cache_hits,
-            anilist_cache_misses = stats.anilist_cache_misses,
-            upstream_failures = stats.total_external_failures(),
-            rate_limit_failures = stats.rate_limit_failures,
-            invalid_input_failures = stats.invalid_input_failures,
-            skipped_no_japanese_count = skipped_no_japanese_count,
-            failed_media_count = failed_media_count,
-            failed_media_preview = ?failed_media_preview,
-            zip_size_bytes = zip_size_bytes,
-            duration_ms = duration_ms,
-            "Dictionary generation completed"
-        ),
-    }
+    stats: &'a GenerationStats,
+    media_failures: &'a [MediaGenerationFailure],
 }
 
-fn finalize_multi_media_generation(
-    request_id: &str,
-    state: &AppState,
-    mode: &str,
-    started_at: std::time::Instant,
-    stats: &GenerationStats,
-    builder: &mut DictBuilder,
-    total_requested: usize,
-    collected_errors: &[String],
-    media_failures: &[MediaGenerationFailure],
-) -> Result<Vec<u8>, String> {
-    builder.log_skipped_no_japanese_summary();
-
-    if !media_failures.is_empty() {
-        let error =
-            build_multi_media_abort_error(total_requested, media_failures, collected_errors);
-        log_generation_summary(
+impl<'a> GenerationSummaryContext<'a> {
+    fn new(
+        state: &'a AppState,
+        request_id: &'a str,
+        mode: &'a str,
+        started_at: std::time::Instant,
+        stats: &'a GenerationStats,
+        media_failures: &'a [MediaGenerationFailure],
+    ) -> Self {
+        Self {
             state,
             request_id,
             mode,
             started_at,
             stats,
-            Some(builder),
-            None,
-            Some(&error),
             media_failures,
+        }
+    }
+
+    fn log(
+        &self,
+        builder: Option<&DictBuilder>,
+        zip_size_bytes: Option<usize>,
+        error: Option<&str>,
+    ) {
+        let skipped_no_japanese_count = builder
+            .map(DictBuilder::skipped_no_japanese_count)
+            .unwrap_or(0);
+        let duration_ms = self.started_at.elapsed().as_millis() as u64;
+        let zip_size_bytes = zip_size_bytes.unwrap_or(0);
+        let (request_id, failed_media_count, failed_media_preview) =
+            generation_summary_failure_context(self.request_id, self.media_failures);
+
+        match error {
+            Some(error) => warn!(
+                boot_id = %self.state.boot_id,
+                request_id = %request_id,
+                mode = self.mode,
+                media_total = self.stats.media_total,
+                cache_hits = self.stats.total_cache_hits(),
+                cache_misses = self.stats.total_cache_misses(),
+                vndb_cache_hits = self.stats.vndb_cache_hits,
+                vndb_cache_misses = self.stats.vndb_cache_misses,
+                anilist_cache_hits = self.stats.anilist_cache_hits,
+                anilist_cache_misses = self.stats.anilist_cache_misses,
+                upstream_failures = self.stats.total_external_failures(),
+                rate_limit_failures = self.stats.rate_limit_failures,
+                invalid_input_failures = self.stats.invalid_input_failures,
+                skipped_no_japanese_count = skipped_no_japanese_count,
+                failed_media_count = failed_media_count,
+                failed_media_preview = ?failed_media_preview,
+                zip_size_bytes = zip_size_bytes,
+                duration_ms = duration_ms,
+                error = %error,
+                "Dictionary generation failed"
+            ),
+            None => info!(
+                boot_id = %self.state.boot_id,
+                request_id = %request_id,
+                mode = self.mode,
+                media_total = self.stats.media_total,
+                cache_hits = self.stats.total_cache_hits(),
+                cache_misses = self.stats.total_cache_misses(),
+                vndb_cache_hits = self.stats.vndb_cache_hits,
+                vndb_cache_misses = self.stats.vndb_cache_misses,
+                anilist_cache_hits = self.stats.anilist_cache_hits,
+                anilist_cache_misses = self.stats.anilist_cache_misses,
+                upstream_failures = self.stats.total_external_failures(),
+                rate_limit_failures = self.stats.rate_limit_failures,
+                invalid_input_failures = self.stats.invalid_input_failures,
+                skipped_no_japanese_count = skipped_no_japanese_count,
+                failed_media_count = failed_media_count,
+                failed_media_preview = ?failed_media_preview,
+                zip_size_bytes = zip_size_bytes,
+                duration_ms = duration_ms,
+                "Dictionary generation completed"
+            ),
+        }
+    }
+}
+
+fn finalize_multi_media_generation(
+    builder: &mut DictBuilder,
+    total_requested: usize,
+    collected_errors: &[String],
+    log_context: &GenerationSummaryContext<'_>,
+) -> Result<Vec<u8>, String> {
+    builder.log_skipped_no_japanese_summary();
+
+    if !log_context.media_failures.is_empty() {
+        let error = build_multi_media_abort_error(
+            total_requested,
+            log_context.media_failures,
+            collected_errors,
         );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
     if !collected_errors.is_empty() {
         let error = combine_service_errors(collected_errors);
-        log_generation_summary(
-            state,
-            request_id,
-            mode,
-            started_at,
-            stats,
-            Some(builder),
-            None,
-            Some(&error),
-            media_failures,
-        );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
@@ -846,49 +848,19 @@ fn finalize_multi_media_generation(
             "{} No character entries were generated from the requested media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            mode,
-            started_at,
-            stats,
-            Some(builder),
-            None,
-            Some(&error),
-            media_failures,
-        );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
-                state,
-                request_id,
-                mode,
-                started_at,
-                stats,
-                Some(builder),
-                None,
-                Some(&error),
-                media_failures,
-            );
+            log_context.log(Some(builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        mode,
-        started_at,
-        stats,
-        Some(builder),
-        Some(zip_bytes.len()),
-        None,
-        media_failures,
-    );
+    log_context.log(Some(builder), Some(zip_bytes.len()), None);
 
     Ok(zip_bytes)
 }
@@ -2103,17 +2075,15 @@ async fn generate_dict_from_usernames(
                 stats.record_failure(&e);
                 collected_errors.push(e.clone());
                 if anilist_user.is_empty() {
-                    log_generation_summary(
+                    GenerationSummaryContext::new(
                         state,
                         request_id,
                         "usernames",
                         started_at,
                         &stats,
-                        None,
-                        None,
-                        Some(&e),
                         &media_failures,
-                    );
+                    )
+                    .log(None, None, Some(&e));
                     return Err(e);
                 }
                 warn!(
@@ -2135,17 +2105,15 @@ async fn generate_dict_from_usernames(
                 stats.record_failure(&e);
                 collected_errors.push(e.clone());
                 if vndb_user.is_empty() || media_entries.is_empty() {
-                    log_generation_summary(
+                    GenerationSummaryContext::new(
                         state,
                         request_id,
                         "usernames",
                         started_at,
                         &stats,
-                        None,
-                        None,
-                        Some(&e),
                         &media_failures,
-                    );
+                    )
+                    .log(None, None, Some(&e));
                     return Err(e);
                 }
                 warn!(
@@ -2176,17 +2144,15 @@ async fn generate_dict_from_usernames(
         } else {
             combine_service_errors(&collected_errors)
         };
-        log_generation_summary(
+        GenerationSummaryContext::new(
             state,
             request_id,
             "usernames",
             started_at,
             &stats,
-            None,
-            None,
-            Some(&error),
             &media_failures,
-        );
+        )
+        .log(None, None, Some(&error));
         return Err(error);
     }
 
@@ -2411,17 +2377,15 @@ async fn generate_dict_from_usernames(
         }
     }
 
-    finalize_multi_media_generation(
-        request_id,
+    let log_context = GenerationSummaryContext::new(
         state,
+        request_id,
         "usernames",
         started_at,
         &stats,
-        &mut builder,
-        total,
-        &collected_errors,
         &media_failures,
-    )
+    );
+    finalize_multi_media_generation(&mut builder, total, &collected_errors, &log_context)
 }
 
 // === Generate dictionary from multiple manual media entries ===
@@ -2476,17 +2440,15 @@ async fn generate_dict_from_entries(
         } else {
             format!("{} No valid entries provided", INVALID_INPUT_PREFIX)
         };
-        log_generation_summary(
+        GenerationSummaryContext::new(
             state,
             request_id,
             "manual_entries",
             started_at,
             &stats,
-            None,
-            None,
-            Some(&error),
             &media_failures,
-        );
+        )
+        .log(None, None, Some(&error));
         return Err(error);
     }
 
@@ -2679,16 +2641,19 @@ async fn generate_dict_from_entries(
         }
     }
 
-    finalize_multi_media_generation(
-        request_id,
+    let log_context = GenerationSummaryContext::new(
         state,
+        request_id,
         "manual_entries",
         started_at,
         &stats,
+        &media_failures,
+    );
+    finalize_multi_media_generation(
         &mut builder,
         total_requested,
         &collected_errors,
-        &media_failures,
+        &log_context,
     )
 }
 
@@ -2855,7 +2820,7 @@ async fn generate_dict(
                 StatusCode::BAD_REQUEST,
                 "source must be 'vndb' or 'anilist'",
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -3105,17 +3070,15 @@ async fn generate_vndb_dict(
         Ok(result) => result,
         Err(error) => {
             stats.record_failure(&error);
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_vndb",
                 started_at,
                 &stats,
-                None,
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(None, None, Some(&error));
             return Err(error);
         }
     };
@@ -3139,48 +3102,31 @@ async fn generate_vndb_dict(
             "{} No character entries were generated for the requested VNDB media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            "single_vndb",
-            started_at,
-            &stats,
-            Some(&builder),
-            None,
-            Some(&error),
-            &[],
-        );
+        GenerationSummaryContext::new(state, request_id, "single_vndb", started_at, &stats, &[])
+            .log(Some(&builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_vndb",
                 started_at,
                 &stats,
-                Some(&builder),
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(Some(&builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        "single_vndb",
-        started_at,
-        &stats,
+    GenerationSummaryContext::new(state, request_id, "single_vndb", started_at, &stats, &[]).log(
         Some(&builder),
         Some(zip_bytes.len()),
         None,
-        &[],
     );
 
     Ok(zip_bytes)
@@ -3204,17 +3150,15 @@ async fn generate_anilist_dict(
             Ok(result) => result,
             Err(error) => {
                 stats.record_failure(&error);
-                log_generation_summary(
+                GenerationSummaryContext::new(
                     state,
                     request_id,
                     "single_anilist",
                     started_at,
                     &stats,
-                    None,
-                    None,
-                    Some(&error),
                     &[],
-                );
+                )
+                .log(None, None, Some(&error));
                 return Err(error);
             }
         };
@@ -3238,49 +3182,29 @@ async fn generate_anilist_dict(
             "{} No character entries were generated for the requested AniList media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            "single_anilist",
-            started_at,
-            &stats,
-            Some(&builder),
-            None,
-            Some(&error),
-            &[],
-        );
+        GenerationSummaryContext::new(state, request_id, "single_anilist", started_at, &stats, &[])
+            .log(Some(&builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_anilist",
                 started_at,
                 &stats,
-                Some(&builder),
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(Some(&builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        "single_anilist",
-        started_at,
-        &stats,
-        Some(&builder),
-        Some(zip_bytes.len()),
-        None,
-        &[],
-    );
+    GenerationSummaryContext::new(state, request_id, "single_anilist", started_at, &stats, &[])
+        .log(Some(&builder), Some(zip_bytes.len()), None);
 
     Ok(zip_bytes)
 }
@@ -3499,18 +3423,16 @@ mod tests {
             ..GenerationStats::default()
         };
 
-        let error = finalize_multi_media_generation(
-            "req-usernames",
+        let log_context = GenerationSummaryContext::new(
             &state,
+            "req-usernames",
             "usernames",
             std::time::Instant::now(),
             &stats,
-            &mut builder,
-            2,
-            &[],
             &failures,
-        )
-        .unwrap_err();
+        );
+        let error =
+            finalize_multi_media_generation(&mut builder, 2, &[], &log_context).unwrap_err();
 
         assert_eq!(status_code_for_error(&error), StatusCode::BAD_GATEWAY);
         assert_eq!(

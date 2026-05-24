@@ -2042,12 +2042,12 @@ mod tests {
             show_seiyuu: true,
         };
         let cloned = s.clone();
-        assert_eq!(cloned.show_image, false);
-        assert_eq!(cloned.show_tag, true);
-        assert_eq!(cloned.show_description, false);
-        assert_eq!(cloned.show_traits, true);
-        assert_eq!(cloned.show_spoilers, false);
-        assert_eq!(cloned.honorifics, false);
+        assert!(!cloned.show_image);
+        assert!(cloned.show_tag);
+        assert!(!cloned.show_description);
+        assert!(cloned.show_traits);
+        assert!(!cloned.show_spoilers);
+        assert!(!cloned.honorifics);
     }
 
     // --- show_image toggle ---
@@ -2363,7 +2363,11 @@ mod tests {
         // Should only have: Japanese name div, Romanized name div, "From: Game Title" div
         for item in items {
             let tag = item["tag"].as_str().unwrap_or("");
-            assert_eq!(tag, "div", "With all sections off, only div elements (names + source) should remain, got tag '{}'", tag);
+            assert_eq!(
+                tag, "div",
+                "With all sections off, only div elements (names + source) should remain, got tag '{}'",
+                tag
+            );
         }
         let content_str = serde_json::to_string(&content).unwrap();
         assert!(
