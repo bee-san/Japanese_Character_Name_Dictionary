@@ -75,6 +75,7 @@ function generateFrequencyDictionary() {
     generateBtn.textContent = 'Generating...';
     progressContainer.classList.add('show');
     progressBar.style.width = '0%';
+    progressBar.setAttribute('aria-valuenow', '0');
     progressBar.textContent = '';
     setStatus(status, 'Starting frequency dictionary generation...', 'loading');
 
@@ -86,6 +87,7 @@ function generateFrequencyDictionary() {
         const current = Math.min(Number(data.current) || 0, total);
         const pct = Math.round((current / total) * 100);
         progressBar.style.width = pct + '%';
+        progressBar.setAttribute('aria-valuenow', String(pct));
         progressBar.textContent = `${current}/${total}`;
         setStatus(status, `${data.stage}: ${data.title}`, 'loading');
     });
@@ -101,6 +103,7 @@ function generateFrequencyDictionary() {
         eventSource.close();
         const data = JSON.parse(event.data);
         progressBar.style.width = '100%';
+        progressBar.setAttribute('aria-valuenow', '100');
         progressBar.textContent = 'Done!';
 
         if (data.unmatched) {
@@ -146,6 +149,7 @@ function generateFrequencyDictionary() {
         fetchBtn.disabled = false;
         generateBtn.textContent = 'Generate Frequency Dictionary';
         progressContainer.classList.remove('show');
+        progressBar.setAttribute('aria-valuenow', '0');
     });
 
     eventSource.onerror = () => {
@@ -156,6 +160,7 @@ function generateFrequencyDictionary() {
             fetchBtn.disabled = false;
             generateBtn.textContent = 'Generate Frequency Dictionary';
             progressContainer.classList.remove('show');
+            progressBar.setAttribute('aria-valuenow', '0');
         }
     };
 }

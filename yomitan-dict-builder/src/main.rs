@@ -1679,6 +1679,10 @@ async fn generate_frequency_from_media_entries(
         successful_decks += 1;
     }
 
+    if !deck_errors.is_empty() {
+        return Err(combine_service_errors(&deck_errors));
+    }
+
     if successful_decks == 0 {
         return Err(combine_service_errors(&deck_errors));
     }
@@ -1699,12 +1703,20 @@ async fn generate_frequency_from_media_entries(
     )
     .await;
 
+    let total_terms = builder.filtered_entry_count(params.min_occurrences, params.max_terms);
+    if total_terms == 0 {
+        return Err(format!(
+            "{} No frequency entries matched the requested filters",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
     let zip_bytes = builder.export_bytes(params.min_occurrences, params.max_terms)?;
     Ok(FrequencyGenerationResult {
         zip_bytes,
         matched_count,
         unmatched,
-        total_terms: builder.entry_count(),
+        total_terms,
     })
 }
 

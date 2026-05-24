@@ -62,8 +62,12 @@ impl FrequencyDictBuilder {
         self.entries.is_empty()
     }
 
-    pub fn entry_count(&self) -> usize {
-        self.entries.len()
+    pub fn filtered_entry_count(
+        &self,
+        min_occurrences: Option<u64>,
+        max_terms: Option<usize>,
+    ) -> usize {
+        self.sorted_entries(min_occurrences, max_terms).len()
     }
 
     pub fn create_index(&self) -> serde_json::Value {
@@ -97,6 +101,10 @@ impl FrequencyDictBuilder {
         max_terms: Option<usize>,
     ) -> Result<Vec<u8>, String> {
         let sorted_entries = self.sorted_entries(min_occurrences, max_terms);
+        if sorted_entries.is_empty() {
+            return Err("No frequency entries matched the requested filters".to_string());
+        }
+
         let cursor = Cursor::new(Vec::new());
         let mut zip = ZipWriter::new(cursor);
         let options =
@@ -249,7 +257,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(builder.entry_count(), 2);
+        assert_eq!(builder.filtered_entry_count(None, None), 2);
     }
 
     #[test]
@@ -280,6 +288,31 @@ mod tests {
         assert_eq!(sorted.len(), 2);
         assert_eq!(sorted[0].0.term, "b");
         assert_eq!(sorted[1].0.term, "c");
+    }
+
+    #[test]
+    fn filtered_entry_count_matches_export_filters() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(
+            1,
+            &[
+                entry("a", None, 1),
+                entry("b", None, 10),
+                entry("c", None, 5),
+            ],
+        );
+
+        assert_eq!(builder.filtered_entry_count(Some(5), Some(1)), 1);
+    }
+
+    #[test]
+    fn export_bytes_rejects_empty_filtered_output() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("a", None, 1)]);
+
+        let error = builder.export_bytes(Some(5), None).unwrap_err();
+
+        assert!(error.contains("No frequency entries"));
     }
 
     #[test]

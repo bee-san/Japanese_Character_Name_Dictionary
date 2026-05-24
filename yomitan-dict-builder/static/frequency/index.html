@@ -23,7 +23,7 @@
         <div class="site-nav-links">
             <a href="/">Character</a>
             <a href="/custom">Custom</a>
-            <a class="active" href="/frequency">Frequency</a>
+            <a class="active" href="/frequency" aria-current="page">Frequency</a>
         </div>
         <div class="site-nav-actions">
             <a class="site-nav-button" href="https://github.com/bee-san/Japanese_Character_Name_Dictionary" target="_blank" rel="noopener">GitHub</a>
@@ -54,10 +54,10 @@
                 <button type="button" id="generateBtn" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
             </div>
 
-            <div class="status" id="status"></div>
+            <div class="status" id="status" role="status" aria-live="polite"></div>
 
             <div class="progress-bar-container" id="progressContainer">
-                <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Frequency dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
             </div>
 
             <div class="media-preview" id="mediaPreview">
