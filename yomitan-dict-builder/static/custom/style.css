@@ -37,10 +37,13 @@ body > .site-nav {
 
 /* ── Header ── */
 header {
-  padding: 20px 32px 16px;
-  background: var(--surface);
-  border-bottom: 2px solid var(--border);
-  box-shadow: 0 2px 12px rgba(255, 105, 135, 0.1);
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 2px 20px 0;
+  background: transparent;
+  border-bottom: 0;
+  box-shadow: none;
+  text-align: center;
 }
 
 header h1 {
@@ -55,9 +58,10 @@ header h1 span {
 }
 
 .subtitle {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  max-width: 620px;
+  margin: 6px auto 0;
+  color: #7b6370;
+  font-size: 0.96rem;
 }
 
 .back-link {
