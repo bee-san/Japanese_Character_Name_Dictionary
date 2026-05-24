@@ -18,6 +18,8 @@ A web application that generates **Yomitan-compatible character dictionaries** f
 * Dictionary has photos, descriptions, and tags
 * Extensive honorific support, dictionary will tell you exactly how that person is being addressed
 * Generates name variants (kanji, given name, hiragana, katakana etc)
+* Generates **Bee's Frequency Dictionary** from the VNDB/AniList media you are currently consuming
+* Uses Jiten frequency decks and combines raw occurrence counts across matched anime, manga, and VNs
 
 ## Quick Start
 
@@ -128,6 +130,8 @@ podman auto-update             # pull and restart
 | `BASE_URL` | `http://127.0.0.1:{PORT}` | Public URL used in Yomitan auto-update index URLs. Set this to your domain. |
 | `CACHE_DIR` | `./cache` (debug) / `/var/cache/yomitan` (release) | Directory for the disk-backed image cache |
 | `RUST_LOG` | `info` | Log level filter (e.g. `debug`, `warn`, `info,yomitan_dict_builder=debug`) |
+| `JITEN_BASE_URL` | `https://api.jiten.moe` | Jiten API base URL for frequency dictionaries |
+| `JITEN_API_KEY` | unset | Optional Jiten API bearer token, if required by your deployment |
 
 ### Deploying on a Server with a Custom Domain
 
@@ -189,10 +193,13 @@ dict.example.com {
 - On update check, Yomitan re-fetches the index → the server returns a `downloadUrl` with the same query params pointing at `BASE_URL`
 - Yomitan downloads the fresh ZIP → dictionary is regenerated with the original settings
 - The URL IS the configuration. No accounts, no server-side state.
+- Frequency dictionaries work the same way through `/api/yomitan-frequency-index`, for example `https://dict.example.com/api/yomitan-frequency-index?vndb_user=Bee&anilist_user=Bee`.
 
 The image cache (`/var/cache/yomitan`) persists downloaded character portraits across restarts. Mount it as a Docker volume to avoid re-downloading images on container recreation.
 
 ### Usage
+
+Character dictionary:
 
 1. Select source (VNDB or AniList)
 2. Enter the media ID (e.g., `v17` for VNDB, `9253` for AniList)
@@ -200,6 +207,14 @@ The image cache (`/var/cache/yomitan`) persists downloaded character portraits a
 4. Choose spoiler level
 5. Click "Generate Dictionary"
 6. Import the downloaded ZIP file into Yomitan
+
+Frequency dictionary:
+
+1. Open `/frequency`
+2. Enter a VNDB username/ID, an AniList username/ID, or both
+3. Preview the currently consumed media list
+4. Click "Generate Frequency Dictionary"
+5. Import `bee_frequency.zip` into Yomitan, or use the shown auto-update index URL
 
 ## Architecture
 
@@ -211,6 +226,8 @@ yomitan-dict-builder/
 │   ├── models.rs            # Shared data structures
 │   ├── vndb_client.rs       # VNDB API client
 │   ├── anilist_client.rs    # AniList GraphQL client
+│   ├── jiten_client.rs      # Jiten media deck lookup + frequency ZIP parser
+│   ├── frequency_dict_builder.rs # Combined Yomitan frequency ZIP builder
 │   ├── name_parser.rs       # Japanese name → hiragana readings + honorifics
 │   ├── content_builder.rs   # Yomitan structured content JSON builder
 │   ├── image_handler.rs     # Base64 decode, format detection
@@ -227,6 +244,9 @@ yomitan-dict-builder/
 | `/` | GET | Serves the web frontend |
 | `/api/yomitan-dict` | GET | Generates and returns dictionary ZIP |
 | `/api/yomitan-index` | GET | Returns lightweight index metadata (for update checks) |
+| `/api/yomitan-frequency-dict` | GET | Generates Bee's Frequency Dictionary ZIP from current media |
+| `/api/yomitan-frequency-index` | GET | Returns frequency dictionary index metadata for update checks |
+| `/api/generate-frequency-stream` | GET | Server-sent events generation flow for the Frequency page |
 
 ### Query Parameters
 
@@ -236,6 +256,8 @@ yomitan-dict-builder/
 | `id` | Yes | String | Media ID (e.g., `v17`, `9253`) |
 | `spoiler_level` | No | `0`, `1`, `2` | Spoiler filtering (default: `0`) |
 | `media_type` | No | `ANIME`, `MANGA` | AniList media type (default: `ANIME`) |
+
+Frequency endpoints use `vndb_user` and/or `anilist_user`. They only include currently consumed media: VNDB `Playing`, and AniList `CURRENT` / `REPEATING`. Jiten matches are resolved through `https://api.jiten.moe`; VNDB IDs keep their `v` prefix.
 
 ## Spoiler Levels
 

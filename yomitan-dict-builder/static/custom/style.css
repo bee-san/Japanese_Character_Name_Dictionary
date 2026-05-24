@@ -29,6 +29,11 @@ body {
   flex-direction: column;
 }
 
+body > .site-nav {
+  margin-top: 14px;
+  flex-shrink: 0;
+}
+
 /* ── Header ── */
 header {
   padding: 20px 32px 16px;
