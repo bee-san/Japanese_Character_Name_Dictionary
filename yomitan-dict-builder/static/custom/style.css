@@ -31,6 +31,7 @@ body {
 
 body > .site-nav {
   margin-top: 14px;
+  margin-bottom: 20px;
   flex-shrink: 0;
 }
 
