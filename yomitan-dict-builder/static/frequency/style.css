@@ -70,85 +70,65 @@
 
 .frequency-example-card {
     margin-top: 12px;
-    padding: 14px;
-    border: 1px solid #f7c8dc;
-    border-radius: 8px;
-    background:
-        linear-gradient(90deg, rgba(255, 240, 247, 0.82), rgba(255, 255, 255, 0.96)),
-        repeating-linear-gradient(135deg, rgba(247, 143, 179, 0.09) 0 8px, transparent 8px 16px);
 }
 
-.example-card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.example-word {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 4px;
-}
-
-.example-kanji {
-    color: #333;
-    font-size: 2rem;
-    font-weight: 800;
-    line-height: 1;
-}
-
-.example-reading {
-    color: #e84393;
-    font-size: 1rem;
-    font-weight: 750;
-}
-
-.example-romaji {
-    color: #8b6a7a;
-    font-size: 0.85rem;
-    font-weight: 700;
-}
-
-.example-pill {
-    flex: 0 0 auto;
-    padding: 6px 9px;
-    border: 1px solid #f4bed4;
-    border-radius: 999px;
-    background: #fff;
-    color: #d63384;
-    font-size: 0.78rem;
-    font-weight: 800;
-}
-
-.example-definition {
-    margin-top: 8px;
-    color: #6f5963;
+.frequency-preview-label {
+    margin: 0 0 8px;
+    color: #999;
     font-size: 0.9em;
+    font-weight: 600;
+}
+
+.frequency-yomitan-card .yomitan-card-header {
+    background: #fafafa;
+}
+
+.frequency-yomitan-card .yomitan-term {
+    margin-bottom: 6px;
+}
+
+.yomitan-tag.tag-frequency {
+    background: #e84393;
+}
+
+.frequency-yomitan-body {
+    display: grid;
+    gap: 10px;
+}
+
+.frequency-gloss {
+    color: #444;
+    font-size: 0.98em;
     line-height: 1.45;
 }
 
-.example-stat {
-    margin-top: 10px;
-    color: #333;
-    font-size: 1.15em;
-    font-weight: 800;
+.frequency-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-left: 3px solid #e84393;
+    background: #fff5fa;
+    color: #444;
 }
 
-.preview-label {
-    color: #999;
-    font-size: 0.78em;
+.frequency-meta-label {
+    color: #8b6a7a;
+    font-size: 0.82em;
     font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
 }
 
-.preview-copy {
-    margin-top: 4px;
+.frequency-meta-value {
+    color: #333;
+    font-size: 0.95em;
+    font-weight: 800;
+    text-align: right;
+}
+
+.frequency-meta-note {
     color: #777;
-    font-size: 0.86em;
+    font-size: 0.84em;
     line-height: 1.45;
 }
 
@@ -252,11 +232,12 @@
 }
 
 @media (max-width: 480px) {
-    .example-card-header {
+    .frequency-meta-row {
+        align-items: flex-start;
         flex-direction: column;
     }
 
-    .example-pill {
-        align-self: flex-start;
+    .frequency-meta-value {
+        text-align: left;
     }
 }

@@ -68,20 +68,28 @@
             </div>
 
             <div class="frequency-example-card" aria-live="polite">
-                <div class="example-card-header">
-                    <div>
-                        <div class="preview-label">Example lookup</div>
-                        <div class="example-word">
-                            <span class="example-kanji">秋</span>
-                            <span class="example-reading">あき</span>
-                            <span class="example-romaji">aki</span>
+                <p class="frequency-preview-label">Yomitan preview</p>
+                <div class="yomitan-preview-section">
+                    <div class="yomitan-card frequency-yomitan-card">
+                        <div class="yomitan-card-header">
+                            <span class="yomitan-ruby">あき</span>
+                            <div class="yomitan-term">秋</div>
+                            <div class="yomitan-tags">
+                                <span class="yomitan-tag tag-name">term</span>
+                                <span class="yomitan-tag tag-frequency" id="frequencyExampleMode">freq</span>
+                                <span class="yomitan-tag tag-dict">Bee's Frequency Dictionary</span>
+                            </div>
+                        </div>
+                        <div class="yomitan-card-body frequency-yomitan-body">
+                            <div class="frequency-gloss">autumn; fall</div>
+                            <div class="frequency-meta-row">
+                                <span class="frequency-meta-label">Bee's Frequency Dictionary</span>
+                                <span class="frequency-meta-value" id="frequencyPreviewValue">35 total occurrences</span>
+                            </div>
+                            <div class="frequency-meta-note" id="frequencyPreviewCopy">Raw total from selected titles.</div>
                         </div>
                     </div>
-                    <div class="example-pill" id="frequencyExampleMode">Total</div>
                 </div>
-                <div class="example-definition">Aki, written as autumn. Your generated dictionary adds the little number beside this entry.</div>
-                <div class="example-stat" id="frequencyPreviewValue">35 total times seen</div>
-                <div class="preview-copy" id="frequencyPreviewCopy">Yomitan shows the total number of times Aki appears across selected titles.</div>
                 <div class="preview-counts" id="frequencyPreviewCounts"></div>
             </div>
 

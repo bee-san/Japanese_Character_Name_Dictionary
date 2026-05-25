@@ -535,32 +535,34 @@ function updateFrequencyPreview() {
     const selectedRate = combineMode === 'average' ? averageRate : sumRate;
 
     if (displayMode === 'occurrence') {
-        modeEl.textContent = 'Total';
-        valueEl.textContent = `${totalOccurrences} total times seen`;
+        modeEl.textContent = 'freq';
+        valueEl.textContent = `${totalOccurrences} total occurrences`;
     } else if (displayMode === 'per_million') {
-        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} times per million words`;
+        modeEl.textContent = 'freq';
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} per million (${combineModeLabel(combineMode)})`;
     } else if (displayMode === 'percent') {
-        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% of words`;
+        modeEl.textContent = 'freq';
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% (${combineModeLabel(combineMode)})`;
     } else {
-        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
-        valueEl.textContent = combineMode === 'average'
-            ? '#1 when each title gets one vote'
-            : '#1 after all titles are merged';
+        modeEl.textContent = 'freq';
+        valueEl.textContent = `#1 (${combineModeLabel(combineMode)})`;
     }
 
     if (displayMode === 'occurrence') {
-        copyEl.textContent = 'Yomitan shows the total number of times Aki appears across selected titles.';
+        copyEl.textContent = 'Raw total from selected titles.';
     } else if (combineMode === 'average') {
-        copyEl.textContent = 'Each selected title gets the same vote. If Aki is missing from a title, that title counts as zero.';
+        copyEl.textContent = 'Average per title; missing titles count as zero.';
     } else {
-        copyEl.textContent = 'All selected titles are merged first, so longer titles have more weight.';
+        copyEl.textContent = 'Combined corpus; longer titles have more weight.';
     }
 
     countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
-        <span>${escapeHtml(deck.title)}: Aki ${deck.count} / ${deck.total.toLocaleString()}</span>
+        <span>${escapeHtml(deck.title)}: 秋 ${deck.count} / ${deck.total.toLocaleString()}</span>
     `).join('');
+}
+
+function combineModeLabel(mode) {
+    return mode === 'average' ? 'average per title' : 'combined corpus';
 }
 
 function formatPreviewNumber(value) {
