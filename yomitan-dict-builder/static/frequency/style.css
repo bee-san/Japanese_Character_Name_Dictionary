@@ -135,22 +135,6 @@
     line-height: 1.45;
 }
 
-.preview-counts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.preview-counts span {
-    padding: 4px 7px;
-    border-radius: 8px;
-    background: #fff5f7;
-    color: #777;
-    font-size: 0.78em;
-    font-weight: 600;
-}
-
 .result-panel,
 .unmatched-panel {
     display: none;

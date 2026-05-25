@@ -16,11 +16,9 @@ const STATUS_LABELS = {
     paused: 'Paused',
     dropped: 'Dropped',
 };
-const SAMPLE_FREQUENCY_DECKS = [
-    { title: 'Cozy VN', count: 30, total: 10000 },
-    { title: 'School anime', count: 5, total: 5000 },
-    { title: 'Mystery manga', count: 0, total: 8000 },
-];
+const SAMPLE_TOTAL_OCCURRENCES = 35;
+const SAMPLE_AVERAGE_RATE = (30 / 10000 + 5 / 5000 + 0 / 8000) / 3;
+const SAMPLE_SUM_RATE = 35 / 23000;
 
 function activeMode() {
     const activeTab = document.querySelector('.tab.active');
@@ -590,8 +588,7 @@ function updateIndexUrl() {
 
 function updateFrequencyPreview() {
     const valueEl = document.getElementById('frequencyPreviewValue');
-    const countsEl = document.getElementById('frequencyPreviewCounts');
-    if (!valueEl || !countsEl) return;
+    if (!valueEl) return;
 
     const displayMode = selectedDisplayMode();
     const optionsEl = document.querySelector('.frequency-options');
@@ -602,16 +599,10 @@ function updateFrequencyPreview() {
         combineGroupEl.hidden = hideCombine;
     }
     const combineMode = selectedCombineMode();
-    const totalOccurrences = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.count, 0);
-    const totalTokens = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.total, 0);
-    const averageRate = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => {
-        return sum + (deck.total ? deck.count / deck.total : 0);
-    }, 0) / SAMPLE_FREQUENCY_DECKS.length;
-    const sumRate = totalTokens ? totalOccurrences / totalTokens : 0;
-    const selectedRate = combineMode === 'average' ? averageRate : sumRate;
+    const selectedRate = combineMode === 'average' ? SAMPLE_AVERAGE_RATE : SAMPLE_SUM_RATE;
 
     if (displayMode === 'occurrence') {
-        valueEl.textContent = `${totalOccurrences}`;
+        valueEl.textContent = `${SAMPLE_TOTAL_OCCURRENCES}`;
     } else if (displayMode === 'per_million') {
         valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
     } else if (displayMode === 'percent') {
@@ -620,9 +611,6 @@ function updateFrequencyPreview() {
         valueEl.textContent = `#1 (${combineModeLabel(combineMode)})`;
     }
 
-    countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
-        <span>${escapeHtml(deck.title)}: 秋 ${deck.count} / ${deck.total.toLocaleString()}</span>
-    `).join('');
 }
 
 function combineModeLabel(mode) {
