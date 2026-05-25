@@ -1,11 +1,11 @@
-/// Test suite for AniList name handling, generated from anilist_characters-1.jsonl.
-///
-/// Tests the unified name resolution API that handles both VNDB and AniList characters:
-/// - Accepts optional first/last name hints (from AniList)
-/// - Uses native name directly when available
-/// - Falls back to romaji→kana when native is missing
-/// - Splits native names into family/given using hints when no space exists
-/// - Produces correct readings for both VNDB and AniList characters
+//! Test suite for AniList name handling, generated from anilist_characters-1.jsonl.
+//!
+//! Tests the unified name resolution API that handles both VNDB and AniList characters:
+//! - Accepts optional first/last name hints (from AniList)
+//! - Uses native name directly when available
+//! - Falls back to romaji→kana when native is missing
+//! - Splits native names into family/given using hints when no space exists
+//! - Produces correct readings for both VNDB and AniList characters
 
 #[cfg(test)]
 mod tests {
@@ -608,7 +608,7 @@ mod tests {
             last: Option<&'static str>,
         }
 
-        let cases = vec![
+        let cases = [
             // === Jujutsu Kaisen ===
             Case {
                 native: Some("虎杖悠仁"),
@@ -1040,7 +1040,7 @@ mod tests {
     #[test]
     fn test_complex_kanji_names() {
         // Three-character family names and longer given names
-        let cases = vec![
+        let cases = [
             ("四乃森蒼紫", "Aoshi", Some("Shinomori")), // 4 chars family + 1 char given
             ("薫桜町火家", "Kae", Some("Kaore")),       // Complex kanji
             ("五条悟", "Satoru", Some("Gojo")),         // Gojo Satoru from JJK
@@ -1065,7 +1065,7 @@ mod tests {
     #[test]
     fn test_long_katakana_names() {
         // Foreign names in katakana with various structures
-        let cases = vec![
+        let cases = [
             ("シャーロック・ホームズ", "Sherlock", Some("Holmes")),
             (
                 "アレキサンダー・アンダーソン",
@@ -1098,7 +1098,7 @@ mod tests {
     #[test]
     fn test_special_character_sequences() {
         // Names with special patterns like small kana, prolonged sounds, etc.
-        let cases = vec![
+        let cases = [
             ("藤和エリオ", "Elio", Some("Fujiwara")), // Small kana
             ("ティナ", "Tina", None),                 // Small ti sound
             ("ヴァイオレット", "Violet", None),       // Special katakana combinations
@@ -1124,7 +1124,7 @@ mod tests {
     #[test]
     fn test_historical_and_traditional_names() {
         // Names from historical/traditional anime (samurai, etc.)
-        let cases = vec![
+        let cases = [
             ("桂小五郎", "Kousaku", Some("Katsura")), // Historical name
             ("坂本龍馬", "Ryouma", Some("Sakamoto")), // Sakamoto Ryouma
             ("新選組局長近藤勇", "Isamu", Some("Kondo")), // Kondo Isami
@@ -1151,7 +1151,7 @@ mod tests {
     #[test]
     fn test_mixed_cjk_characters() {
         // Names mixing different Japanese scripts
-        let cases = vec![
+        let cases = [
             ("猫田 虎之助", "Toranosuke", Some("Nekota")), // Kanji with space
             ("小田切 敏也", "Toshiya", Some("Odagiri")),   // Kanji family + space
             ("竜嶺 透", "Toru", Some("Ryumine")),          // Mixed stroke counts
@@ -1175,7 +1175,7 @@ mod tests {
     #[test]
     fn test_unusual_given_names() {
         // Unique given names from anime (sometimes single character or unusual)
-        let cases = vec![
+        let cases = [
             ("結城梨斗", "Rito", Some("Yuuki")), // Unique katakana/kanji mix
             ("佐藤和真", "Kazuma", Some("Satou")), // Complex reading
             ("春日野さくら", "Sakura", Some("Kasugano")), // Hiragana given name
@@ -1200,7 +1200,7 @@ mod tests {
     #[test]
     fn test_phonetic_name_variations() {
         // Names where hiragana/katakana phonetic spelling is used
-        let cases = vec![
+        let cases = [
             ("日向ひなた", "Hinata", Some("Hinata")), // Same family/given
             ("桃井りんご", "Ringo", Some("Momoi")),   // Hiragana given
             ("楠木ともり", "Tomori", Some("Kusunoki")), // Hiragana given with marks
@@ -1230,7 +1230,7 @@ mod tests {
             last: Option<&'static str>,
         }
 
-        let cases = vec![
+        let cases = [
             // Clannad
             Case {
                 native: "岡崎朋也",
@@ -1296,7 +1296,7 @@ mod tests {
     #[test]
     fn test_western_inspired_anime_names() {
         // Names that are transliterations or inspired by Western names
-        let cases = vec![
+        let cases = [
             ("シャーロット", "Charlotte", None),
             ("ヴィクトル・ニキフォロフ", "Victor", Some("Nikiforov")),
             ("カルロス・パレロ", "Carlos", Some("Parero")),
@@ -1329,7 +1329,7 @@ mod tests {
             last: Option<&'static str>,
         }
 
-        let cases = vec![
+        let cases = [
             // Frieren: Beyond Journey's End
             Case {
                 native: Some("フリーレン"),
@@ -1394,7 +1394,7 @@ mod tests {
             last: Option<&'static str>,
         }
 
-        let cases = vec![
+        let cases = [
             Case {
                 native: Some("幸平創真"),
                 full: "Souma Yukihira",

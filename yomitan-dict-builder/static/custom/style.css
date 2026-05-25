@@ -27,31 +27,38 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  padding: 20px;
+  gap: 20px;
 }
 
-/* ── Header ── */
-header {
-  padding: 20px 32px 16px;
-  background: var(--surface);
-  border-bottom: 2px solid var(--border);
-  box-shadow: 0 2px 12px rgba(255, 105, 135, 0.1);
+body > .site-nav {
+  flex-shrink: 0;
+  line-height: normal;
 }
 
-header h1 {
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+.dictionary-title {
+  width: 100%;
   color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  margin-bottom: 8px;
+  text-align: center;
 }
 
-header h1 span {
+.dictionary-title span {
   color: var(--accent);
 }
 
 .subtitle {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  max-width: 700px;
+  width: 100%;
+  margin: 0 auto 24px;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: normal;
+  text-align: center;
 }
 
 .back-link {
@@ -71,7 +78,7 @@ header h1 span {
   display: flex;
   flex: 1;
   gap: 16px;
-  padding: 20px;
+  width: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -108,6 +115,7 @@ header h1 span {
 
 .field-row input[type="text"] {
   flex: 1;
+  min-width: 0;
   background: var(--surface2);
   border: 2px solid var(--border);
   border-radius: var(--radius);
@@ -406,11 +414,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 }
 
 /* ── Responsive ── */
-@media (max-width: 768px) {
-  body { height: auto; overflow: auto; }
-  .layout { flex-direction: column; gap: 12px; padding: 14px; overflow: visible; }
+@media (max-width: 850px) {
+  body { height: auto; overflow: auto; padding: 12px; }
+  .layout { flex-direction: column; gap: 12px; overflow: visible; }
   .sidebar { width: 100%; overflow-y: visible; }
-  header { padding: 16px 20px 14px; }
   .editor-pane { padding: 18px 16px; overflow: visible; }
+  .field-row { align-items: stretch; flex-direction: column; gap: 8px; }
   textarea#entry-area { min-height: 300px; }
+}
+
+@media (max-width: 480px) {
+  body { padding: 8px; }
 }

@@ -344,14 +344,10 @@ mod tests {
 
         assert_eq!(cache.total_bytes(), 0);
 
-        cache
-            .put("https://a.com/1.jpg", &vec![0u8; 100], "jpg")
-            .await;
+        cache.put("https://a.com/1.jpg", &[0u8; 100], "jpg").await;
         assert_eq!(cache.total_bytes(), 100);
 
-        cache
-            .put("https://a.com/2.jpg", &vec![0u8; 200], "jpg")
-            .await;
+        cache.put("https://a.com/2.jpg", &[0u8; 200], "jpg").await;
         assert_eq!(cache.total_bytes(), 300);
     }
 
@@ -413,15 +409,15 @@ mod tests {
         let cache = ImageCache::open(dir.path()).unwrap();
 
         let url = "https://example.com/img.jpg";
-        cache.put(url, &vec![0u8; 100], "jpg").await;
+        cache.put(url, &[0u8; 100], "jpg").await;
         assert_eq!(cache.total_bytes(), 100);
 
         // Replace with larger data
-        cache.put(url, &vec![0u8; 250], "jpg").await;
+        cache.put(url, &[0u8; 250], "jpg").await;
         assert_eq!(cache.total_bytes(), 250);
 
         // Replace with smaller data
-        cache.put(url, &vec![0u8; 50], "jpg").await;
+        cache.put(url, &[0u8; 50], "jpg").await;
         assert_eq!(cache.total_bytes(), 50);
     }
 

@@ -791,43 +791,63 @@ mod tests {
 
     // ── process_character tests ──
 
-    fn make_edge(
-        role: &str,
+    struct EdgeSpec<'a> {
+        role: &'a str,
         id: u64,
-        full: &str,
-        native: &str,
-        gender: Option<&str>,
+        full: &'a str,
+        native: &'a str,
+        gender: Option<&'a str>,
         age: Option<serde_json::Value>,
         dob: Option<(u64, u64)>,
-        blood: Option<&str>,
-        desc: Option<&str>,
-        alts: Vec<&str>,
-        image: Option<&str>,
-    ) -> serde_json::Value {
+        blood: Option<&'a str>,
+        desc: Option<&'a str>,
+        alts: Vec<&'a str>,
+        image: Option<&'a str>,
+    }
+
+    impl<'a> EdgeSpec<'a> {
+        fn new(role: &'a str, id: u64, full: &'a str, native: &'a str) -> Self {
+            Self {
+                role,
+                id,
+                full,
+                native,
+                gender: None,
+                age: None,
+                dob: None,
+                blood: None,
+                desc: None,
+                alts: Vec::new(),
+                image: None,
+            }
+        }
+    }
+
+    fn make_edge(spec: EdgeSpec<'_>) -> serde_json::Value {
         let mut node = serde_json::json!({
-            "id": id,
+            "id": spec.id,
             "name": {
-                "full": full,
-                "native": native,
-                "alternative": alts
+                "full": spec.full,
+                "native": spec.native,
+                "alternative": spec.alts
             },
-            "description": desc,
-            "gender": gender,
-            "age": age,
-            "bloodType": blood,
+            "description": spec.desc,
+            "gender": spec.gender,
+            "age": spec.age,
+            "bloodType": spec.blood,
         });
-        if let Some((m, d)) = dob {
+        if let Some((m, d)) = spec.dob {
             node["dateOfBirth"] = serde_json::json!({"month": m, "day": d});
         } else {
             node["dateOfBirth"] = serde_json::json!(null);
         }
-        if let Some(url) = image {
+        if let Some(url) = spec.image {
             node["image"] = serde_json::json!({"large": url});
         } else {
             node["image"] = serde_json::json!({"large": null});
         }
         serde_json::json!({
-            "role": role,
+            "role": spec.role,
             "node": node
         })
     }
@@ -835,19 +855,21 @@ mod tests {
     #[test]
     fn test_process_character_main_role() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            12345,
-            "Lelouch Lamperouge",
-            "ルルーシュ・ランペルージ",
-            Some("Male"),
-            Some(serde_json::json!("17")),
-            Some((12, 5)),
-            Some("A"),
-            Some("The protagonist."),
-            vec!["Zero"],
-            Some("https://example.com/img.jpg"),
-        );
+        let edge = make_edge(EdgeSpec {
+            gender: Some("Male"),
+            age: Some(serde_json::json!("17")),
+            dob: Some((12, 5)),
+            blood: Some("A"),
+            desc: Some("The protagonist."),
+            alts: vec!["Zero"],
+            image: Some("https://example.com/img.jpg"),
+            ..EdgeSpec::new(
+                ROLE_MAIN,
+                12345,
+                "Lelouch Lamperouge",
+                "ルルーシュ・ランペルージ",
+            )
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.id, "12345");
         assert_eq!(ch.name, "Lelouch Lamperouge");
@@ -875,19 +897,7 @@ mod tests {
     #[test]
     fn test_process_character_extracts_name_hints() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            100,
-            "Souma Yukihira",
-            "幸平創真",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 100, "Souma Yukihira", "幸平創真"));
         // Add first/last to the name object
         edge["node"]["name"]["first"] = serde_json::json!("Souma");
         edge["node"]["name"]["last"] = serde_json::json!("Yukihira");
@@ -899,19 +909,7 @@ mod tests {
     #[test]
     fn test_process_character_no_hints_when_missing() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            100,
-            "Souma Yukihira",
-            "幸平創真",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new(ROLE_MAIN, 100, "Souma Yukihira", "幸平創真"));
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.first_name_hint, None);
         assert_eq!(ch.last_name_hint, None);
@@ -920,19 +918,7 @@ mod tests {
     #[test]
     fn test_process_character_trims_hint_whitespace() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            100,
-            "Souma Yukihira",
-            "幸平創真",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 100, "Souma Yukihira", "幸平創真"));
         edge["node"]["name"]["first"] = serde_json::json!("Souma ");
         edge["node"]["name"]["last"] = serde_json::json!(" Yukihira ");
         let ch = client.process_character(&edge).unwrap();
@@ -943,19 +929,7 @@ mod tests {
     #[test]
     fn test_process_character_empty_hint_becomes_none() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            100,
-            "Himiko",
-            "ヒミコ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 100, "Himiko", "ヒミコ"));
         edge["node"]["name"]["first"] = serde_json::json!("Himiko");
         edge["node"]["name"]["last"] = serde_json::json!("");
         let ch = client.process_character(&edge).unwrap();
@@ -966,19 +940,10 @@ mod tests {
     #[test]
     fn test_process_character_supporting_maps_to_side() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_SUPPORTING,
-            99,
-            "Kallen Stadtfeld",
-            "紅月カレン",
-            Some("Female"),
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            gender: Some("Female"),
+            ..EdgeSpec::new(ROLE_SUPPORTING, 99, "Kallen Stadtfeld", "紅月カレン")
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.role, "side");
         assert_eq!(ch.sex, Some("f".to_string()));
@@ -993,19 +958,7 @@ mod tests {
     #[test]
     fn test_process_character_background_maps_to_appears() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_BACKGROUND,
-            50,
-            "Extra",
-            "",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new(ROLE_BACKGROUND, 50, "Extra", ""));
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.role, "appears");
         assert_eq!(ch.name_original, "");
@@ -1014,19 +967,7 @@ mod tests {
     #[test]
     fn test_process_character_unknown_role_maps_to_appears() {
         let client = make_client();
-        let edge = make_edge(
-            "UNKNOWN_ROLE",
-            50,
-            "Extra",
-            "",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new("UNKNOWN_ROLE", 50, "Extra", ""));
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.role, "appears");
     }
@@ -1034,19 +975,10 @@ mod tests {
     #[test]
     fn test_process_character_age_as_string() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            Some(serde_json::json!("17-18")),
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            age: Some(serde_json::json!("17-18")),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.age, Some("17-18".to_string()));
     }
@@ -1054,19 +986,10 @@ mod tests {
     #[test]
     fn test_process_character_age_as_integer() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            Some(serde_json::json!(25)),
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            age: Some(serde_json::json!(25)),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.age, Some("25".to_string()));
     }
@@ -1074,19 +997,7 @@ mod tests {
     #[test]
     fn test_process_character_age_null() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         let ch = client.process_character(&edge).unwrap();
         assert!(ch.age.is_none());
     }
@@ -1094,19 +1005,10 @@ mod tests {
     #[test]
     fn test_process_character_gender_nonbinary_returns_none() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            Some("Non-binary"),
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            gender: Some("Non-binary"),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         // "Non-binary" starts with 'n', which is neither 'm' nor 'f'
         assert!(ch.sex.is_none());
@@ -1115,19 +1017,7 @@ mod tests {
     #[test]
     fn test_process_character_gender_null() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         let ch = client.process_character(&edge).unwrap();
         assert!(ch.sex.is_none());
     }
@@ -1135,19 +1025,10 @@ mod tests {
     #[test]
     fn test_process_character_multiple_aliases() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec!["Alias1", "Alias2", "Alias3"],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            alts: vec!["Alias1", "Alias2", "Alias3"],
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.aliases, vec!["Alias1", "Alias2", "Alias3"]);
     }
@@ -1156,19 +1037,7 @@ mod tests {
     fn test_process_character_empty_aliases_filtered() {
         let client = make_client();
         // Build edge with empty string alias mixed in
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge["node"]["name"]["alternative"] = serde_json::json!(["Good", "", "Also Good", ""]);
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.aliases, vec!["Good", "Also Good"]);
@@ -1192,19 +1061,7 @@ mod tests {
     fn test_process_character_birthday_partial_null() {
         // AniList can return {"month": 5, "day": null} for unknown day
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge["node"]["dateOfBirth"] = serde_json::json!({"month": 5, "day": null});
         let ch = client.process_character(&edge).unwrap();
         // day is null → as_u64() returns None → whole birthday is None
@@ -1214,19 +1071,7 @@ mod tests {
     #[test]
     fn test_process_character_id_zero_when_missing() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            0,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 0, "A", "あ"));
         edge["node"].as_object_mut().unwrap().remove("id");
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.id, "0");
@@ -1235,19 +1080,7 @@ mod tests {
     #[test]
     fn test_process_character_no_role_defaults_to_appears() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge.as_object_mut().unwrap().remove("role");
         let ch = client.process_character(&edge).unwrap();
         // role_raw defaults to ROLE_BACKGROUND when missing → maps to "appears"
@@ -1257,19 +1090,10 @@ mod tests {
     #[test]
     fn test_process_character_description_with_anilist_spoilers() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            Some("Visible text ~!hidden spoiler!~ more text"),
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            desc: Some("Visible text ~!hidden spoiler!~ more text"),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         // process_character stores raw description; spoiler stripping happens in content_builder
         assert_eq!(
@@ -1318,45 +1142,14 @@ mod tests {
     fn test_role_categorization_all_types() {
         let client = make_client();
         let edges = vec![
-            make_edge(
-                ROLE_MAIN,
-                1,
-                "Main Char",
-                "主人公",
-                None,
-                None,
-                None,
-                None,
-                None,
-                vec![],
-                None,
-            ),
-            make_edge(
+            make_edge(EdgeSpec::new(ROLE_MAIN, 1, "Main Char", "主人公")),
+            make_edge(EdgeSpec::new(
                 ROLE_SUPPORTING,
                 2,
                 "Support Char",
                 "サポート",
-                None,
-                None,
-                None,
-                None,
-                None,
-                vec![],
-                None,
-            ),
-            make_edge(
-                ROLE_BACKGROUND,
-                3,
-                "BG Char",
-                "背景",
-                None,
-                None,
-                None,
-                None,
-                None,
-                vec![],
-                None,
-            ),
+            )),
+            make_edge(EdgeSpec::new(ROLE_BACKGROUND, 3, "BG Char", "背景")),
         ];
 
         let mut char_data = CharacterData::new();
@@ -1768,19 +1561,10 @@ mod tests {
     #[test]
     fn test_process_character_gender_empty_string() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            Some(""),
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            gender: Some(""),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         // Empty string → chars().next() returns None → sex is None
         assert!(ch.sex.is_none());
@@ -1790,19 +1574,10 @@ mod tests {
     fn test_process_character_gender_case_insensitive() {
         let client = make_client();
         // "FEMALE" should still map to "f" (lowercased first char)
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            Some("FEMALE"),
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            gender: Some("FEMALE"),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         assert_eq!(ch.sex, Some("f".to_string()));
     }
@@ -1812,19 +1587,10 @@ mod tests {
     #[test]
     fn test_process_character_age_empty_string() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            Some(serde_json::json!("")),
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec {
+            age: Some(serde_json::json!("")),
+            ..EdgeSpec::new(ROLE_MAIN, 1, "A", "あ")
+        });
         let ch = client.process_character(&edge).unwrap();
         // Empty string is still Some("")
         assert_eq!(ch.age, Some("".to_string()));
@@ -1836,19 +1602,7 @@ mod tests {
     #[test]
     fn test_process_character_birthday_month_zero() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge["node"]["dateOfBirth"] = serde_json::json!({"month": 0, "day": 15});
         let ch = client.process_character(&edge).unwrap();
         // month=0 is technically valid as u64, so birthday is Some([0, 15])
@@ -1896,19 +1650,7 @@ mod tests {
     #[test]
     fn test_process_character_alternatives_with_nulls() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge["node"]["name"]["alternative"] =
             serde_json::json!([null, "Valid", null, "Also Valid"]);
         let ch = client.process_character(&edge).unwrap();
@@ -1919,19 +1661,10 @@ mod tests {
     #[test]
     fn test_process_character_spoiler_alternatives() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "Test Character",
-            "テスト",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec!["Normal Alt"],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec {
+            alts: vec!["Normal Alt"],
+            ..EdgeSpec::new(ROLE_MAIN, 1, "Test Character", "テスト")
+        });
         edge["node"]["name"]["alternativeSpoiler"] =
             serde_json::json!(["Spoiler Name", "Another Spoiler"]);
         let ch = client.process_character(&edge).unwrap();
@@ -1942,19 +1675,7 @@ mod tests {
     #[test]
     fn test_process_character_spoiler_alternatives_with_nulls() {
         let client = make_client();
-        let mut edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let mut edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         edge["node"]["name"]["alternativeSpoiler"] =
             serde_json::json!([null, "Valid Spoiler", null, ""]);
         let ch = client.process_character(&edge).unwrap();
@@ -1964,19 +1685,7 @@ mod tests {
     #[test]
     fn test_process_character_no_spoiler_alternatives() {
         let client = make_client();
-        let edge = make_edge(
-            ROLE_MAIN,
-            1,
-            "A",
-            "あ",
-            None,
-            None,
-            None,
-            None,
-            None,
-            vec![],
-            None,
-        );
+        let edge = make_edge(EdgeSpec::new(ROLE_MAIN, 1, "A", "あ"));
         let ch = client.process_character(&edge).unwrap();
         assert!(
             ch.spoiler_aliases.is_empty(),

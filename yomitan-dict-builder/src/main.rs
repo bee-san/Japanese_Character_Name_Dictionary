@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse,
@@ -23,8 +23,10 @@ use tracing::{debug, error, info, warn};
 mod anilist_client;
 mod content_builder;
 mod dict_builder;
+mod frequency_dict_builder;
 mod image_cache;
 mod image_handler;
+mod jiten_client;
 mod kana;
 mod media_cache;
 mod models;
@@ -37,8 +39,10 @@ mod anilist_name_test_data;
 use anilist_client::{AnilistClient, AnilistRetryPolicy};
 use content_builder::DictSettings;
 use dict_builder::DictBuilder;
+use frequency_dict_builder::{FrequencyDictBuilder, FREQUENCY_DICTIONARY_TITLE};
 use image_cache::ImageCache;
 use image_handler::ImageHandler;
+use jiten_client::JitenClient;
 use media_cache::MediaCache;
 use models::UserMediaEntry;
 use vndb_client::VndbClient;
@@ -58,9 +62,36 @@ fn static_dir() -> std::path::PathBuf {
     }
 }
 
-/// Shared application state for temporary ZIP storage.
-/// Maps token to (zip_bytes, creation_time).
-type DownloadStore = Arc<Mutex<HashMap<String, (Vec<u8>, std::time::Instant)>>>;
+/// Shared application state for temporary generated dictionary storage.
+type DownloadStore = Arc<Mutex<HashMap<String, DownloadArtifact>>>;
+
+#[derive(Clone)]
+struct DownloadArtifact {
+    bytes: Vec<u8>,
+    filename: String,
+    content_type: &'static str,
+    created_at: std::time::Instant,
+}
+
+impl DownloadArtifact {
+    fn character_zip(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            filename: "bee_characters.zip".to_string(),
+            content_type: "application/zip",
+            created_at: std::time::Instant::now(),
+        }
+    }
+
+    fn frequency_zip(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            filename: "bee_frequency.zip".to_string(),
+            content_type: "application/zip",
+            created_at: std::time::Instant::now(),
+        }
+    }
+}
 
 /// Result of fetching an image: the index into the character list, and optionally the image bytes + extension.
 type IndexedImageResult = (usize, Option<(Vec<u8>, String, u32, u32)>);
@@ -87,6 +118,8 @@ struct AppState {
     image_cache: ImageCache,
     /// Per-media API response cache (character data + title).
     media_cache: MediaCache,
+    /// Jiten API client for media frequency decks.
+    jiten_client: JitenClient,
     /// Server start time for uptime reporting.
     started_at: std::time::Instant,
     /// Boot identifier for correlating lifecycle logs across restarts.
@@ -107,8 +140,9 @@ impl AppState {
                     let mut store = dl.lock().await;
                     let now = std::time::Instant::now();
                     let before = store.len();
-                    store.retain(|_, (_, created)| {
-                        now.duration_since(*created).as_secs() < DOWNLOAD_TOKEN_MAX_AGE_SECS
+                    store.retain(|_, artifact| {
+                        now.duration_since(artifact.created_at).as_secs()
+                            < DOWNLOAD_TOKEN_MAX_AGE_SECS
                     });
                     let removed = before - store.len();
                     if removed > 0 {
@@ -164,12 +198,15 @@ impl AppState {
                 std::process::exit(1)
             });
 
+        let jiten_client = JitenClient::new(http_client.clone());
+
         Self {
             downloads,
             http_client,
             anilist_generation_http_client,
             image_cache,
             media_cache,
+            jiten_client,
             started_at: std::time::Instant::now(),
             boot_id,
         }
@@ -261,6 +298,20 @@ impl MediaGenerationFailure {
         };
         format!("{}:{}:{}", self.source, self.id, title)
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct FrequencyUnmatchedMedia {
+    #[serde(flatten)]
+    media: UserMediaEntry,
+    reason: String,
+}
+
+struct FrequencyGenerationResult {
+    zip_bytes: Vec<u8>,
+    matched_count: usize,
+    unmatched: Vec<FrequencyUnmatchedMedia>,
+    total_terms: usize,
 }
 
 #[derive(Clone)]
@@ -369,6 +420,15 @@ struct GenerateStreamQuery {
     spoilers: bool,
     #[serde(default = "default_true")]
     seiyuu: bool,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct FrequencyQuery {
+    vndb_user: Option<String>,
+    anilist_user: Option<String>,
+    entries: Option<String>,
+    min_occurrences: Option<u64>,
+    max_terms: Option<usize>,
 }
 
 impl GenerateStreamQuery {
@@ -669,115 +729,117 @@ fn normalize_entries_json_for_url(entries_json: &str) -> String {
     }
 }
 
-fn log_generation_summary(
-    state: &AppState,
-    request_id: &str,
-    mode: &str,
+struct GenerationSummaryContext<'a> {
+    state: &'a AppState,
+    request_id: &'a str,
+    mode: &'a str,
     started_at: std::time::Instant,
-    stats: &GenerationStats,
-    builder: Option<&DictBuilder>,
-    zip_size_bytes: Option<usize>,
-    error: Option<&str>,
-    media_failures: &[MediaGenerationFailure],
-) {
-    let skipped_no_japanese_count = builder
-        .map(DictBuilder::skipped_no_japanese_count)
-        .unwrap_or(0);
-    let duration_ms = started_at.elapsed().as_millis() as u64;
-    let zip_size_bytes = zip_size_bytes.unwrap_or(0);
-    let (request_id, failed_media_count, failed_media_preview) =
-        generation_summary_failure_context(request_id, media_failures);
-
-    match error {
-        Some(error) => warn!(
-            boot_id = %state.boot_id,
-            request_id = %request_id,
-            mode = mode,
-            media_total = stats.media_total,
-            cache_hits = stats.total_cache_hits(),
-            cache_misses = stats.total_cache_misses(),
-            vndb_cache_hits = stats.vndb_cache_hits,
-            vndb_cache_misses = stats.vndb_cache_misses,
-            anilist_cache_hits = stats.anilist_cache_hits,
-            anilist_cache_misses = stats.anilist_cache_misses,
-            upstream_failures = stats.total_external_failures(),
-            rate_limit_failures = stats.rate_limit_failures,
-            invalid_input_failures = stats.invalid_input_failures,
-            skipped_no_japanese_count = skipped_no_japanese_count,
-            failed_media_count = failed_media_count,
-            failed_media_preview = ?failed_media_preview,
-            zip_size_bytes = zip_size_bytes,
-            duration_ms = duration_ms,
-            error = %error,
-            "Dictionary generation failed"
-        ),
-        None => info!(
-            boot_id = %state.boot_id,
-            request_id = %request_id,
-            mode = mode,
-            media_total = stats.media_total,
-            cache_hits = stats.total_cache_hits(),
-            cache_misses = stats.total_cache_misses(),
-            vndb_cache_hits = stats.vndb_cache_hits,
-            vndb_cache_misses = stats.vndb_cache_misses,
-            anilist_cache_hits = stats.anilist_cache_hits,
-            anilist_cache_misses = stats.anilist_cache_misses,
-            upstream_failures = stats.total_external_failures(),
-            rate_limit_failures = stats.rate_limit_failures,
-            invalid_input_failures = stats.invalid_input_failures,
-            skipped_no_japanese_count = skipped_no_japanese_count,
-            failed_media_count = failed_media_count,
-            failed_media_preview = ?failed_media_preview,
-            zip_size_bytes = zip_size_bytes,
-            duration_ms = duration_ms,
-            "Dictionary generation completed"
-        ),
-    }
+    stats: &'a GenerationStats,
+    media_failures: &'a [MediaGenerationFailure],
 }
 
-fn finalize_multi_media_generation(
-    request_id: &str,
-    state: &AppState,
-    mode: &str,
-    started_at: std::time::Instant,
-    stats: &GenerationStats,
-    builder: &mut DictBuilder,
-    total_requested: usize,
-    collected_errors: &[String],
-    media_failures: &[MediaGenerationFailure],
-) -> Result<Vec<u8>, String> {
-    builder.log_skipped_no_japanese_summary();
-
-    if !media_failures.is_empty() {
-        let error =
-            build_multi_media_abort_error(total_requested, media_failures, collected_errors);
-        log_generation_summary(
+impl<'a> GenerationSummaryContext<'a> {
+    fn new(
+        state: &'a AppState,
+        request_id: &'a str,
+        mode: &'a str,
+        started_at: std::time::Instant,
+        stats: &'a GenerationStats,
+        media_failures: &'a [MediaGenerationFailure],
+    ) -> Self {
+        Self {
             state,
             request_id,
             mode,
             started_at,
             stats,
-            Some(builder),
-            None,
-            Some(&error),
             media_failures,
+        }
+    }
+
+    fn log(
+        &self,
+        builder: Option<&DictBuilder>,
+        zip_size_bytes: Option<usize>,
+        error: Option<&str>,
+    ) {
+        let skipped_no_japanese_count = builder
+            .map(DictBuilder::skipped_no_japanese_count)
+            .unwrap_or(0);
+        let duration_ms = self.started_at.elapsed().as_millis() as u64;
+        let zip_size_bytes = zip_size_bytes.unwrap_or(0);
+        let (request_id, failed_media_count, failed_media_preview) =
+            generation_summary_failure_context(self.request_id, self.media_failures);
+
+        match error {
+            Some(error) => warn!(
+                boot_id = %self.state.boot_id,
+                request_id = %request_id,
+                mode = self.mode,
+                media_total = self.stats.media_total,
+                cache_hits = self.stats.total_cache_hits(),
+                cache_misses = self.stats.total_cache_misses(),
+                vndb_cache_hits = self.stats.vndb_cache_hits,
+                vndb_cache_misses = self.stats.vndb_cache_misses,
+                anilist_cache_hits = self.stats.anilist_cache_hits,
+                anilist_cache_misses = self.stats.anilist_cache_misses,
+                upstream_failures = self.stats.total_external_failures(),
+                rate_limit_failures = self.stats.rate_limit_failures,
+                invalid_input_failures = self.stats.invalid_input_failures,
+                skipped_no_japanese_count = skipped_no_japanese_count,
+                failed_media_count = failed_media_count,
+                failed_media_preview = ?failed_media_preview,
+                zip_size_bytes = zip_size_bytes,
+                duration_ms = duration_ms,
+                error = %error,
+                "Dictionary generation failed"
+            ),
+            None => info!(
+                boot_id = %self.state.boot_id,
+                request_id = %request_id,
+                mode = self.mode,
+                media_total = self.stats.media_total,
+                cache_hits = self.stats.total_cache_hits(),
+                cache_misses = self.stats.total_cache_misses(),
+                vndb_cache_hits = self.stats.vndb_cache_hits,
+                vndb_cache_misses = self.stats.vndb_cache_misses,
+                anilist_cache_hits = self.stats.anilist_cache_hits,
+                anilist_cache_misses = self.stats.anilist_cache_misses,
+                upstream_failures = self.stats.total_external_failures(),
+                rate_limit_failures = self.stats.rate_limit_failures,
+                invalid_input_failures = self.stats.invalid_input_failures,
+                skipped_no_japanese_count = skipped_no_japanese_count,
+                failed_media_count = failed_media_count,
+                failed_media_preview = ?failed_media_preview,
+                zip_size_bytes = zip_size_bytes,
+                duration_ms = duration_ms,
+                "Dictionary generation completed"
+            ),
+        }
+    }
+}
+
+fn finalize_multi_media_generation(
+    builder: &mut DictBuilder,
+    total_requested: usize,
+    collected_errors: &[String],
+    log_context: &GenerationSummaryContext<'_>,
+) -> Result<Vec<u8>, String> {
+    builder.log_skipped_no_japanese_summary();
+
+    if !log_context.media_failures.is_empty() {
+        let error = build_multi_media_abort_error(
+            total_requested,
+            log_context.media_failures,
+            collected_errors,
         );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
     if !collected_errors.is_empty() {
         let error = combine_service_errors(collected_errors);
-        log_generation_summary(
-            state,
-            request_id,
-            mode,
-            started_at,
-            stats,
-            Some(builder),
-            None,
-            Some(&error),
-            media_failures,
-        );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
@@ -786,49 +848,19 @@ fn finalize_multi_media_generation(
             "{} No character entries were generated from the requested media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            mode,
-            started_at,
-            stats,
-            Some(builder),
-            None,
-            Some(&error),
-            media_failures,
-        );
+        log_context.log(Some(builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
-                state,
-                request_id,
-                mode,
-                started_at,
-                stats,
-                Some(builder),
-                None,
-                Some(&error),
-                media_failures,
-            );
+            log_context.log(Some(builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        mode,
-        started_at,
-        stats,
-        Some(builder),
-        Some(zip_bytes.len()),
-        None,
-        media_failures,
-    );
+    log_context.log(Some(builder), Some(zip_bytes.len()), None);
 
     Ok(zip_bytes)
 }
@@ -961,6 +993,11 @@ async fn main() {
     let generate_routes = Router::new()
         .route("/api/yomitan-dict", get(generate_dict))
         .route("/api/generate-stream", get(generate_stream))
+        .route("/api/yomitan-frequency-dict", get(generate_frequency_dict))
+        .route(
+            "/api/generate-frequency-stream",
+            get(generate_frequency_stream),
+        )
         .layer(GovernorLayer {
             config: std::sync::Arc::new(generate_governor),
         });
@@ -970,6 +1007,10 @@ async fn main() {
         .route("/api/user-lists", get(fetch_user_lists))
         .route("/api/download", get(download_zip))
         .route("/api/yomitan-index", get(generate_index))
+        .route(
+            "/api/yomitan-frequency-index",
+            get(generate_frequency_index),
+        )
         .route("/api/build-info", get(build_info))
         .layer(GovernorLayer {
             config: std::sync::Arc::new(api_governor),
@@ -979,6 +1020,8 @@ async fn main() {
         .route("/", get(serve_index))
         .route("/custom", get(serve_custom))
         .route("/custom/", get(serve_custom))
+        .route("/frequency", get(serve_frequency))
+        .route("/frequency/", get(serve_frequency))
         .route("/api/health", get(health_check))
         .merge(generate_routes)
         .merge(api_routes)
@@ -1054,6 +1097,19 @@ async fn serve_custom() -> impl IntoResponse {
     }
 }
 
+async fn serve_frequency() -> impl IntoResponse {
+    let path = static_dir().join("frequency").join("index.html");
+    match tokio::fs::read(&path).await {
+        Ok(bytes) => (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "frequency/index.html not found").into_response(),
+    }
+}
+
 async fn build_info() -> impl IntoResponse {
     let timestamp = env!("BUILD_TIMESTAMP");
     axum::Json(serde_json::json!({ "build_time": timestamp }))
@@ -1095,6 +1151,66 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
+async fn collect_user_media_entries(
+    state: &AppState,
+    vndb_user: Option<&str>,
+    anilist_user: Option<&str>,
+) -> Result<(Vec<UserMediaEntry>, Vec<String>), String> {
+    let vndb_user = normalize_vndb_user_input(vndb_user.unwrap_or(""));
+    let anilist_user = normalize_anilist_user_input(anilist_user.unwrap_or(""));
+
+    if vndb_user.is_empty() && anilist_user.is_empty() {
+        return Err(format!(
+            "{} At least one username (vndb_user or anilist_user) is required",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    let mut all_entries = Vec::new();
+    let mut raw_errors = Vec::new();
+    let mut response_warnings = Vec::new();
+
+    if !vndb_user.is_empty() {
+        let client = VndbClient::with_client(state.http_client.clone());
+        match client.fetch_user_playing_list(&vndb_user).await {
+            Ok(entries) => all_entries.extend(entries),
+            Err(error) => {
+                response_warnings.push(format!("VNDB: {}", public_error_message(&error)));
+                raw_errors.push(error);
+            }
+        }
+    }
+
+    if !anilist_user.is_empty() {
+        let client = anilist_preview_client(state);
+        match client.fetch_user_current_list(&anilist_user).await {
+            Ok(entries) => all_entries.extend(entries),
+            Err(error) => {
+                response_warnings.push(format!("AniList: {}", public_error_message(&error)));
+                raw_errors.push(error);
+            }
+        }
+    }
+
+    {
+        let mut seen = HashSet::new();
+        all_entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+    }
+
+    if all_entries.is_empty() {
+        if raw_errors.is_empty() {
+            Err(format!(
+                "{} No in-progress media found in the requested user lists",
+                INVALID_INPUT_PREFIX
+            ))
+        } else {
+            Err(combine_service_errors(&raw_errors))
+        }
+    } else {
+        Ok((all_entries, response_warnings))
+    }
+}
+
 // === Fetch user lists endpoint ===
 
 async fn fetch_user_lists(
@@ -1102,77 +1218,32 @@ async fn fetch_user_lists(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let request_id = new_request_id();
-    let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
-    let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
-
-    if vndb_user.is_empty() && anilist_user.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            [
-                ("content-type", "application/json"),
-                ("access-control-allow-origin", "*"),
-            ],
-            r#"{"error":"At least one username (vndb_user or anilist_user) is required"}"#
-                .to_string(),
-        )
-            .into_response();
-    }
-
-    let mut all_entries: Vec<UserMediaEntry> = Vec::new();
-    let mut raw_errors: Vec<String> = Vec::new();
-    let mut response_errors: Vec<String> = Vec::new();
-
-    if !vndb_user.is_empty() {
-        let client = VndbClient::with_client(state.http_client.clone());
-        match client.fetch_user_playing_list(&vndb_user).await {
-            Ok(entries) => all_entries.extend(entries),
-            Err(e) => {
-                warn!(
-                    boot_id = %state.boot_id,
-                    request_id = %request_id,
-                    source = "vndb",
-                    user = %vndb_user,
-                    error = %e,
-                    "User list fetch failed"
-                );
-                response_errors.push(format!("VNDB: {}", public_error_message(&e)));
-                raw_errors.push(e);
-            }
+    let (all_entries, response_errors) = match collect_user_media_entries(
+        &state,
+        params.vndb_user.as_deref(),
+        params.anilist_user.as_deref(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            warn!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                error = %error,
+                "User list fetch failed"
+            );
+            return (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response();
         }
-    }
-
-    if !anilist_user.is_empty() {
-        let client = anilist_preview_client(&state);
-        match client.fetch_user_current_list(&anilist_user).await {
-            Ok(entries) => all_entries.extend(entries),
-            Err(e) => {
-                warn!(
-                    boot_id = %state.boot_id,
-                    request_id = %request_id,
-                    source = "anilist",
-                    user = %anilist_user,
-                    error = %e,
-                    "User list fetch failed"
-                );
-                response_errors.push(format!("AniList: {}", public_error_message(&e)));
-                raw_errors.push(e);
-            }
-        }
-    }
-
-    if all_entries.is_empty() && !raw_errors.is_empty() {
-        let status = aggregate_status_code(&raw_errors);
-        let error_msg = response_errors.join("; ");
-        return (
-            status,
-            [
-                ("content-type", "application/json"),
-                ("access-control-allow-origin", "*"),
-            ],
-            serde_json::json!({"error": error_msg}).to_string(),
-        )
-            .into_response();
-    }
+    };
 
     let response = serde_json::json!({
         "entries": all_entries,
@@ -1237,25 +1308,21 @@ async fn download_zip(
     let request_id = new_request_id();
     let mut store = state.downloads.lock().await;
 
-    if let Some((zip_bytes, _)) = store.remove(&params.token) {
+    if let Some(artifact) = store.remove(&params.token) {
+        let zip_size_bytes = artifact.bytes.len();
+        let disposition = format!("attachment; filename={}", artifact.filename);
         debug!(
             boot_id = %state.boot_id,
             request_id = %request_id,
             token = %params.token,
-            zip_size_bytes = zip_bytes.len(),
+            zip_size_bytes = zip_size_bytes,
+            filename = %artifact.filename,
             "Download token consumed"
         );
         (
             StatusCode::OK,
-            [
-                ("content-type", "application/zip"),
-                (
-                    "content-disposition",
-                    "attachment; filename=bee_characters.zip",
-                ),
-                ("access-control-allow-origin", "*"),
-            ],
-            zip_bytes,
+            download_headers(artifact.content_type, &disposition),
+            artifact.bytes,
         )
             .into_response()
     } else {
@@ -1269,6 +1336,19 @@ async fn download_zip(
     }
 }
 
+fn download_headers(content_type: &'static str, disposition: &str) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    if let Ok(value) = HeaderValue::from_str(disposition) {
+        headers.insert(header::CONTENT_DISPOSITION, value);
+    }
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    headers
+}
+
 async fn send_stream_result(
     request_id: &str,
     state: &AppState,
@@ -1277,16 +1357,9 @@ async fn send_stream_result(
 ) {
     match result {
         Ok(zip_bytes) => {
-            let zip_size_bytes = zip_bytes.len();
-            let token = uuid::Uuid::new_v4().to_string();
-            {
-                let mut store = state.downloads.lock().await;
-                let now = std::time::Instant::now();
-                store.retain(|_, (_, created)| {
-                    now.duration_since(*created).as_secs() < DOWNLOAD_TOKEN_MAX_AGE_SECS
-                });
-                store.insert(token.clone(), (zip_bytes, now));
-            }
+            let artifact = DownloadArtifact::character_zip(zip_bytes);
+            let zip_size_bytes = artifact.bytes.len();
+            let token = store_download_artifact(state, artifact).await;
             info!(
                 boot_id = %state.boot_id,
                 request_id = %request_id,
@@ -1316,6 +1389,537 @@ async fn send_stream_result(
                 )))
                 .await;
         }
+    }
+}
+
+async fn store_download_artifact(state: &AppState, artifact: DownloadArtifact) -> String {
+    let token = uuid::Uuid::new_v4().to_string();
+    let mut store = state.downloads.lock().await;
+    let now = std::time::Instant::now();
+    store.retain(|_, artifact| {
+        now.duration_since(artifact.created_at).as_secs() < DOWNLOAD_TOKEN_MAX_AGE_SECS
+    });
+    store.insert(token.clone(), artifact);
+    token
+}
+
+// === Jiten-backed frequency dictionary endpoints ===
+
+async fn generate_frequency_dict(
+    Query(params): Query<FrequencyQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let request_id = new_request_id();
+    let (download_url, index_url) = match frequency_urls(&params) {
+        Ok(urls) => urls,
+        Err(error) => return frequency_error_response(&error),
+    };
+
+    let entries = match media_entries_from_frequency_query(&state, &params).await {
+        Ok((entries, _warnings)) => entries,
+        Err(error) => return frequency_error_response(&error),
+    };
+
+    match generate_frequency_from_media_entries(
+        &request_id,
+        entries,
+        &params,
+        Some(download_url),
+        Some(index_url),
+        &state,
+        None,
+    )
+    .await
+    {
+        Ok(result) => {
+            info!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                matched_count = result.matched_count,
+                unmatched_count = result.unmatched.len(),
+                term_count = result.total_terms,
+                zip_size_bytes = result.zip_bytes.len(),
+                "Frequency dictionary generation completed"
+            );
+            (
+                StatusCode::OK,
+                [
+                    ("content-type", "application/zip"),
+                    (
+                        "content-disposition",
+                        "attachment; filename=bee_frequency.zip",
+                    ),
+                    ("access-control-allow-origin", "*"),
+                ],
+                result.zip_bytes,
+            )
+                .into_response()
+        }
+        Err(error) => {
+            warn!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                error = %error,
+                "Frequency dictionary generation failed"
+            );
+            frequency_error_response(&error)
+        }
+    }
+}
+
+async fn generate_frequency_index(Query(params): Query<FrequencyQuery>) -> impl IntoResponse {
+    let (download_url, index_url) = match frequency_urls(&params) {
+        Ok(urls) => urls,
+        Err(error) => return frequency_error_response(&error),
+    };
+    let builder = FrequencyDictBuilder::new(Some(download_url), Some(index_url));
+    (
+        StatusCode::OK,
+        [
+            ("content-type", "application/json"),
+            ("access-control-allow-origin", "*"),
+        ],
+        builder.create_index().to_string(),
+    )
+        .into_response()
+}
+
+async fn generate_frequency_stream(
+    Query(params): Query<FrequencyQuery>,
+    State(state): State<AppState>,
+) -> Sse<ReceiverStream<Result<Event, std::convert::Infallible>>> {
+    let request_id = new_request_id();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(100);
+
+    tokio::spawn(async move {
+        let result = async {
+            let (download_url, index_url) = frequency_urls(&params)?;
+            let (entries, warnings) = media_entries_from_frequency_query(&state, &params).await?;
+            for warning in warnings {
+                send_frequency_warning(&tx, serde_json::json!({ "message": warning })).await;
+            }
+            generate_frequency_from_media_entries(
+                &request_id,
+                entries,
+                &params,
+                Some(download_url),
+                Some(index_url),
+                &state,
+                Some(&tx),
+            )
+            .await
+        }
+        .await;
+
+        match result {
+            Ok(result) => {
+                let token = store_download_artifact(
+                    &state,
+                    DownloadArtifact::frequency_zip(result.zip_bytes),
+                )
+                .await;
+                info!(
+                    boot_id = %state.boot_id,
+                    request_id = %request_id,
+                    matched_count = result.matched_count,
+                    unmatched_count = result.unmatched.len(),
+                    term_count = result.total_terms,
+                    "SSE frequency dictionary generation completed"
+                );
+                let _ = tx
+                    .send(Ok(Event::default().event("complete").data(
+                        serde_json::json!({
+                            "token": token,
+                            "filename": "bee_frequency.zip",
+                            "matchedCount": result.matched_count,
+                            "termCount": result.total_terms,
+                            "unmatched": result.unmatched
+                        })
+                        .to_string(),
+                    )))
+                    .await;
+            }
+            Err(error) => {
+                warn!(
+                    boot_id = %state.boot_id,
+                    request_id = %request_id,
+                    error = %error,
+                    "SSE frequency dictionary generation failed"
+                );
+                let _ = tx
+                    .send(Ok(Event::default().event("error").data(
+                        serde_json::json!({
+                            "error": public_error_message(&error),
+                            "status": status_code_for_error(&error).as_u16()
+                        })
+                        .to_string(),
+                    )))
+                    .await;
+            }
+        }
+    });
+
+    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
+}
+
+async fn generate_frequency_from_media_entries(
+    _request_id: &str,
+    entries: Vec<UserMediaEntry>,
+    params: &FrequencyQuery,
+    download_url: Option<String>,
+    index_url: Option<String>,
+    state: &AppState,
+    progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
+) -> Result<FrequencyGenerationResult, String> {
+    if entries.is_empty() {
+        return Err(format!(
+            "{} No current VNDB/AniList media were provided for frequency generation",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    let mut unmatched = Vec::new();
+    let mut deck_ids = std::collections::BTreeSet::new();
+    let mut resolve_errors = Vec::new();
+    let mut matched_count = 0usize;
+
+    for (idx, entry) in entries.iter().enumerate() {
+        send_frequency_progress(
+            progress_tx,
+            idx + 1,
+            entries.len(),
+            "Resolving Jiten decks",
+            entry_display_title(entry),
+        )
+        .await;
+
+        match state
+            .jiten_client
+            .deck_ids_by_external_link(&entry.source, &entry.id)
+            .await
+        {
+            Ok(ids) if ids.is_empty() => unmatched.push(FrequencyUnmatchedMedia {
+                media: entry.clone(),
+                reason: "No matching Jiten frequency deck found".to_string(),
+            }),
+            Ok(ids) => {
+                matched_count += 1;
+                deck_ids.extend(ids);
+            }
+            Err(error) => {
+                resolve_errors.push(error.clone());
+                unmatched.push(FrequencyUnmatchedMedia {
+                    media: entry.clone(),
+                    reason: public_error_message(&error),
+                });
+            }
+        }
+    }
+
+    if let Some(tx) = progress_tx {
+        if !unmatched.is_empty() {
+            send_frequency_warning(
+                tx,
+                serde_json::json!({
+                    "message": "Some media did not have Jiten occurrence-count data.",
+                    "unmatched": unmatched.clone()
+                }),
+            )
+            .await;
+        }
+    }
+
+    if deck_ids.is_empty() {
+        return if resolve_errors.is_empty() {
+            Err(format!(
+                "{} No Jiten occurrence-count decks matched the provided current media",
+                INVALID_INPUT_PREFIX
+            ))
+        } else {
+            Err(combine_service_errors(&resolve_errors))
+        };
+    }
+
+    let mut builder = FrequencyDictBuilder::new(download_url, index_url);
+    let deck_ids: Vec<i32> = deck_ids.into_iter().collect();
+    let mut deck_errors = Vec::new();
+    let mut successful_decks = 0usize;
+
+    for (idx, deck_id) in deck_ids.iter().enumerate() {
+        send_frequency_progress(
+            progress_tx,
+            idx + 1,
+            deck_ids.len(),
+            "Downloading Jiten occurrence counts",
+            &format!("Deck {}", deck_id),
+        )
+        .await;
+
+        let zip_bytes = match state
+            .jiten_client
+            .download_yomitan_frequency_zip(*deck_id)
+            .await
+        {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                deck_errors.push(error);
+                continue;
+            }
+        };
+
+        let frequency_entries = match JitenClient::parse_yomitan_frequency_zip(&zip_bytes) {
+            Ok(entries) => entries,
+            Err(error) => {
+                deck_errors.push(format!("UPSTREAM: {}", error));
+                continue;
+            }
+        };
+
+        builder.add_entries_for_deck(*deck_id, &frequency_entries);
+        successful_decks += 1;
+    }
+
+    if !deck_errors.is_empty() {
+        return Err(combine_service_errors(&deck_errors));
+    }
+
+    if successful_decks == 0 {
+        return Err(combine_service_errors(&deck_errors));
+    }
+
+    if builder.is_empty() {
+        return Err(format!(
+            "{} Jiten decks were found, but no occurrence entries could be parsed",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    send_frequency_progress(
+        progress_tx,
+        1,
+        1,
+        "Building combined frequency dictionary",
+        FREQUENCY_DICTIONARY_TITLE,
+    )
+    .await;
+
+    let total_terms = builder.filtered_entry_count(params.min_occurrences, params.max_terms);
+    if total_terms == 0 {
+        return Err(format!(
+            "{} No occurrence entries matched the requested filters",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    let zip_bytes = builder.export_bytes(params.min_occurrences, params.max_terms)?;
+    Ok(FrequencyGenerationResult {
+        zip_bytes,
+        matched_count,
+        unmatched,
+        total_terms,
+    })
+}
+
+async fn media_entries_from_frequency_query(
+    state: &AppState,
+    params: &FrequencyQuery,
+) -> Result<(Vec<UserMediaEntry>, Vec<String>), String> {
+    let mut entries = Vec::new();
+    let mut warnings = Vec::new();
+
+    if let Some(entries_json) = params
+        .entries
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        entries.extend(parse_frequency_entries_json(entries_json)?);
+    }
+
+    if params.vndb_user.as_deref().unwrap_or("").trim().is_empty()
+        && params
+            .anilist_user
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+    {
+        if entries.is_empty() {
+            return Err(format!(
+                "{} At least one username (vndb_user or anilist_user) or media entry is required",
+                INVALID_INPUT_PREFIX
+            ));
+        }
+    } else {
+        let (user_entries, user_warnings) = collect_user_media_entries(
+            state,
+            params.vndb_user.as_deref(),
+            params.anilist_user.as_deref(),
+        )
+        .await?;
+        entries.extend(user_entries);
+        warnings.extend(user_warnings);
+    }
+
+    let mut seen = HashSet::new();
+    entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
+
+    if entries.is_empty() {
+        Err(format!(
+            "{} No current VNDB/AniList media were found for frequency generation",
+            INVALID_INPUT_PREFIX
+        ))
+    } else {
+        Ok((entries, warnings))
+    }
+}
+
+fn parse_frequency_entries_json(entries_json: &str) -> Result<Vec<UserMediaEntry>, String> {
+    let entries: Vec<ManualEntry> = serde_json::from_str(entries_json).map_err(|e| {
+        format!(
+            "{} entries must be a JSON array of source/id objects: {}",
+            INVALID_INPUT_PREFIX, e
+        )
+    })?;
+
+    let mut normalized = Vec::new();
+    for entry in entries {
+        let entry = normalize_manual_entry(&entry)?;
+        let media_type = match (entry.source.as_str(), entry.media_type.as_str()) {
+            ("vndb", _) => "vn",
+            ("anilist", "MANGA") => "manga",
+            ("anilist", _) => "anime",
+            _ => "unknown",
+        };
+        normalized.push(UserMediaEntry {
+            id: entry.id.clone(),
+            title: entry.id.clone(),
+            title_romaji: entry.id,
+            source: entry.source,
+            media_type: media_type.to_string(),
+        });
+    }
+
+    Ok(normalized)
+}
+
+fn frequency_urls(params: &FrequencyQuery) -> Result<(String, String), String> {
+    if !has_frequency_media_input(params) {
+        return Err(format!(
+            "{} At least one username (vndb_user or anilist_user) or media entry is required",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    let parts = frequency_query_parts(params);
+    let query = parts.join("&");
+    let base = base_url();
+    Ok((
+        format!("{}/api/yomitan-frequency-dict?{}", base, query),
+        format!("{}/api/yomitan-frequency-index?{}", base, query),
+    ))
+}
+
+fn has_frequency_media_input(params: &FrequencyQuery) -> bool {
+    params
+        .vndb_user
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        || params
+            .anilist_user
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || params
+            .entries
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn frequency_query_parts(params: &FrequencyQuery) -> Vec<String> {
+    let mut parts = Vec::new();
+
+    let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
+    if !vndb_user.is_empty() {
+        parts.push(format!("vndb_user={}", urlencoding::encode(&vndb_user)));
+    }
+
+    let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
+    if !anilist_user.is_empty() {
+        parts.push(format!(
+            "anilist_user={}",
+            urlencoding::encode(&anilist_user)
+        ));
+    }
+
+    if let Some(entries) = params
+        .entries
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let normalized = normalize_entries_json_for_url(entries);
+        parts.push(format!("entries={}", urlencoding::encode(&normalized)));
+    }
+    if let Some(min_occurrences) = params.min_occurrences {
+        parts.push(format!("min_occurrences={}", min_occurrences));
+    }
+    if let Some(max_terms) = params.max_terms {
+        parts.push(format!("max_terms={}", max_terms));
+    }
+
+    parts
+}
+
+fn frequency_error_response(error: &str) -> axum::response::Response {
+    (
+        status_code_for_error(error),
+        [
+            ("content-type", "application/json"),
+            ("access-control-allow-origin", "*"),
+        ],
+        serde_json::json!({"error": public_error_message(error)}).to_string(),
+    )
+        .into_response()
+}
+
+async fn send_frequency_progress(
+    tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
+    current: usize,
+    total: usize,
+    stage: &str,
+    title: &str,
+) {
+    if let Some(tx) = tx {
+        let _ = tx
+            .send(Ok(Event::default().event("progress").data(
+                serde_json::json!({
+                    "current": current,
+                    "total": total,
+                    "stage": stage,
+                    "title": title
+                })
+                .to_string(),
+            )))
+            .await;
+    }
+}
+
+async fn send_frequency_warning(
+    tx: &tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>,
+    payload: serde_json::Value,
+) {
+    let _ = tx
+        .send(Ok(Event::default()
+            .event("warning")
+            .data(payload.to_string())))
+        .await;
+}
+
+fn entry_display_title(entry: &UserMediaEntry) -> &str {
+    if !entry.title_romaji.trim().is_empty() {
+        &entry.title_romaji
+    } else if !entry.title.trim().is_empty() {
+        &entry.title
+    } else {
+        &entry.id
     }
 }
 
@@ -1483,17 +2087,15 @@ async fn generate_dict_from_usernames(
                 stats.record_failure(&e);
                 collected_errors.push(e.clone());
                 if anilist_user.is_empty() {
-                    log_generation_summary(
+                    GenerationSummaryContext::new(
                         state,
                         request_id,
                         "usernames",
                         started_at,
                         &stats,
-                        None,
-                        None,
-                        Some(&e),
                         &media_failures,
-                    );
+                    )
+                    .log(None, None, Some(&e));
                     return Err(e);
                 }
                 warn!(
@@ -1515,17 +2117,15 @@ async fn generate_dict_from_usernames(
                 stats.record_failure(&e);
                 collected_errors.push(e.clone());
                 if vndb_user.is_empty() || media_entries.is_empty() {
-                    log_generation_summary(
+                    GenerationSummaryContext::new(
                         state,
                         request_id,
                         "usernames",
                         started_at,
                         &stats,
-                        None,
-                        None,
-                        Some(&e),
                         &media_failures,
-                    );
+                    )
+                    .log(None, None, Some(&e));
                     return Err(e);
                 }
                 warn!(
@@ -1556,17 +2156,15 @@ async fn generate_dict_from_usernames(
         } else {
             combine_service_errors(&collected_errors)
         };
-        log_generation_summary(
+        GenerationSummaryContext::new(
             state,
             request_id,
             "usernames",
             started_at,
             &stats,
-            None,
-            None,
-            Some(&error),
             &media_failures,
-        );
+        )
+        .log(None, None, Some(&error));
         return Err(error);
     }
 
@@ -1791,17 +2389,15 @@ async fn generate_dict_from_usernames(
         }
     }
 
-    finalize_multi_media_generation(
-        request_id,
+    let log_context = GenerationSummaryContext::new(
         state,
+        request_id,
         "usernames",
         started_at,
         &stats,
-        &mut builder,
-        total,
-        &collected_errors,
         &media_failures,
-    )
+    );
+    finalize_multi_media_generation(&mut builder, total, &collected_errors, &log_context)
 }
 
 // === Generate dictionary from multiple manual media entries ===
@@ -1856,17 +2452,15 @@ async fn generate_dict_from_entries(
         } else {
             format!("{} No valid entries provided", INVALID_INPUT_PREFIX)
         };
-        log_generation_summary(
+        GenerationSummaryContext::new(
             state,
             request_id,
             "manual_entries",
             started_at,
             &stats,
-            None,
-            None,
-            Some(&error),
             &media_failures,
-        );
+        )
+        .log(None, None, Some(&error));
         return Err(error);
     }
 
@@ -2059,16 +2653,19 @@ async fn generate_dict_from_entries(
         }
     }
 
-    finalize_multi_media_generation(
-        request_id,
+    let log_context = GenerationSummaryContext::new(
         state,
+        request_id,
         "manual_entries",
         started_at,
         &stats,
+        &media_failures,
+    );
+    finalize_multi_media_generation(
         &mut builder,
         total_requested,
         &collected_errors,
-        &media_failures,
+        &log_context,
     )
 }
 
@@ -2235,7 +2832,7 @@ async fn generate_dict(
                 StatusCode::BAD_REQUEST,
                 "source must be 'vndb' or 'anilist'",
             )
-                .into_response()
+                .into_response();
         }
     };
 
@@ -2485,17 +3082,15 @@ async fn generate_vndb_dict(
         Ok(result) => result,
         Err(error) => {
             stats.record_failure(&error);
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_vndb",
                 started_at,
                 &stats,
-                None,
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(None, None, Some(&error));
             return Err(error);
         }
     };
@@ -2519,48 +3114,31 @@ async fn generate_vndb_dict(
             "{} No character entries were generated for the requested VNDB media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            "single_vndb",
-            started_at,
-            &stats,
-            Some(&builder),
-            None,
-            Some(&error),
-            &[],
-        );
+        GenerationSummaryContext::new(state, request_id, "single_vndb", started_at, &stats, &[])
+            .log(Some(&builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_vndb",
                 started_at,
                 &stats,
-                Some(&builder),
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(Some(&builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        "single_vndb",
-        started_at,
-        &stats,
+    GenerationSummaryContext::new(state, request_id, "single_vndb", started_at, &stats, &[]).log(
         Some(&builder),
         Some(zip_bytes.len()),
         None,
-        &[],
     );
 
     Ok(zip_bytes)
@@ -2584,17 +3162,15 @@ async fn generate_anilist_dict(
             Ok(result) => result,
             Err(error) => {
                 stats.record_failure(&error);
-                log_generation_summary(
+                GenerationSummaryContext::new(
                     state,
                     request_id,
                     "single_anilist",
                     started_at,
                     &stats,
-                    None,
-                    None,
-                    Some(&error),
                     &[],
-                );
+                )
+                .log(None, None, Some(&error));
                 return Err(error);
             }
         };
@@ -2618,49 +3194,29 @@ async fn generate_anilist_dict(
             "{} No character entries were generated for the requested AniList media",
             INVALID_INPUT_PREFIX
         );
-        log_generation_summary(
-            state,
-            request_id,
-            "single_anilist",
-            started_at,
-            &stats,
-            Some(&builder),
-            None,
-            Some(&error),
-            &[],
-        );
+        GenerationSummaryContext::new(state, request_id, "single_anilist", started_at, &stats, &[])
+            .log(Some(&builder), None, Some(&error));
         return Err(error);
     }
 
     let zip_bytes = match builder.export_bytes() {
         Ok(zip_bytes) => zip_bytes,
         Err(error) => {
-            log_generation_summary(
+            GenerationSummaryContext::new(
                 state,
                 request_id,
                 "single_anilist",
                 started_at,
                 &stats,
-                Some(&builder),
-                None,
-                Some(&error),
                 &[],
-            );
+            )
+            .log(Some(&builder), None, Some(&error));
             return Err(error);
         }
     };
 
-    log_generation_summary(
-        state,
-        request_id,
-        "single_anilist",
-        started_at,
-        &stats,
-        Some(&builder),
-        Some(zip_bytes.len()),
-        None,
-        &[],
-    );
+    GenerationSummaryContext::new(state, request_id, "single_anilist", started_at, &stats, &[])
+        .log(Some(&builder), Some(zip_bytes.len()), None);
 
     Ok(zip_bytes)
 }
@@ -2686,6 +3242,7 @@ mod tests {
         (
             AppState {
                 downloads: Arc::new(Mutex::new(HashMap::new())),
+                jiten_client: JitenClient::new(http_client.clone()),
                 http_client,
                 anilist_generation_http_client,
                 image_cache,
@@ -2716,6 +3273,108 @@ mod tests {
             status_code_for_error("INVALID_INPUT: bad request"),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[test]
+    fn test_frequency_urls_require_media_input() {
+        let error = frequency_urls(&FrequencyQuery::default()).unwrap_err();
+
+        assert_eq!(status_code_for_error(&error), StatusCode::BAD_REQUEST);
+        assert!(public_error_message(&error).contains("At least one username"));
+        assert!(public_error_message(&error).contains("media entry"));
+    }
+
+    #[test]
+    fn test_frequency_urls_preserve_query_params() {
+        let params = FrequencyQuery {
+            vndb_user: Some("https://vndb.org/u306797".to_string()),
+            anilist_user: Some("Bee User".to_string()),
+            entries: None,
+            min_occurrences: Some(5),
+            max_terms: Some(1000),
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(download_url.contains("/api/yomitan-frequency-dict?"));
+        assert!(index_url.contains("/api/yomitan-frequency-index?"));
+        assert!(download_url.contains("vndb_user=u306797"));
+        assert!(download_url.contains("anilist_user=Bee%20User"));
+        assert!(download_url.contains("min_occurrences=5"));
+        assert!(download_url.contains("max_terms=1000"));
+    }
+
+    #[test]
+    fn test_frequency_urls_accept_manual_entries_without_usernames() {
+        let params = FrequencyQuery {
+            vndb_user: None,
+            anilist_user: None,
+            entries: Some(
+                r#"[{"source":"vndb","id":"17"},{"source":"anilist","id":"https://anilist.co/manga/30002","media_type":"MANGA"}]"#
+                    .to_string(),
+            ),
+            min_occurrences: None,
+            max_terms: None,
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(download_url.contains("/api/yomitan-frequency-dict?"));
+        assert!(index_url.contains("/api/yomitan-frequency-index?"));
+        assert!(download_url.contains("entries="));
+        assert!(download_url.contains("%22source%22%3A%22vndb%22"));
+        assert!(download_url.contains("%22id%22%3A%22v17%22"));
+        assert!(download_url.contains("%22source%22%3A%22anilist%22"));
+        assert!(download_url.contains("%22id%22%3A%2230002%22"));
+        assert!(download_url.contains("%22media_type%22%3A%22MANGA%22"));
+    }
+
+    #[test]
+    fn test_parse_frequency_entries_json_normalizes_manual_entries() {
+        let entries = parse_frequency_entries_json(
+            r#"[{"source":"vndb","id":"17"},{"source":"anilist","id":"https://anilist.co/anime/9253","media_type":"ANIME"}]"#,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].source, "vndb");
+        assert_eq!(entries[0].id, "v17");
+        assert_eq!(entries[0].media_type, "vn");
+        assert_eq!(entries[1].source, "anilist");
+        assert_eq!(entries[1].id, "9253");
+        assert_eq!(entries[1].media_type, "anime");
+    }
+
+    #[test]
+    fn test_frequency_index_metadata_title_and_update_urls() {
+        let builder = FrequencyDictBuilder::new(
+            Some("https://example.com/api/yomitan-frequency-dict?vndb_user=Bee".to_string()),
+            Some("https://example.com/api/yomitan-frequency-index?vndb_user=Bee".to_string()),
+        );
+
+        let index = builder.create_index();
+
+        assert_eq!(index["title"], FREQUENCY_DICTIONARY_TITLE);
+        assert_eq!(index["format"], 3);
+        assert_eq!(index["frequencyMode"], "occurrence-based");
+        assert_eq!(
+            index["attribution"],
+            "Data from jiten.moe licensed under CC BY-SA 4.0."
+        );
+        assert_eq!(index["sourceUrl"], "https://jiten.moe/");
+        assert_eq!(
+            index["licenseUrl"],
+            "https://creativecommons.org/licenses/by-sa/4.0/"
+        );
+        assert_eq!(index["isUpdatable"], true);
+        assert!(index["downloadUrl"]
+            .as_str()
+            .unwrap()
+            .contains("/api/yomitan-frequency-dict"));
+        assert!(index["indexUrl"]
+            .as_str()
+            .unwrap()
+            .contains("/api/yomitan-frequency-index"));
     }
 
     #[test]
@@ -2827,18 +3486,16 @@ mod tests {
             ..GenerationStats::default()
         };
 
-        let error = finalize_multi_media_generation(
-            "req-usernames",
+        let log_context = GenerationSummaryContext::new(
             &state,
+            "req-usernames",
             "usernames",
             std::time::Instant::now(),
             &stats,
-            &mut builder,
-            2,
-            &[],
             &failures,
-        )
-        .unwrap_err();
+        );
+        let error =
+            finalize_multi_media_generation(&mut builder, 2, &[], &log_context).unwrap_err();
 
         assert_eq!(status_code_for_error(&error), StatusCode::BAD_GATEWAY);
         assert_eq!(

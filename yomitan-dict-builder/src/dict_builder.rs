@@ -1092,7 +1092,7 @@ mod tests {
         let char = make_test_character("c1", "Shinichi Suzuki", "須々木 心一", "main");
         builder.add_character(&char, "Test Game");
         assert!(
-            builder.base_entries().len() > 0,
+            !builder.base_entries().is_empty(),
             "Should create at least one entry"
         );
     }
@@ -1493,7 +1493,7 @@ mod tests {
                 .contains("/api/yomitan-index"),
             "indexUrl must point to the index endpoint"
         );
-        assert_eq!(index["isUpdatable"].as_bool().unwrap(), true);
+        assert!(index["isUpdatable"].as_bool().unwrap());
     }
 
     #[test]
@@ -1757,13 +1757,11 @@ mod tests {
 
         // Collect all image paths referenced in structured content
         let mut referenced_paths: HashSet<String> = HashSet::new();
+        let image_path_re = regex::Regex::new(r#""path"\s*:\s*"(img/[^"]+)""#).unwrap();
         for entry in builder.base_entries() {
             let sc_str = serde_json::to_string(&entry[5]).unwrap();
             // Look for "path":"img/..." patterns
-            for cap in regex::Regex::new(r#""path"\s*:\s*"(img/[^"]+)""#)
-                .unwrap()
-                .captures_iter(&sc_str)
-            {
+            for cap in image_path_re.captures_iter(&sc_str) {
                 referenced_paths.insert(cap[1].to_string());
             }
         }

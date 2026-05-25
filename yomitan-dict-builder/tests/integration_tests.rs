@@ -6,33 +6,62 @@
 // we'll test the public modules by importing them through the binary's module structure.
 // For integration tests, we test via HTTP endpoints.
 
+const TEST_SERVER_URL: &str = "http://localhost:3000";
+
+async fn test_server_is_running_app(client: &reqwest::Client) -> bool {
+    let result = client
+        .get(format!("{}/", TEST_SERVER_URL))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await;
+
+    let Ok(response) = result else {
+        return false;
+    };
+
+    if !response.status().is_success() {
+        return false;
+    }
+
+    response
+        .text()
+        .await
+        .map(|body| body.contains("Bee's Character Dictionary"))
+        .unwrap_or(false)
+}
+
 /// Test that the server starts and serves the index page.
 #[tokio::test]
 async fn test_index_page_accessible() {
     let client = reqwest::Client::new();
     // This test requires the server to be running - skip if not available
-    let result = client
-        .get("http://localhost:3000/")
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
+    let response = client
+        .get(format!("{}/", TEST_SERVER_URL))
         .timeout(std::time::Duration::from_secs(2))
         .send()
-        .await;
-
-    if let Ok(response) = result {
-        assert_eq!(response.status(), 200);
-        let body = response.text().await.unwrap();
-        assert!(body.contains("Bee's Character Dictionary"));
-        assert!(body.contains("From VNDB / AniList Username"));
-        assert!(body.contains("From VNDB / AniList Media ID"));
-    }
-    // If server is not running, test is silently skipped
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body = response.text().await.unwrap();
+    assert!(body.contains("Bee's Character Dictionary"));
+    assert!(body.contains("From VNDB / AniList Username"));
+    assert!(body.contains("From VNDB / AniList Media ID"));
 }
 
 /// Test the user-lists endpoint validation (no usernames provided).
 #[tokio::test]
 async fn test_user_lists_no_username() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/user-lists")
+        .get(format!("{}/api/user-lists", TEST_SERVER_URL))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -51,8 +80,15 @@ async fn test_user_lists_no_username() {
 #[tokio::test]
 async fn test_user_lists_invalid_vndb_user() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/user-lists?vndb_user=ThisUserShouldNotExist99999")
+        .get(format!(
+            "{}/api/user-lists?vndb_user=ThisUserShouldNotExist99999",
+            TEST_SERVER_URL
+        ))
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await;
@@ -69,8 +105,12 @@ async fn test_user_lists_invalid_vndb_user() {
 #[tokio::test]
 async fn test_dict_endpoint_missing_params() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/yomitan-dict")
+        .get(format!("{}/api/yomitan-dict", TEST_SERVER_URL))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -84,8 +124,15 @@ async fn test_dict_endpoint_missing_params() {
 #[tokio::test]
 async fn test_index_endpoint_returns_json() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/yomitan-index?source=vndb&id=v17")
+        .get(format!(
+            "{}/api/yomitan-index?source=vndb&id=v17",
+            TEST_SERVER_URL
+        ))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -106,8 +153,15 @@ async fn test_index_endpoint_returns_json() {
 #[tokio::test]
 async fn test_index_endpoint_username_based() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/yomitan-index?vndb_user=test&anilist_user=test2&spoilers=false")
+        .get(format!(
+            "{}/api/yomitan-index?vndb_user=test&anilist_user=test2&spoilers=false",
+            TEST_SERVER_URL
+        ))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
@@ -126,8 +180,15 @@ async fn test_index_endpoint_username_based() {
 #[tokio::test]
 async fn test_download_invalid_token() {
     let client = reqwest::Client::new();
+    if !test_server_is_running_app(&client).await {
+        return;
+    }
+
     let result = client
-        .get("http://localhost:3000/api/download?token=nonexistent-token")
+        .get(format!(
+            "{}/api/download?token=nonexistent-token",
+            TEST_SERVER_URL
+        ))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await;
