@@ -336,7 +336,7 @@ async function fetchLists() {
         const entries = data.entries || [];
 
         if (entries.length === 0) {
-            status.textContent = 'No selected titles found. Try another title list or check that your profile lists are public.';
+            status.textContent = 'No selected titles found. Try including another status or check that your profile lists are public.';
             status.className = 'status show error';
             return;
         }
