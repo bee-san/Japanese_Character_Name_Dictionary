@@ -1,0 +1,17 @@
+name: CodeQL Config
+
+queries:
+  - uses: security-extended
+
+paths:
+  - .github/workflows
+  - log_stats.py
+  - yomitan-dict-builder
+
+paths-ignore:
+  - yomitan-dict-builder/target/**
+  - yomitan-dict-builder/static/data/**
+  - yomitan-dict-builder/static/custom/jszip.min.js
+  - yomitan-dict-builder/data/**
+  - yomitan-dict-builder/config/**
+  - yomitan-dict-builder/tests/fixtures/**
