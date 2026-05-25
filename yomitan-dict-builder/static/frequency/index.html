@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Bee's Frequency Dictionary</title>
-    <meta name="description" content="Generate an auto-updating Yomitan frequency dictionary from current VNDB and AniList media.">
+    <meta name="description" content="Generate an auto-updating Yomitan dictionary that shows how common words and names are in current VNDB and AniList media.">
     <meta name="theme-color" content="#e84393">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
@@ -33,17 +33,17 @@
     </nav>
 
     <h1 class="dictionary-title">Bee's <span>Frequency</span> Dictionary</h1>
-    <p class="subtitle" style="max-width: 700px;">Generate an auto-updating Yomitan frequency dictionary from the VNDB/AniList media you are consuming.</p>
+    <p class="subtitle" style="max-width: 700px;">Make Yomitan show how common a word or name is in the VNDB/AniList titles you are reading and watching.</p>
 
     <div class="page-layout">
         <div class="main-col">
         <div class="container">
-            <div class="tabs">
-                <div class="tab active" data-tab="username" role="tab" aria-selected="true">From VNDB / AniList Username</div>
-                <div class="tab" data-tab="manual" role="tab" aria-selected="false">From VNDB / AniList Media ID</div>
+            <div class="tabs" role="tablist" aria-label="Choose titles by profile or manually">
+                <button type="button" class="tab active" id="tab-button-username" data-tab="username" role="tab" aria-selected="true" aria-controls="tab-username" tabindex="0">Use my VNDB / AniList profile</button>
+                <button type="button" class="tab" id="tab-button-manual" data-tab="manual" role="tab" aria-selected="false" aria-controls="tab-manual" tabindex="-1">Pick titles manually</button>
             </div>
 
-            <div class="tab-content active" id="tab-username" role="tabpanel">
+            <div class="tab-content active" id="tab-username" role="tabpanel" aria-labelledby="tab-button-username">
                 <div class="form-group inline">
                     <div>
                         <label for="vndbUser">VNDB ID <span class="label-hint">(optional)</span></label>
@@ -58,51 +58,62 @@
                 </div>
                 <p style="text-align: center; color: #f78fb3; font-size: 0.85em; margin-top: -12px; margin-bottom: 12px;">You can do both at the same time!</p>
 
-                <button type="button" id="fetchListsBtn" onclick="fetchFrequencyLists()">Fetch Lists &amp; Preview</button>
+                <button type="button" id="fetchListsBtn" onclick="fetchFrequencyLists()">Find My Titles</button>
             </div>
 
-            <div class="tab-content" id="tab-manual" role="tabpanel">
+            <div class="tab-content" id="tab-manual" role="tabpanel" aria-labelledby="tab-button-manual" hidden>
                 <div id="manualEntries"></div>
                 <button type="button" id="addEntryBtn" onclick="addManualEntry()">+ Add Another Entry</button>
-                <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Media List</button>
+                <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Selected Titles</button>
             </div>
 
-            <div class="frequency-options" aria-label="Frequency display options">
+            <div class="frequency-example-card" aria-live="polite">
+                <div class="example-card-header">
+                    <div>
+                        <div class="preview-label">Example lookup</div>
+                        <div class="example-word">
+                            <span class="example-kanji">秋</span>
+                            <span class="example-reading">あき</span>
+                            <span class="example-romaji">aki</span>
+                        </div>
+                    </div>
+                    <div class="example-pill" id="frequencyExampleMode">Total</div>
+                </div>
+                <div class="example-definition">Aki, written as autumn. Your generated dictionary adds the little number beside this entry.</div>
+                <div class="example-stat" id="frequencyPreviewValue">35 total times seen</div>
+                <div class="preview-copy" id="frequencyPreviewCopy">Yomitan shows the total number of times Aki appears across selected titles.</div>
+                <div class="preview-counts" id="frequencyPreviewCounts"></div>
+            </div>
+
+            <div class="frequency-options" aria-label="Yomitan number options">
                 <div class="frequency-option-group">
-                    <label for="displayMode">Display value</label>
+                    <label for="displayMode">Number shown in Yomitan</label>
                     <select id="displayMode" onchange="updateFrequencyPreview(); updateIndexUrl();">
-                        <option value="occurrence">Occurrence count</option>
-                        <option value="per_million">Per million</option>
-                        <option value="percent">Percent</option>
-                        <option value="rank">Rank</option>
+                        <option value="occurrence">Total times seen</option>
+                        <option value="per_million">Times per million words</option>
+                        <option value="percent">Percent of words</option>
+                        <option value="rank">Popularity rank</option>
                     </select>
                 </div>
                 <div class="frequency-option-group">
-                    <div class="option-label">Combine selected titles</div>
+                    <div class="option-label">When several titles are selected</div>
                     <div class="segmented-controls">
                         <label>
                             <input type="radio" name="combineMode" value="average" checked onchange="updateFrequencyPreview(); updateIndexUrl();">
-                            <span>Average per title</span>
+                            <span>Balance each title</span>
                         </label>
                         <label>
                             <input type="radio" name="combineMode" value="sum" onchange="updateFrequencyPreview(); updateIndexUrl();">
-                            <span>Add together</span>
+                            <span>Treat as one pile</span>
                         </label>
                     </div>
                 </div>
             </div>
 
-            <div class="frequency-preview-sample" aria-live="polite">
-                <div class="preview-label">Sample display</div>
-                <div class="preview-value" id="frequencyPreviewValue">35 total occurrences</div>
-                <div class="preview-copy" id="frequencyPreviewCopy">Occurrence mode always shows the summed total across selected titles.</div>
-                <div class="preview-counts" id="frequencyPreviewCounts"></div>
-            </div>
-
-            <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
+            <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Yomitan Dictionary</button>
 
             <div class="progress-bar-container" id="progressContainer">
-                <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Frequency dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+                <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Yomitan dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
             </div>
 
             <div class="status" id="status" role="status" aria-live="polite"></div>

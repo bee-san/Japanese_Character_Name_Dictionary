@@ -8,9 +8,9 @@
     gap: 12px;
     margin-top: 18px;
     padding: 14px;
-    border: 1px solid #f0f0f0;
+    border: 1px solid #f7d2e2;
     border-radius: 8px;
-    background: #fffcff;
+    background: #fff9fc;
 }
 
 .frequency-option-group label,
@@ -63,12 +63,78 @@
     color: #d63384;
 }
 
-.frequency-preview-sample {
+.segmented-controls input:focus-visible + span {
+    outline: 3px solid rgba(232, 67, 147, 0.24);
+    outline-offset: 2px;
+}
+
+.frequency-example-card {
     margin-top: 12px;
-    padding: 12px 14px;
-    border: 1px solid #f0f0f0;
+    padding: 14px;
+    border: 1px solid #f7c8dc;
     border-radius: 8px;
+    background:
+        linear-gradient(90deg, rgba(255, 240, 247, 0.82), rgba(255, 255, 255, 0.96)),
+        repeating-linear-gradient(135deg, rgba(247, 143, 179, 0.09) 0 8px, transparent 8px 16px);
+}
+
+.example-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.example-word {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.example-kanji {
+    color: #333;
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.example-reading {
+    color: #e84393;
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.example-romaji {
+    color: #8b6a7a;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.example-pill {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    border: 1px solid #f4bed4;
+    border-radius: 999px;
     background: #fff;
+    color: #d63384;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.example-definition {
+    margin-top: 8px;
+    color: #6f5963;
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.example-stat {
+    margin-top: 10px;
+    color: #333;
+    font-size: 1.15em;
+    font-weight: 800;
 }
 
 .preview-label {
@@ -77,13 +143,6 @@
     font-weight: 700;
     letter-spacing: 0;
     text-transform: uppercase;
-}
-
-.preview-value {
-    margin-top: 4px;
-    color: #333;
-    font-size: 1.15em;
-    font-weight: 800;
 }
 
 .preview-copy {
@@ -189,5 +248,15 @@
 
     .frequency-options {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .example-card-header {
+        flex-direction: column;
+    }
+
+    .example-pill {
+        align-self: flex-start;
     }
 }

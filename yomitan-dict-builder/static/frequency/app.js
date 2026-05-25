@@ -5,9 +5,9 @@ const VNDB_VN_URL_RE = /vndb\.org\/v\d+/i;
 const VNDB_VN_ID_RE = /^v\d+$/i;
 const ANILIST_MEDIA_URL_RE = /anilist\.co\/(anime|manga)\/\d+/i;
 const SAMPLE_FREQUENCY_DECKS = [
-    { title: 'Title A', count: 30, total: 100 },
-    { title: 'Title B', count: 5, total: 100 },
-    { title: 'Title C', count: 0, total: 1000 },
+    { title: 'Cozy VN', count: 30, total: 10000 },
+    { title: 'School anime', count: 5, total: 5000 },
+    { title: 'Mystery manga', count: 0, total: 8000 },
 ];
 
 function activeMode() {
@@ -38,9 +38,12 @@ function switchFrequencyTab(mode) {
         const active = tab.dataset.tab === mode;
         tab.classList.toggle('active', active);
         tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        tab.tabIndex = active ? 0 : -1;
     });
     document.querySelectorAll('.tab-content').forEach(panel => {
-        panel.classList.toggle('active', panel.id === 'tab-' + mode);
+        const active = panel.id === 'tab-' + mode;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
     });
 
     clearUnmatched();
@@ -53,9 +56,46 @@ function switchFrequencyTab(mode) {
 function updateActionButtons() {
     const fetchBtn = document.getElementById('fetchListsBtn');
     const previewManualBtn = document.getElementById('previewManualBtn');
-    fetchBtn.textContent = 'Fetch Lists & Preview';
+    fetchBtn.textContent = 'Find My Titles';
     if (previewManualBtn) {
-        previewManualBtn.textContent = 'Preview Media List';
+        previewManualBtn.textContent = 'Preview Selected Titles';
+    }
+}
+
+function moveFrequencyTabFocus(currentTab, direction) {
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const currentIndex = tabs.indexOf(currentTab);
+    if (currentIndex === -1) return;
+
+    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    switchFrequencyTab(nextTab.dataset.tab);
+    nextTab.focus();
+}
+
+function handleFrequencyTabKeydown(event) {
+    const tab = event.currentTarget;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveFrequencyTabFocus(tab, -1);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveFrequencyTabFocus(tab, 1);
+    } else if (event.key === 'Home') {
+        event.preventDefault();
+        const firstTab = document.querySelector('.tab');
+        if (firstTab) {
+            switchFrequencyTab(firstTab.dataset.tab);
+            firstTab.focus();
+        }
+    } else if (event.key === 'End') {
+        event.preventDefault();
+        const tabs = document.querySelectorAll('.tab');
+        const lastTab = tabs[tabs.length - 1];
+        if (lastTab) {
+            switchFrequencyTab(lastTab.dataset.tab);
+            lastTab.focus();
+        }
     }
 }
 
@@ -126,7 +166,7 @@ async function fetchFrequencyLists() {
 
         renderMediaPreview(entries, 'Selected Media');
         updateIndexUrl();
-        setStatus(status, `Prepared ${entries.length} title${entries.length === 1 ? '' : 's'} for frequency generation.`, 'success');
+        setStatus(status, `Prepared ${entries.length} title${entries.length === 1 ? '' : 's'} for the Yomitan dictionary.`, 'success');
         return;
     }
 
@@ -190,7 +230,7 @@ function generateFrequencyDictionary() {
     progressBar.style.width = '0%';
     progressBar.setAttribute('aria-valuenow', '0');
     progressBar.textContent = '';
-    setStatus(status, 'Starting frequency dictionary generation...', 'loading');
+    setStatus(status, 'Building your Yomitan dictionary...', 'loading');
 
     const eventSource = new EventSource('/api/generate-frequency-stream?' + params.toString());
 
@@ -240,13 +280,13 @@ function generateFrequencyDictionary() {
             showResult();
             const matched = Number(data.matchedCount) || 0;
             const terms = Number(data.termCount) || 0;
-            setStatus(status, `Frequency dictionary downloaded. Matched ${matched} title${matched === 1 ? '' : 's'} and combined ${terms} term${terms === 1 ? '' : 's'}.`, 'success');
+            setStatus(status, `Yomitan dictionary downloaded. Matched ${matched} title${matched === 1 ? '' : 's'} and combined ${terms} word/name entr${terms === 1 ? 'y' : 'ies'}.`, 'success');
         } catch (err) {
             setStatus(status, `Download error: ${err.message}`, 'error');
         } finally {
             generateBtn.disabled = false;
             setPreviewButtonsDisabled(false);
-            generateBtn.textContent = 'Generate Frequency Dictionary';
+            generateBtn.textContent = 'Generate Yomitan Dictionary';
             updateActionButtons();
         }
     });
@@ -261,7 +301,7 @@ function generateFrequencyDictionary() {
         eventSource.close();
         generateBtn.disabled = false;
         setPreviewButtonsDisabled(false);
-        generateBtn.textContent = 'Generate Frequency Dictionary';
+        generateBtn.textContent = 'Generate Yomitan Dictionary';
         hideProgress();
         updateActionButtons();
     });
@@ -272,7 +312,7 @@ function generateFrequencyDictionary() {
             setStatus(status, 'Connection lost. Please try again.', 'error');
             generateBtn.disabled = false;
             setPreviewButtonsDisabled(false);
-            generateBtn.textContent = 'Generate Frequency Dictionary';
+            generateBtn.textContent = 'Generate Yomitan Dictionary';
             hideProgress();
             updateActionButtons();
         }
@@ -442,7 +482,7 @@ function renderUnmatched(unmatched) {
         item.className = 'media-item unmatched-item';
         item.innerHTML = `
             ${mediaMarkup(entry)}
-            <div class="unmatched-reason">${escapeHtml(entry.reason || 'No matching Jiten frequency deck found')}</div>
+            <div class="unmatched-reason">${escapeHtml(entry.reason || 'No matching word-count data found for this title')}</div>
         `;
         list.appendChild(item);
     });
@@ -481,7 +521,8 @@ function updateFrequencyPreview() {
     const valueEl = document.getElementById('frequencyPreviewValue');
     const copyEl = document.getElementById('frequencyPreviewCopy');
     const countsEl = document.getElementById('frequencyPreviewCounts');
-    if (!valueEl || !copyEl || !countsEl) return;
+    const modeEl = document.getElementById('frequencyExampleMode');
+    if (!valueEl || !copyEl || !countsEl || !modeEl) return;
 
     const displayMode = selectedDisplayMode();
     const combineMode = selectedCombineMode();
@@ -494,27 +535,31 @@ function updateFrequencyPreview() {
     const selectedRate = combineMode === 'average' ? averageRate : sumRate;
 
     if (displayMode === 'occurrence') {
-        valueEl.textContent = `${totalOccurrences} total occurrences`;
+        modeEl.textContent = 'Total';
+        valueEl.textContent = `${totalOccurrences} total times seen`;
     } else if (displayMode === 'per_million') {
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} per million`;
+        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} times per million words`;
     } else if (displayMode === 'percent') {
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}%`;
+        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% of words`;
     } else {
+        modeEl.textContent = combineMode === 'average' ? 'Balanced' : 'One pile';
         valueEl.textContent = combineMode === 'average'
-            ? '#1 by average per-title rate'
-            : '#1 by summed occurrence count';
+            ? '#1 when each title gets one vote'
+            : '#1 after all titles are merged';
     }
 
     if (displayMode === 'occurrence') {
-        copyEl.textContent = 'Occurrence mode always shows the summed total across selected titles.';
+        copyEl.textContent = 'Yomitan shows the total number of times Aki appears across selected titles.';
     } else if (combineMode === 'average') {
-        copyEl.textContent = 'Values are averaged across selected titles, and titles where the term is absent count as zero.';
+        copyEl.textContent = 'Each selected title gets the same vote. If Aki is missing from a title, that title counts as zero.';
     } else {
-        copyEl.textContent = 'Selected media are treated as one combined corpus before calculating the value.';
+        copyEl.textContent = 'All selected titles are merged first, so longer titles have more weight.';
     }
 
     countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
-        <span>${escapeHtml(deck.title)}: ${deck.count} / ${deck.total}</span>
+        <span>${escapeHtml(deck.title)}: Aki ${deck.count} / ${deck.total.toLocaleString()}</span>
     `).join('');
 }
 
@@ -558,7 +603,7 @@ async function copyIndexUrl() {
     const status = document.getElementById('status');
     const url = updateIndexUrl();
     if (!url) {
-        setStatus(status, 'Generate a frequency URL first.', 'error');
+        setStatus(status, 'Generate a Yomitan URL first.', 'error');
         return;
     }
 
@@ -715,6 +760,7 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => switchFrequencyTab(tab.dataset.tab));
+        tab.addEventListener('keydown', handleFrequencyTabKeydown);
     });
     addManualEntry();
     updateActionButtons();
