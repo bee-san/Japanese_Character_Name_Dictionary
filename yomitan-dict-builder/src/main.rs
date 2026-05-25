@@ -39,7 +39,9 @@ mod anilist_name_test_data;
 use anilist_client::{AnilistClient, AnilistRetryPolicy};
 use content_builder::DictSettings;
 use dict_builder::DictBuilder;
-use frequency_dict_builder::{FrequencyDictBuilder, FREQUENCY_DICTIONARY_TITLE};
+use frequency_dict_builder::{
+    FrequencyCombineMode, FrequencyDictBuilder, FrequencyDisplayMode, FREQUENCY_DICTIONARY_TITLE,
+};
 use image_cache::ImageCache;
 use image_handler::ImageHandler;
 use jiten_client::JitenClient;
@@ -436,6 +438,10 @@ struct FrequencyQuery {
     entries: Option<String>,
     min_occurrences: Option<u64>,
     max_terms: Option<usize>,
+    #[serde(default)]
+    display_mode: FrequencyDisplayMode,
+    #[serde(default)]
+    combine_mode: FrequencyCombineMode,
 }
 
 impl GenerateStreamQuery {
@@ -1810,7 +1816,12 @@ async fn generate_frequency_from_media_entries(
         ));
     }
 
-    let zip_bytes = builder.export_bytes(params.min_occurrences, params.max_terms)?;
+    let zip_bytes = builder.export_bytes_with_options(
+        params.min_occurrences,
+        params.max_terms,
+        params.display_mode,
+        params.combine_mode,
+    )?;
     Ok(FrequencyGenerationResult {
         zip_bytes,
         matched_count,
@@ -1963,6 +1974,14 @@ fn frequency_query_parts(params: &FrequencyQuery) -> Vec<String> {
     if let Some(max_terms) = params.max_terms {
         parts.push(format!("max_terms={}", max_terms));
     }
+    parts.push(format!(
+        "display_mode={}",
+        params.display_mode.as_query_value()
+    ));
+    parts.push(format!(
+        "combine_mode={}",
+        params.combine_mode.as_query_value()
+    ));
 
     parts
 }
@@ -3470,6 +3489,7 @@ mod tests {
             entries: None,
             min_occurrences: Some(5),
             max_terms: Some(1000),
+            ..FrequencyQuery::default()
         };
 
         let (download_url, index_url) = frequency_urls(&params).unwrap();
@@ -3480,6 +3500,8 @@ mod tests {
         assert!(download_url.contains("anilist_user=Bee%20User"));
         assert!(download_url.contains("min_occurrences=5"));
         assert!(download_url.contains("max_terms=1000"));
+        assert!(download_url.contains("display_mode=occurrence"));
+        assert!(download_url.contains("combine_mode=average"));
     }
 
     #[test]
@@ -3493,6 +3515,7 @@ mod tests {
             ),
             min_occurrences: None,
             max_terms: None,
+            ..FrequencyQuery::default()
         };
 
         let (download_url, index_url) = frequency_urls(&params).unwrap();
@@ -3505,6 +3528,50 @@ mod tests {
         assert!(download_url.contains("%22source%22%3A%22anilist%22"));
         assert!(download_url.contains("%22id%22%3A%2230002%22"));
         assert!(download_url.contains("%22media_type%22%3A%22MANGA%22"));
+        assert!(download_url.contains("combine_mode=average"));
+    }
+
+    #[test]
+    fn test_frequency_urls_preserve_sum_combine_mode() {
+        let params = FrequencyQuery {
+            vndb_user: Some("Bee".to_string()),
+            combine_mode: FrequencyCombineMode::Sum,
+            display_mode: FrequencyDisplayMode::PerMillion,
+            ..FrequencyQuery::default()
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(download_url.contains("display_mode=per_million"));
+        assert!(download_url.contains("combine_mode=sum"));
+        assert!(index_url.contains("display_mode=per_million"));
+        assert!(index_url.contains("combine_mode=sum"));
+    }
+
+    #[test]
+    fn test_frequency_urls_default_combine_mode_is_average() {
+        let params = FrequencyQuery {
+            vndb_user: Some("Bee".to_string()),
+            ..FrequencyQuery::default()
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(download_url.contains("combine_mode=average"));
+        assert!(index_url.contains("combine_mode=average"));
+    }
+
+    #[test]
+    fn test_frequency_query_accepts_average_combine_mode() {
+        let params: FrequencyQuery = serde_json::from_value(serde_json::json!({
+            "vndb_user": "Bee",
+            "display_mode": "rank",
+            "combine_mode": "average"
+        }))
+        .unwrap();
+
+        assert_eq!(params.display_mode, FrequencyDisplayMode::Rank);
+        assert_eq!(params.combine_mode, FrequencyCombineMode::Average);
     }
 
     #[test]

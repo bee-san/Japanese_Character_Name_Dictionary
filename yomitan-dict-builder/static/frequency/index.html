@@ -67,6 +67,38 @@
                 <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Media List</button>
             </div>
 
+            <div class="frequency-options" aria-label="Frequency display options">
+                <div class="frequency-option-group">
+                    <label for="displayMode">Display value</label>
+                    <select id="displayMode" onchange="updateFrequencyPreview(); updateIndexUrl();">
+                        <option value="occurrence">Occurrence count</option>
+                        <option value="per_million">Per million</option>
+                        <option value="percent">Percent</option>
+                        <option value="rank">Rank</option>
+                    </select>
+                </div>
+                <div class="frequency-option-group">
+                    <div class="option-label">Combine selected titles</div>
+                    <div class="segmented-controls">
+                        <label>
+                            <input type="radio" name="combineMode" value="average" checked onchange="updateFrequencyPreview(); updateIndexUrl();">
+                            <span>Average per title</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="combineMode" value="sum" onchange="updateFrequencyPreview(); updateIndexUrl();">
+                            <span>Add together</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="frequency-preview-sample" aria-live="polite">
+                <div class="preview-label">Sample display</div>
+                <div class="preview-value" id="frequencyPreviewValue">35 total occurrences</div>
+                <div class="preview-copy" id="frequencyPreviewCopy">Occurrence mode always shows the summed total across selected titles.</div>
+                <div class="preview-counts" id="frequencyPreviewCounts"></div>
+            </div>
+
             <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
 
             <div class="progress-bar-container" id="progressContainer">

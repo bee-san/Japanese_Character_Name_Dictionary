@@ -4,6 +4,11 @@ let manualEntryCounter = 0;
 const VNDB_VN_URL_RE = /vndb\.org\/v\d+/i;
 const VNDB_VN_ID_RE = /^v\d+$/i;
 const ANILIST_MEDIA_URL_RE = /anilist\.co\/(anime|manga)\/\d+/i;
+const SAMPLE_FREQUENCY_DECKS = [
+    { title: 'Title A', count: 30, total: 100 },
+    { title: 'Title B', count: 5, total: 100 },
+    { title: 'Title C', count: 0, total: 1000 },
+];
 
 function activeMode() {
     const activeTab = document.querySelector('.tab.active');
@@ -54,6 +59,27 @@ function updateActionButtons() {
     }
 }
 
+function selectedDisplayMode() {
+    return document.getElementById('displayMode')?.value || 'occurrence';
+}
+
+function selectedCombineMode() {
+    return document.querySelector('input[name="combineMode"]:checked')?.value || 'average';
+}
+
+function appendFrequencyOptions(params) {
+    params.set('display_mode', selectedDisplayMode());
+    params.set('combine_mode', selectedCombineMode());
+}
+
+function hasFrequencyMediaParams(params) {
+    return params && (
+        params.has('vndb_user') ||
+        params.has('anilist_user') ||
+        params.has('entries')
+    );
+}
+
 function buildFrequencyParams({ validate = false } = {}) {
     const params = new URLSearchParams();
 
@@ -63,6 +89,7 @@ function buildFrequencyParams({ validate = false } = {}) {
         if (entries.length > 0) {
             params.set('entries', JSON.stringify(entries));
         }
+        appendFrequencyOptions(params);
         return params;
     }
 
@@ -73,6 +100,7 @@ function buildFrequencyParams({ validate = false } = {}) {
     if (vndbUser) params.set('vndb_user', vndbUser);
     if (anilistUser) params.set('anilist_user', anilistUser);
 
+    appendFrequencyOptions(params);
     return params;
 }
 
@@ -103,7 +131,7 @@ async function fetchFrequencyLists() {
     }
 
     const params = buildFrequencyParams({ validate: true });
-    if (!params || !params.toString()) {
+    if (!hasFrequencyMediaParams(params)) {
         setStatus(status, 'Please enter at least one VNDB or AniList username.', 'error');
         return;
     }
@@ -146,7 +174,7 @@ function generateFrequencyDictionary() {
     clearUnmatched();
     hideResult();
 
-    if (!params || !params.toString()) {
+    if (!hasFrequencyMediaParams(params)) {
         const message = activeMode() === 'manual'
             ? 'Please enter at least one media ID.'
             : 'Please enter at least one VNDB or AniList username.';
@@ -441,12 +469,58 @@ function mediaMarkup(entry) {
 
 function updateIndexUrl() {
     const params = buildFrequencyParams();
-    lastIndexUrl = params && params.toString()
+    lastIndexUrl = hasFrequencyMediaParams(params)
         ? `${location.origin}/api/yomitan-frequency-index?${params.toString()}`
         : '';
     const input = document.getElementById('indexUrl');
     input.value = lastIndexUrl;
     return lastIndexUrl;
+}
+
+function updateFrequencyPreview() {
+    const valueEl = document.getElementById('frequencyPreviewValue');
+    const copyEl = document.getElementById('frequencyPreviewCopy');
+    const countsEl = document.getElementById('frequencyPreviewCounts');
+    if (!valueEl || !copyEl || !countsEl) return;
+
+    const displayMode = selectedDisplayMode();
+    const combineMode = selectedCombineMode();
+    const totalOccurrences = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.count, 0);
+    const totalTokens = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.total, 0);
+    const averageRate = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => {
+        return sum + (deck.total ? deck.count / deck.total : 0);
+    }, 0) / SAMPLE_FREQUENCY_DECKS.length;
+    const sumRate = totalTokens ? totalOccurrences / totalTokens : 0;
+    const selectedRate = combineMode === 'average' ? averageRate : sumRate;
+
+    if (displayMode === 'occurrence') {
+        valueEl.textContent = `${totalOccurrences} total occurrences`;
+    } else if (displayMode === 'per_million') {
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} per million`;
+    } else if (displayMode === 'percent') {
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}%`;
+    } else {
+        valueEl.textContent = combineMode === 'average'
+            ? '#1 by average per-title rate'
+            : '#1 by summed occurrence count';
+    }
+
+    if (displayMode === 'occurrence') {
+        copyEl.textContent = 'Occurrence mode always shows the summed total across selected titles.';
+    } else if (combineMode === 'average') {
+        copyEl.textContent = 'Values are averaged across selected titles, and titles where the term is absent count as zero.';
+    } else {
+        copyEl.textContent = 'Selected media are treated as one combined corpus before calculating the value.';
+    }
+
+    countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
+        <span>${escapeHtml(deck.title)}: ${deck.count} / ${deck.total}</span>
+    `).join('');
+}
+
+function formatPreviewNumber(value) {
+    const formatted = value.toFixed(2).replace(/\.?0+$/, '');
+    return formatted || '0';
 }
 
 function showResult() {
@@ -638,5 +712,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     addManualEntry();
     updateActionButtons();
+    updateFrequencyPreview();
     updateIndexUrl();
 });

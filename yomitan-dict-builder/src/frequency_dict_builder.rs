@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
+use serde::Deserialize;
 use serde_json::json;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
@@ -25,13 +26,59 @@ pub struct FrequencyKey {
 pub struct FrequencyAggregate {
     pub total_occurrences: u64,
     pub source_deck_ids: BTreeSet<i32>,
+    pub per_deck_occurrences: BTreeMap<i32, u64>,
 }
 
 pub struct FrequencyDictBuilder {
     entries: BTreeMap<FrequencyKey, FrequencyAggregate>,
+    deck_totals: BTreeMap<i32, u64>,
     download_url: Option<String>,
     index_url: Option<String>,
     revision: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FrequencyDisplayMode {
+    #[default]
+    Occurrence,
+    PerMillion,
+    Percent,
+    Rank,
+}
+
+impl FrequencyDisplayMode {
+    pub fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Occurrence => "occurrence",
+            Self::PerMillion => "per_million",
+            Self::Percent => "percent",
+            Self::Rank => "rank",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FrequencyCombineMode {
+    #[default]
+    Average,
+    Sum,
+}
+
+impl FrequencyCombineMode {
+    pub fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Average => "average",
+            Self::Sum => "sum",
+        }
+    }
+}
+
+struct PreparedFrequencyEntry<'a> {
+    key: &'a FrequencyKey,
+    aggregate: &'a FrequencyAggregate,
+    rank: Option<usize>,
 }
 
 impl FrequencyDictBuilder {
@@ -42,6 +89,7 @@ impl FrequencyDictBuilder {
             .as_secs();
         Self {
             entries: BTreeMap::new(),
+            deck_totals: BTreeMap::new(),
             download_url,
             index_url,
             revision: format!("{:012}", revision),
@@ -49,6 +97,13 @@ impl FrequencyDictBuilder {
     }
 
     pub fn add_entries_for_deck(&mut self, deck_id: i32, entries: &[JitenFrequencyEntry]) {
+        if self.deck_totals.contains_key(&deck_id) {
+            return;
+        }
+
+        let mut deck_entries: BTreeMap<FrequencyKey, u64> = BTreeMap::new();
+        let mut deck_total = 0u64;
+
         for entry in entries {
             if entry.term.trim().is_empty() || entry.value == 0 {
                 continue;
@@ -57,9 +112,22 @@ impl FrequencyDictBuilder {
                 term: entry.term.clone(),
                 reading: entry.reading.clone(),
             };
+            deck_total = deck_total.saturating_add(entry.value);
+            let deck_occurrences = deck_entries.entry(key).or_default();
+            *deck_occurrences = deck_occurrences.saturating_add(entry.value);
+        }
+
+        if deck_total == 0 {
+            return;
+        }
+
+        self.deck_totals.insert(deck_id, deck_total);
+
+        for (key, occurrences) in deck_entries {
             let aggregate = self.entries.entry(key).or_default();
-            aggregate.total_occurrences = aggregate.total_occurrences.saturating_add(entry.value);
+            aggregate.total_occurrences = aggregate.total_occurrences.saturating_add(occurrences);
             aggregate.source_deck_ids.insert(deck_id);
+            aggregate.per_deck_occurrences.insert(deck_id, occurrences);
         }
     }
 
@@ -104,12 +172,19 @@ impl FrequencyDictBuilder {
         index
     }
 
-    pub fn export_bytes(
+    pub fn export_bytes_with_options(
         &self,
         min_occurrences: Option<u64>,
         max_terms: Option<usize>,
+        display_mode: FrequencyDisplayMode,
+        combine_mode: FrequencyCombineMode,
     ) -> Result<Vec<u8>, String> {
-        let sorted_entries = self.sorted_entries(min_occurrences, max_terms);
+        let sorted_entries = self.sorted_entries_with_options(
+            min_occurrences,
+            max_terms,
+            display_mode,
+            combine_mode,
+        );
         if sorted_entries.is_empty() {
             return Err("No frequency entries matched the requested filters".to_string());
         }
@@ -149,7 +224,13 @@ impl FrequencyDictBuilder {
                 .map_err(|e| format!("Failed to create {} in frequency ZIP: {}", bank_name, e))?;
             let bank_entries: Vec<serde_json::Value> = chunk
                 .iter()
-                .map(|(key, aggregate)| frequency_entry_value(key, aggregate.total_occurrences))
+                .map(|entry| {
+                    frequency_entry_value(
+                        entry.key,
+                        entry.aggregate.total_occurrences,
+                        self.display_value(entry.aggregate, display_mode, combine_mode, entry.rank),
+                    )
+                })
                 .collect();
             let bank_json = serde_json::to_string(&bank_entries)
                 .map_err(|e| format!("Failed to serialize {}: {}", bank_name, e))?;
@@ -161,6 +242,44 @@ impl FrequencyDictBuilder {
             .finish()
             .map_err(|e| format!("Failed to finalize frequency ZIP: {}", e))?;
         Ok(cursor.into_inner())
+    }
+
+    fn sorted_entries_with_options(
+        &self,
+        min_occurrences: Option<u64>,
+        max_terms: Option<usize>,
+        display_mode: FrequencyDisplayMode,
+        combine_mode: FrequencyCombineMode,
+    ) -> Vec<PreparedFrequencyEntry<'_>> {
+        let candidates = self.sorted_entries(min_occurrences, max_terms);
+        let mut entries: Vec<_> = candidates
+            .into_iter()
+            .map(|(key, aggregate)| PreparedFrequencyEntry {
+                key,
+                aggregate,
+                rank: None,
+            })
+            .collect();
+
+        if display_mode == FrequencyDisplayMode::Rank {
+            entries.sort_by(|left, right| {
+                self.rank_score(right.aggregate, combine_mode)
+                    .total_cmp(&self.rank_score(left.aggregate, combine_mode))
+                    .then_with(|| {
+                        right
+                            .aggregate
+                            .total_occurrences
+                            .cmp(&left.aggregate.total_occurrences)
+                    })
+                    .then_with(|| left.key.term.cmp(&right.key.term))
+                    .then_with(|| left.key.reading.cmp(&right.key.reading))
+            });
+            for (idx, entry) in entries.iter_mut().enumerate() {
+                entry.rank = Some(idx + 1);
+            }
+        }
+
+        entries
     }
 
     fn sorted_entries(
@@ -189,14 +308,129 @@ impl FrequencyDictBuilder {
 
         entries
     }
+
+    fn display_value(
+        &self,
+        aggregate: &FrequencyAggregate,
+        display_mode: FrequencyDisplayMode,
+        combine_mode: FrequencyCombineMode,
+        rank: Option<usize>,
+    ) -> String {
+        match display_mode {
+            FrequencyDisplayMode::Occurrence => format!(
+                "{} total occurrence{}",
+                aggregate.total_occurrences,
+                if aggregate.total_occurrences == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ),
+            FrequencyDisplayMode::PerMillion => {
+                let rate = self.frequency_rate(aggregate, combine_mode) * 1_000_000.0;
+                format!(
+                    "{} per million ({})",
+                    format_decimal(rate),
+                    combine_mode.display_label()
+                )
+            }
+            FrequencyDisplayMode::Percent => {
+                let percent = self.frequency_rate(aggregate, combine_mode) * 100.0;
+                format!(
+                    "{}% ({})",
+                    format_decimal(percent),
+                    combine_mode.display_label()
+                )
+            }
+            FrequencyDisplayMode::Rank => {
+                let rank = rank.unwrap_or(0);
+                format!("#{} ({})", rank, combine_mode.display_label())
+            }
+        }
+    }
+
+    fn frequency_rate(
+        &self,
+        aggregate: &FrequencyAggregate,
+        combine_mode: FrequencyCombineMode,
+    ) -> f64 {
+        match combine_mode {
+            FrequencyCombineMode::Average => {
+                if self.deck_totals.is_empty() {
+                    return 0.0;
+                }
+                let sum_rates: f64 = self
+                    .deck_totals
+                    .iter()
+                    .map(|(deck_id, deck_total)| {
+                        if *deck_total == 0 {
+                            0.0
+                        } else {
+                            let occurrences = aggregate
+                                .per_deck_occurrences
+                                .get(deck_id)
+                                .copied()
+                                .unwrap_or_default();
+                            occurrences as f64 / *deck_total as f64
+                        }
+                    })
+                    .sum();
+                sum_rates / self.deck_totals.len() as f64
+            }
+            FrequencyCombineMode::Sum => {
+                let total: u64 = self.deck_totals.values().copied().sum();
+                if total == 0 {
+                    0.0
+                } else {
+                    aggregate.total_occurrences as f64 / total as f64
+                }
+            }
+        }
+    }
+
+    fn rank_score(
+        &self,
+        aggregate: &FrequencyAggregate,
+        combine_mode: FrequencyCombineMode,
+    ) -> f64 {
+        match combine_mode {
+            FrequencyCombineMode::Average => self.frequency_rate(aggregate, combine_mode),
+            FrequencyCombineMode::Sum => aggregate.total_occurrences as f64,
+        }
+    }
 }
 
 fn attribution_text() -> String {
     format!("{JITEN_ATTRIBUTION}\n\nSource: {JITEN_SOURCE_URL}\nLicense: {JITEN_LICENSE_URL}\n")
 }
 
-fn frequency_entry_value(key: &FrequencyKey, occurrences: u64) -> serde_json::Value {
-    let display_value = occurrences.to_string();
+impl FrequencyCombineMode {
+    fn display_label(self) -> &'static str {
+        match self {
+            Self::Average => "average per title",
+            Self::Sum => "combined corpus",
+        }
+    }
+}
+
+fn format_decimal(value: f64) -> String {
+    let mut formatted = format!("{:.2}", value);
+    if formatted.contains('.') {
+        while formatted.ends_with('0') {
+            formatted.pop();
+        }
+        if formatted.ends_with('.') {
+            formatted.pop();
+        }
+    }
+    formatted
+}
+
+fn frequency_entry_value(
+    key: &FrequencyKey,
+    occurrences: u64,
+    display_value: String,
+) -> serde_json::Value {
     match &key.reading {
         Some(reading) => json!([
             key.term.as_str(),
@@ -241,6 +475,48 @@ mod tests {
         raw
     }
 
+    fn exported_term_meta(
+        builder: &FrequencyDictBuilder,
+        display_mode: FrequencyDisplayMode,
+        combine_mode: FrequencyCombineMode,
+    ) -> Vec<serde_json::Value> {
+        let bytes = builder
+            .export_bytes_with_options(None, None, display_mode, combine_mode)
+            .unwrap();
+        let cursor = Cursor::new(bytes);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        serde_json::from_str(&read_zip_entry(&mut archive, "term_meta_bank_1.json")).unwrap()
+    }
+
+    fn display_value_for<'a>(entries: &'a [serde_json::Value], term: &str) -> &'a str {
+        entries
+            .iter()
+            .find(|entry| entry[0] == term)
+            .and_then(|entry| {
+                entry[2]["displayValue"]
+                    .as_str()
+                    .or_else(|| entry[2]["frequency"]["displayValue"].as_str())
+            })
+            .unwrap()
+    }
+
+    fn rank_test_builder() -> FrequencyDictBuilder {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+
+        let mut deck_one = vec![
+            entry("average_winner", None, 50),
+            entry("sum_winner", None, 1),
+        ];
+        deck_one.extend((0..49).map(|idx| entry(&format!("deck1_filler_{idx}"), None, 1)));
+        builder.add_entries_for_deck(1, &deck_one);
+
+        let mut deck_two = vec![entry("sum_winner", None, 100)];
+        deck_two.extend((0..900).map(|idx| entry(&format!("deck2_filler_{idx}"), None, 1)));
+        builder.add_entries_for_deck(2, &deck_two);
+
+        builder
+    }
+
     #[test]
     fn same_term_reading_across_two_decks_sums_occurrences() {
         let mut builder = FrequencyDictBuilder::new(None, None);
@@ -255,6 +531,25 @@ mod tests {
         let aggregate = builder.entries.get(&key).unwrap();
         assert_eq!(aggregate.total_occurrences, 25);
         assert_eq!(aggregate.source_deck_ids, BTreeSet::from([1, 2]));
+        assert_eq!(aggregate.per_deck_occurrences.get(&1), Some(&10));
+        assert_eq!(aggregate.per_deck_occurrences.get(&2), Some(&15));
+    }
+
+    #[test]
+    fn same_term_in_three_decks_keeps_summed_occurrences() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+
+        builder.add_entries_for_deck(1, &[entry("岡部", Some("おかべ"), 10)]);
+        builder.add_entries_for_deck(2, &[entry("岡部", Some("おかべ"), 15)]);
+        builder.add_entries_for_deck(3, &[entry("岡部", Some("おかべ"), 10)]);
+
+        let key = FrequencyKey {
+            term: "岡部".to_string(),
+            reading: Some("おかべ".to_string()),
+        };
+        let aggregate = builder.entries.get(&key).unwrap();
+        assert_eq!(aggregate.total_occurrences, 35);
+        assert_eq!(aggregate.source_deck_ids, BTreeSet::from([1, 2, 3]));
     }
 
     #[test]
@@ -270,6 +565,24 @@ mod tests {
         let aggregate = builder.entries.get(&key).unwrap();
         assert_eq!(aggregate.total_occurrences, 25);
         assert_eq!(aggregate.source_deck_ids, BTreeSet::from([1]));
+        assert_eq!(aggregate.per_deck_occurrences.get(&1), Some(&25));
+    }
+
+    #[test]
+    fn duplicate_deck_ids_are_counted_once() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+
+        builder.add_entries_for_deck(1, &[entry("の", None, 10), entry("filler", None, 90)]);
+        builder.add_entries_for_deck(1, &[entry("の", None, 10), entry("filler", None, 90)]);
+
+        let key = FrequencyKey {
+            term: "の".to_string(),
+            reading: None,
+        };
+        let aggregate = builder.entries.get(&key).unwrap();
+        assert_eq!(builder.deck_totals, BTreeMap::from([(1, 100)]));
+        assert_eq!(aggregate.total_occurrences, 10);
+        assert_eq!(aggregate.per_deck_occurrences, BTreeMap::from([(1, 10)]));
     }
 
     #[test]
@@ -337,7 +650,14 @@ mod tests {
         let mut builder = FrequencyDictBuilder::new(None, None);
         builder.add_entries_for_deck(1, &[entry("a", None, 1)]);
 
-        let error = builder.export_bytes(Some(5), None).unwrap_err();
+        let error = builder
+            .export_bytes_with_options(
+                Some(5),
+                None,
+                FrequencyDisplayMode::Occurrence,
+                FrequencyCombineMode::Average,
+            )
+            .unwrap_err();
 
         assert!(error.contains("No frequency entries"));
     }
@@ -353,7 +673,14 @@ mod tests {
             &[entry("の", None, 2410), entry("岡部", Some("おかべ"), 1645)],
         );
 
-        let bytes = builder.export_bytes(None, None).unwrap();
+        let bytes = builder
+            .export_bytes_with_options(
+                None,
+                None,
+                FrequencyDisplayMode::Occurrence,
+                FrequencyCombineMode::Average,
+            )
+            .unwrap();
         let cursor = Cursor::new(bytes);
         let mut archive = ZipArchive::new(cursor).unwrap();
         let names: Vec<String> = archive.file_names().map(ToOwned::to_owned).collect();
@@ -384,9 +711,167 @@ mod tests {
         assert_eq!(entries[0][0], "の");
         assert_eq!(entries[0][1], "freq");
         assert_eq!(entries[0][2]["value"], 2410);
+        assert_eq!(entries[0][2]["displayValue"], "2410 total occurrences");
         assert_eq!(entries[1][0], "岡部");
         assert_eq!(entries[1][2]["reading"], "おかべ");
         assert_eq!(entries[1][2]["frequency"]["value"], 1645);
+        assert_eq!(
+            entries[1][2]["frequency"]["displayValue"],
+            "1645 total occurrences"
+        );
+    }
+
+    #[test]
+    fn occurrence_display_stays_summed_total() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 30), entry("filler1", None, 70)]);
+        builder.add_entries_for_deck(2, &[entry("target", None, 5), entry("filler2", None, 95)]);
+        builder.add_entries_for_deck(3, &[entry("other", None, 1000)]);
+
+        let entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::Occurrence,
+            FrequencyCombineMode::Average,
+        );
+
+        let target = entries.iter().find(|entry| entry[0] == "target").unwrap();
+        assert_eq!(target[2]["value"], 35);
+        assert_eq!(target[2]["displayValue"], "35 total occurrences");
+    }
+
+    #[test]
+    fn average_per_million_includes_zeroes_for_missing_decks() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 30), entry("filler1", None, 70)]);
+        builder.add_entries_for_deck(2, &[entry("target", None, 5), entry("filler2", None, 95)]);
+        builder.add_entries_for_deck(3, &[entry("other", None, 1000)]);
+
+        let entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::PerMillion,
+            FrequencyCombineMode::Average,
+        );
+
+        assert_eq!(
+            display_value_for(&entries, "target"),
+            "116666.67 per million (average per title)"
+        );
+    }
+
+    #[test]
+    fn sum_mode_per_million_uses_combined_corpus_total() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 30), entry("filler1", None, 70)]);
+        builder.add_entries_for_deck(2, &[entry("target", None, 5), entry("filler2", None, 95)]);
+        builder.add_entries_for_deck(3, &[entry("other", None, 1000)]);
+
+        let entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::PerMillion,
+            FrequencyCombineMode::Sum,
+        );
+
+        assert_eq!(
+            display_value_for(&entries, "target"),
+            "29166.67 per million (combined corpus)"
+        );
+    }
+
+    #[test]
+    fn percent_display_changes_between_average_and_sum_modes() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 30), entry("filler1", None, 70)]);
+        builder.add_entries_for_deck(2, &[entry("target", None, 5), entry("filler2", None, 95)]);
+        builder.add_entries_for_deck(3, &[entry("other", None, 1000)]);
+
+        let average_entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::Percent,
+            FrequencyCombineMode::Average,
+        );
+        let sum_entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::Percent,
+            FrequencyCombineMode::Sum,
+        );
+
+        assert_eq!(
+            display_value_for(&average_entries, "target"),
+            "11.67% (average per title)"
+        );
+        assert_eq!(
+            display_value_for(&sum_entries, "target"),
+            "2.92% (combined corpus)"
+        );
+    }
+
+    #[test]
+    fn frequency_style_modes_keep_numeric_value_as_summed_occurrences() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 30), entry("filler1", None, 70)]);
+        builder.add_entries_for_deck(2, &[entry("target", None, 5), entry("filler2", None, 95)]);
+        builder.add_entries_for_deck(3, &[entry("other", None, 1000)]);
+
+        for display_mode in [
+            FrequencyDisplayMode::PerMillion,
+            FrequencyDisplayMode::Percent,
+            FrequencyDisplayMode::Rank,
+        ] {
+            for combine_mode in [FrequencyCombineMode::Average, FrequencyCombineMode::Sum] {
+                let entries = exported_term_meta(&builder, display_mode, combine_mode);
+                let target = entries.iter().find(|entry| entry[0] == "target").unwrap();
+
+                assert_eq!(target[2]["value"], 35);
+            }
+        }
+    }
+
+    #[test]
+    fn rank_mode_orders_by_average_or_summed_count() {
+        let builder = rank_test_builder();
+
+        let average_entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::Rank,
+            FrequencyCombineMode::Average,
+        );
+        let sum_entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::Rank,
+            FrequencyCombineMode::Sum,
+        );
+
+        assert_eq!(average_entries[0][0], "average_winner");
+        assert_eq!(
+            display_value_for(&average_entries, "average_winner"),
+            "#1 (average per title)"
+        );
+        assert_eq!(sum_entries[0][0], "sum_winner");
+        assert_eq!(
+            display_value_for(&sum_entries, "sum_winner"),
+            "#1 (combined corpus)"
+        );
+    }
+
+    #[test]
+    fn max_terms_still_truncates_by_summed_occurrences() {
+        let builder = rank_test_builder();
+
+        let bytes = builder
+            .export_bytes_with_options(
+                None,
+                Some(1),
+                FrequencyDisplayMode::Rank,
+                FrequencyCombineMode::Average,
+            )
+            .unwrap();
+        let cursor = Cursor::new(bytes);
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let entries: Vec<serde_json::Value> =
+            serde_json::from_str(&read_zip_entry(&mut archive, "term_meta_bank_1.json")).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0][0], "sum_winner");
     }
 
     #[test]
