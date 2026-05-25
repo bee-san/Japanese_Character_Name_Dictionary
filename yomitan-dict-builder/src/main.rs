@@ -3545,6 +3545,27 @@ mod tests {
         assert!(error.contains("at least 2"));
     }
 
+    #[tokio::test]
+    async fn test_vndb_media_search_rejects_short_query_response() {
+        let (state, _dir) = make_test_state();
+
+        let response = vndb_media_search(
+            Query(VndbMediaSearchQuery {
+                q: Some("  e ".to_string()),
+            }),
+            State(state),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("at least 2"));
+    }
+
     #[test]
     fn test_normalize_manual_entry_accepts_vndb_number() {
         let entry = ManualEntry {

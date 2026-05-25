@@ -821,6 +821,16 @@ mod tests {
     }
 
     #[test]
+    fn test_non_empty_json_string_trims_and_rejects_blank_values() {
+        assert_eq!(
+            non_empty_json_string(&serde_json::json!("  Steins;Gate  ")).as_deref(),
+            Some("Steins;Gate")
+        );
+        assert_eq!(non_empty_json_string(&serde_json::json!("   ")), None);
+        assert_eq!(non_empty_json_string(&serde_json::json!(17)), None);
+    }
+
+    #[test]
     fn test_parse_vn_search_results_maps_vndb_shape() {
         let data = serde_json::json!({
             "results": [
@@ -852,10 +862,39 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_vn_search_results_handles_alt_title_only_and_invalid_metrics() {
+        let data = serde_json::json!({
+            "results": [
+                {
+                    "id": "v42",
+                    "title": " ",
+                    "alttitle": "終のステラ",
+                    "released": "TBA",
+                    "votecount": 999999999999i64
+                }
+            ]
+        });
+
+        let results = VndbClient::parse_vn_search_results(&data).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "v42");
+        assert_eq!(results[0].titles.romaji, None);
+        assert_eq!(results[0].titles.native.as_deref(), Some("終のステラ"));
+        assert_eq!(
+            results[0].titles.user_preferred.as_deref(),
+            Some("終のステラ")
+        );
+        assert_eq!(results[0].year, None);
+        assert_eq!(results[0].popularity, None);
+    }
+
+    #[test]
     fn test_parse_vn_search_results_skips_entries_without_titles() {
         let data = serde_json::json!({
             "results": [
                 {"id": "v1", "title": "", "alttitle": null},
+                {"id": "", "title": "Missing ID", "alttitle": null},
                 {"id": "v2", "title": "Valid VN", "alttitle": ""}
             ]
         });
@@ -867,6 +906,15 @@ mod tests {
             results[0].titles.user_preferred.as_deref(),
             Some("Valid VN")
         );
+    }
+
+    #[test]
+    fn test_parse_vn_search_results_rejects_missing_results_array() {
+        let data = serde_json::json!({"items": []});
+
+        let error = VndbClient::parse_vn_search_results(&data).unwrap_err();
+
+        assert!(error.contains("Invalid VNDB VN search response"));
     }
 
     // Helper to assert parse_user_input results

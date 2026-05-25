@@ -83,14 +83,40 @@
         return String(query || '').replace(/\s+/g, '').length;
     }
 
+    function isNumericId(value) {
+        return /^\d+$/.test(value);
+    }
+
+    function isVndbId(value) {
+        return /^v?\d+$/i.test(value);
+    }
+
+    function parsedUrl(value) {
+        try {
+            return new URL(value);
+        } catch (_error) {
+            return null;
+        }
+    }
+
     function looksLikeDirectAnilistId(query) {
         const value = String(query || '').trim();
-        return /^\d+$/.test(value) || /anilist\.co\/(anime|manga)\/\d+/i.test(value);
+        if (isNumericId(value)) return true;
+
+        const url = parsedUrl(value);
+        if (!url || url.hostname.toLowerCase() !== 'anilist.co') return false;
+        const [mediaKind, mediaId] = url.pathname.split('/').filter(Boolean);
+        return (mediaKind === 'anime' || mediaKind === 'manga') && isNumericId(mediaId || '');
     }
 
     function looksLikeDirectVndbId(query) {
         const value = String(query || '').trim();
-        return /^v?\d+$/i.test(value) || /vndb\.org\/v\d+/i.test(value);
+        if (isVndbId(value)) return true;
+
+        const url = parsedUrl(value);
+        if (!url || url.hostname.toLowerCase() !== 'vndb.org') return false;
+        const [vnId] = url.pathname.split('/').filter(Boolean);
+        return isVndbId(vnId || '');
     }
 
     function scoreStaticItem(item, normalizedQuery) {
