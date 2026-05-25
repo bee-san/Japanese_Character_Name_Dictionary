@@ -6,6 +6,33 @@ Rust (Axum) web service that generates Yomitan-compatible character name diction
 
 No database. No auth. Two external API dependencies (VNDB REST, AniList GraphQL).
 
+## Code Search
+
+Use CodeGraph for semantic code search by default.
+
+```bash
+codegraph context "name parsing flow"
+codegraph query "generate_name_readings"
+codegraph callers "generate_name_readings"
+codegraph callees "generate_name_readings"
+codegraph impact "CharacterData"
+codegraph files .
+```
+
+If `.codegraph/` exists, prefer CodeGraph context, query, callers, callees, impact, and files commands before falling back to raw `rg` or file reads. Treat CodeGraph results as the prebuilt local code index; only re-open files when a specific detail is missing or needs confirmation.
+
+If CodeGraph is not installed, install it from `https://github.com/colbymchenry/codegraph`:
+
+```bash
+npx @colbymchenry/codegraph
+```
+
+After installation, initialize this project with:
+
+```bash
+codegraph init -i
+```
+
 ## Tech Stack
 
 - Language: Rust (edition 2021)

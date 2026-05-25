@@ -4,6 +4,18 @@ let manualEntryCounter = 0;
 const VNDB_VN_URL_RE = /vndb\.org\/v\d+/i;
 const VNDB_VN_ID_RE = /^v\d+$/i;
 const ANILIST_MEDIA_URL_RE = /anilist\.co\/(anime|manga)\/\d+/i;
+const DEFAULT_VNDB_STATUSES = ['playing'];
+const DEFAULT_ANILIST_STATUSES = ['current'];
+const STATUS_LABELS = {
+    playing: 'Current',
+    current: 'Current',
+    finished: 'Completed',
+    completed: 'Completed',
+    wishlist: 'Wishlist',
+    planning: 'Planning',
+    paused: 'Paused',
+    dropped: 'Dropped',
+};
 const SAMPLE_FREQUENCY_DECKS = [
     { title: 'Cozy VN', count: 30, total: 10000 },
     { title: 'School anime', count: 5, total: 5000 },
@@ -112,6 +124,56 @@ function appendFrequencyOptions(params) {
     params.set('combine_mode', selectedCombineMode());
 }
 
+function selectedShelfStatuses(source) {
+    return Array.from(document.querySelectorAll(`input[data-status-source="${source}"]:checked`))
+        .map(input => input.value);
+}
+
+function appendShelfStatusParams(params) {
+    const vndbStatuses = selectedShelfStatuses('vndb');
+    const anilistStatuses = selectedShelfStatuses('anilist');
+    if (vndbStatuses.join(',') !== DEFAULT_VNDB_STATUSES.join(',')) {
+        params.set('vndb_status', vndbStatuses.join(','));
+    }
+    if (anilistStatuses.join(',') !== DEFAULT_ANILIST_STATUSES.join(',')) {
+        params.set('anilist_status', anilistStatuses.join(','));
+    }
+}
+
+function toggleShelfOptions() {
+    const options = document.getElementById('shelfOptions');
+    const toggle = document.getElementById('shelfToggle');
+    const expanded = options.hidden;
+    options.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function onShelfStatusChange(input) {
+    const source = input.dataset.statusSource;
+    const selected = selectedShelfStatuses(source);
+    if (selected.length === 0) {
+        input.checked = true;
+    }
+    input.closest('.shelf-chip')?.classList.toggle('active', input.checked);
+    updateShelfSummary();
+    updateIndexUrl();
+}
+
+function updateShelfSummary() {
+    document.querySelectorAll('.shelf-chip').forEach(chip => {
+        const input = chip.querySelector('input');
+        chip.classList.toggle('active', Boolean(input?.checked));
+    });
+
+    const labels = Array.from(document.querySelectorAll('input[data-status-source]:checked'))
+        .map(input => input.dataset.summaryLabel || statusLabel(input.value))
+        .filter((label, index, all) => all.indexOf(label) === index);
+    const summary = labels.length <= 2
+        ? labels.join(', ')
+        : `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+    document.getElementById('shelfSummary').textContent = summary || 'Current titles';
+}
+
 function hasFrequencyMediaParams(params) {
     return params && (
         params.has('vndb_user') ||
@@ -139,6 +201,7 @@ function buildFrequencyParams({ validate = false } = {}) {
 
     if (vndbUser) params.set('vndb_user', vndbUser);
     if (anilistUser) params.set('anilist_user', anilistUser);
+    appendShelfStatusParams(params);
 
     appendFrequencyOptions(params);
     return params;
@@ -164,7 +227,7 @@ async function fetchFrequencyLists() {
             return;
         }
 
-        renderMediaPreview(entries, 'Selected Media');
+        renderMediaPreview(entries, 'Selected Titles');
         updateIndexUrl();
         setStatus(status, `Prepared ${entries.length} title${entries.length === 1 ? '' : 's'} for the Yomitan dictionary.`, 'success');
         return;
@@ -179,7 +242,7 @@ async function fetchFrequencyLists() {
     fetchBtn.disabled = true;
     fetchBtn.textContent = 'Fetching...';
     preview.classList.remove('show');
-    setStatus(status, 'Fetching current VNDB/AniList media...', 'loading');
+    setStatus(status, 'Fetching selected VNDB/AniList titles...', 'loading');
 
     try {
         const response = await fetch('/api/user-lists?' + params.toString());
@@ -188,9 +251,9 @@ async function fetchFrequencyLists() {
             throw new Error(data.error || `HTTP ${response.status}`);
         }
 
-        renderMediaPreview(data.entries || [], 'Consumed Media');
+        renderMediaPreview(data.entries || [], 'Selected Titles');
 
-        let message = `Found ${(data.entries || []).length} current title${(data.entries || []).length === 1 ? '' : 's'}.`;
+        let message = `Found ${(data.entries || []).length} selected title${(data.entries || []).length === 1 ? '' : 's'}.`;
         if (data.errors && data.errors.length > 0) {
             message += ` Warnings: ${data.errors.join('; ')}`;
         }
@@ -444,7 +507,7 @@ function validateManualEntries() {
     return valid;
 }
 
-function renderMediaPreview(entries, label = 'Consumed Media') {
+function renderMediaPreview(entries, label = 'Selected Titles') {
     const preview = document.getElementById('mediaPreview');
     const header = document.getElementById('mediaPreviewHeader');
     const list = document.getElementById('mediaPreviewList');
@@ -499,12 +562,20 @@ function mediaMarkup(entry) {
     const romaji = entry.title_romaji && entry.title_romaji !== title
         ? `<span class="romaji">${escapeHtml(entry.title_romaji)}</span>`
         : '';
+    const shelf = entry.status
+        ? `<span class="shelf-label">List: ${escapeHtml(statusLabel(entry.status))}</span>`
+        : '';
 
     return `
         <span class="title">${escapeHtml(title)}</span>
         ${romaji}
         <span class="badge ${escapeHtml(badgeClass || '')}">${escapeHtml(badgeText)}</span>
+        ${shelf}
     `;
+}
+
+function statusLabel(status) {
+    return STATUS_LABELS[String(status || '').toLowerCase()] || 'Current';
 }
 
 function updateIndexUrl() {
@@ -519,12 +590,17 @@ function updateIndexUrl() {
 
 function updateFrequencyPreview() {
     const valueEl = document.getElementById('frequencyPreviewValue');
-    const copyEl = document.getElementById('frequencyPreviewCopy');
     const countsEl = document.getElementById('frequencyPreviewCounts');
-    const modeEl = document.getElementById('frequencyExampleMode');
-    if (!valueEl || !copyEl || !countsEl || !modeEl) return;
+    if (!valueEl || !countsEl) return;
 
     const displayMode = selectedDisplayMode();
+    const optionsEl = document.querySelector('.frequency-options');
+    const combineGroupEl = document.getElementById('combineModeGroup');
+    const hideCombine = displayMode === 'occurrence';
+    if (optionsEl && combineGroupEl) {
+        optionsEl.classList.toggle('combine-hidden', hideCombine);
+        combineGroupEl.hidden = hideCombine;
+    }
     const combineMode = selectedCombineMode();
     const totalOccurrences = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.count, 0);
     const totalTokens = SAMPLE_FREQUENCY_DECKS.reduce((sum, deck) => sum + deck.total, 0);
@@ -535,25 +611,13 @@ function updateFrequencyPreview() {
     const selectedRate = combineMode === 'average' ? averageRate : sumRate;
 
     if (displayMode === 'occurrence') {
-        modeEl.textContent = 'freq';
-        valueEl.textContent = `${totalOccurrences} occ.`;
+        valueEl.textContent = `${totalOccurrences}`;
     } else if (displayMode === 'per_million') {
-        modeEl.textContent = 'freq';
         valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
     } else if (displayMode === 'percent') {
-        modeEl.textContent = 'freq';
         valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% (${combineModeLabel(combineMode)})`;
     } else {
-        modeEl.textContent = 'freq';
         valueEl.textContent = `#1 (${combineModeLabel(combineMode)})`;
-    }
-
-    if (displayMode === 'occurrence') {
-        copyEl.textContent = 'Total count.';
-    } else if (combineMode === 'average') {
-        copyEl.textContent = 'Avg per title. Missing = 0.';
-    } else {
-        copyEl.textContent = 'Merged titles.';
     }
 
     countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
@@ -562,7 +626,7 @@ function updateFrequencyPreview() {
 }
 
 function combineModeLabel(mode) {
-    return mode === 'average' ? 'avg' : 'sum';
+    return mode === 'average' ? 'per title' : 'total';
 }
 
 function formatPreviewNumber(value) {
@@ -766,6 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     addManualEntry();
     updateActionButtons();
+    updateShelfSummary();
     updateFrequencyPreview();
     updateIndexUrl();
 });

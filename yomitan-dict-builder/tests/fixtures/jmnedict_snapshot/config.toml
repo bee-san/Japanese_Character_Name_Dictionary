@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.jmnedict]
+kind = "jmnedict"
+enabled = true
+input = "./JMnedict.xml"
+format = "jmnedict"
+license_class = "edrdg_fixture"
+license_label = "JMnedict Fixture"
+license_url = "https://www.edrdg.org/enamdict/enamdict_doc.html"
+notes = "Small JMnedict XML fixture with entity definitions and a split multi-type entry."

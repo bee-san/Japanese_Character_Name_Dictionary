@@ -126,11 +126,86 @@ pub struct VndbClient {
     client: Client,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VndbShelfStatus {
+    Playing,
+    Finished,
+    Wishlist,
+}
+
+impl VndbShelfStatus {
+    pub fn default_statuses() -> Vec<Self> {
+        vec![Self::Playing]
+    }
+
+    pub fn parse_list(raw: Option<&str>) -> Result<Vec<Self>, String> {
+        let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(Self::default_statuses());
+        };
+
+        let mut statuses = Vec::new();
+        for token in raw
+            .split(',')
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+        {
+            let status = match token.to_ascii_lowercase().as_str() {
+                "playing" | "current" => Self::Playing,
+                "finished" | "completed" => Self::Finished,
+                "wishlist" | "planning" | "planned" => Self::Wishlist,
+                other => {
+                    return Err(format!(
+                        "vndb_status contains unsupported value '{}'",
+                        other
+                    ));
+                }
+            };
+            if !statuses.contains(&status) {
+                statuses.push(status);
+            }
+        }
+
+        if statuses.is_empty() {
+            Ok(Self::default_statuses())
+        } else {
+            Ok(statuses)
+        }
+    }
+
+    pub fn is_default_list(statuses: &[Self]) -> bool {
+        matches!(statuses, [Self::Playing])
+    }
+
+    pub fn query_value(self) -> &'static str {
+        match self {
+            Self::Playing => "playing",
+            Self::Finished => "finished",
+            Self::Wishlist => "wishlist",
+        }
+    }
+
+    pub fn label_id(self) -> u8 {
+        match self {
+            Self::Playing => 1,
+            Self::Finished => 2,
+            Self::Wishlist => 5,
+        }
+    }
+}
+
 /// Information returned from the VNDB VN endpoint, including title and voice actor mapping.
 pub struct VnInfo {
-    pub title: String,                   // romanized
-    pub alttitle: String,                // Japanese
-    pub va_map: HashMap<String, String>, // character_id → VA display name
+    pub title: String,                           // romanized
+    pub alttitle: String,                        // Japanese
+    pub va_map: HashMap<String, VoiceActorInfo>, // character_id → VA info
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceActorInfo {
+    pub staff_id: String,
+    pub name: String,
+    pub original: String,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -260,68 +335,80 @@ impl VndbClient {
         }
     }
 
-    /// Fetch a user's "Playing" VN list (label ID 1).
-    /// Returns a list of VNs the user is currently playing.
-    pub async fn fetch_user_playing_list(
+    /// Fetch a user's VN list for the selected VNDB shelf labels.
+    pub async fn fetch_user_list(
         &self,
         username: &str,
+        statuses: &[VndbShelfStatus],
     ) -> Result<Vec<UserMediaEntry>, String> {
         // Step 1: Resolve username → user ID
         let user_id = self.resolve_user(username).await?;
+        let statuses = if statuses.is_empty() {
+            VndbShelfStatus::default_statuses()
+        } else {
+            statuses.to_vec()
+        };
 
         let mut entries = Vec::new();
-        let mut page = 1;
+        for status in statuses {
+            let mut page = 1;
 
-        loop {
-            let payload = serde_json::json!({
-                "user": &user_id,
-                "fields": "id, labels{id,label}, vn{title,alttitle}",
-                "filters": ["label", "=", 1],
-                "sort": "lastmod",
-                "reverse": true,
-                "results": 100,
-                "page": page
-            });
+            loop {
+                let payload = serde_json::json!({
+                    "user": &user_id,
+                    "fields": "id, labels{id,label}, vn{title,alttitle}",
+                    "filters": ["label", "=", status.label_id()],
+                    "sort": "lastmod",
+                    "reverse": true,
+                    "results": 100,
+                    "page": page
+                });
 
-            let response = send_with_retry(
-                self.client
-                    .post("https://api.vndb.org/kana/ulist")
-                    .json(&payload),
-                &self.client,
-            )
-            .await
-            .map_err(map_request_error)?;
-
-            if response.status() != 200 {
-                return Err(format!(
-                    "UPSTREAM: VNDB ulist API returned status {}",
-                    response.status()
-                ));
-            }
-
-            let data: serde_json::Value = response
-                .json()
+                let response = send_with_retry(
+                    self.client
+                        .post("https://api.vndb.org/kana/ulist")
+                        .json(&payload),
+                    &self.client,
+                )
                 .await
-                .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
+                .map_err(map_request_error)?;
 
-            let results = data["results"]
-                .as_array()
-                .ok_or("UPSTREAM: Invalid VNDB ulist response format")?;
+                if response.status() != 200 {
+                    return Err(format!(
+                        "UPSTREAM: VNDB ulist API returned status {}",
+                        response.status()
+                    ));
+                }
 
-            entries.extend(Self::parse_user_list_results(results));
+                let data: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
 
-            if !data["more"].as_bool().unwrap_or(false) {
-                break;
+                let results = data["results"]
+                    .as_array()
+                    .ok_or("UPSTREAM: Invalid VNDB ulist response format")?;
+
+                entries.extend(Self::parse_user_list_results(results, status));
+
+                if !data["more"].as_bool().unwrap_or(false) {
+                    break;
+                }
+
+                page += 1;
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
 
-            page += 1;
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
         Ok(entries)
     }
 
-    fn parse_user_list_results(results: &[serde_json::Value]) -> Vec<UserMediaEntry> {
+    fn parse_user_list_results(
+        results: &[serde_json::Value],
+        status: VndbShelfStatus,
+    ) -> Vec<UserMediaEntry> {
         let mut entries = Vec::new();
 
         for item in results {
@@ -359,6 +446,7 @@ impl VndbClient {
                 title_romaji,
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: status.query_value().to_string(),
             });
         }
 
@@ -427,7 +515,7 @@ impl VndbClient {
         let vn_id = Self::normalize_id(vn_id);
         let payload = serde_json::json!({
             "filters": ["id", "=", &vn_id],
-            "fields": "title, alttitle, va.staff.name, va.staff.original, va.character.id"
+            "fields": "title, alttitle, va.staff.id, va.staff.name, va.staff.original, va.character.id"
         });
 
         let response = send_with_retry(
@@ -470,15 +558,28 @@ impl VndbClient {
         if let Some(va_arr) = vn["va"].as_array() {
             for entry in va_arr {
                 let char_id = entry["character"]["id"].as_str().unwrap_or("");
-                let va_name = entry["staff"]["original"]
+                let staff_id = entry["staff"]["id"].as_str().unwrap_or("");
+                let name = entry["staff"]["name"].as_str().unwrap_or("").to_string();
+                let original = entry["staff"]["original"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let display_name = entry["staff"]["original"]
                     .as_str()
                     .filter(|s| !s.is_empty())
                     .or_else(|| entry["staff"]["name"].as_str())
                     .unwrap_or("")
                     .to_string();
-                if !char_id.is_empty() && !va_name.is_empty() {
+                if !char_id.is_empty() && !display_name.is_empty() {
                     // First VA wins (don't overwrite if character has multiple VAs)
-                    va_map.entry(char_id.to_string()).or_insert(va_name);
+                    va_map
+                        .entry(char_id.to_string())
+                        .or_insert_with(|| VoiceActorInfo {
+                            staff_id: staff_id.to_string(),
+                            name,
+                            original,
+                            display_name,
+                        });
                 }
             }
         }
@@ -814,10 +915,29 @@ mod tests {
             }
         })];
 
-        let entries = VndbClient::parse_user_list_results(&results);
+        let entries = VndbClient::parse_user_list_results(&results, VndbShelfStatus::Playing);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, "v17763");
         assert_eq!(entries[0].title, "マブラヴ オルタネイティヴ");
+        assert_eq!(entries[0].status, "playing");
+    }
+
+    #[test]
+    fn test_vndb_shelf_status_parsing_and_label_mapping() {
+        let statuses = VndbShelfStatus::parse_list(Some("playing,finished,wishlist")).unwrap();
+        let labels: Vec<u8> = statuses.iter().map(|status| status.label_id()).collect();
+        let query_values: Vec<&str> = statuses.iter().map(|status| status.query_value()).collect();
+
+        assert_eq!(labels, vec![1, 2, 5]);
+        assert_eq!(query_values, vec!["playing", "finished", "wishlist"]);
+    }
+
+    #[test]
+    fn test_vndb_shelf_status_default_is_playing() {
+        let statuses = VndbShelfStatus::parse_list(None).unwrap();
+
+        assert_eq!(statuses, vec![VndbShelfStatus::Playing]);
+        assert!(VndbShelfStatus::is_default_list(&statuses));
     }
 
     #[test]

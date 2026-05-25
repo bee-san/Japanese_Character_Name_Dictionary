@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.jmnedict]
+kind = "jmnedict"
+enabled = true
+input = "../data/input/JMnedict.xml.gz"
+format = "jmnedict"
+license_class = "edrdg_cc_by_sa"
+license_label = "JMnedict proper-name lexicon"
+license_url = "https://www.edrdg.org/edrdg/licence.html"
+notes = "Official EDRDG JMnedict XML proper-name lexicon. The adapter emits one snapshot record per <trans> group so mixed-type entries stay separable."

@@ -12,13 +12,13 @@ const GENERATION_BACKOFF_SCHEDULE_MS: [u64; 6] = [5_000, 15_000, 45_000, 135_000
 const RETRY_JITTER_UPPER_BOUND_MS: u64 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AnilistRetryPolicy {
+pub enum AnilistRetryPolicy {
     Preview,
     Generation,
 }
 
 impl AnilistRetryPolicy {
-    pub(crate) fn request_timeout(self) -> std::time::Duration {
+    pub fn request_timeout(self) -> std::time::Duration {
         match self {
             Self::Preview => std::time::Duration::from_secs(60),
             Self::Generation => std::time::Duration::from_secs(120),
@@ -198,6 +198,104 @@ pub struct AnilistClient {
     retry_policy: AnilistRetryPolicy,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnilistShelfStatus {
+    Current,
+    Completed,
+    Planning,
+    Paused,
+    Dropped,
+}
+
+impl AnilistShelfStatus {
+    pub fn default_statuses() -> Vec<Self> {
+        vec![Self::Current]
+    }
+
+    pub fn parse_list(raw: Option<&str>) -> Result<Vec<Self>, String> {
+        let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok(Self::default_statuses());
+        };
+
+        let mut statuses = Vec::new();
+        for token in raw
+            .split(',')
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+        {
+            let status = match token.to_ascii_lowercase().as_str() {
+                "current" | "watching" | "reading" | "repeating" => Self::Current,
+                "completed" => Self::Completed,
+                "planning" | "planned" => Self::Planning,
+                "paused" => Self::Paused,
+                "dropped" => Self::Dropped,
+                other => {
+                    return Err(format!(
+                        "anilist_status contains unsupported value '{}'",
+                        other
+                    ));
+                }
+            };
+            if !statuses.contains(&status) {
+                statuses.push(status);
+            }
+        }
+
+        if statuses.is_empty() {
+            Ok(Self::default_statuses())
+        } else {
+            Ok(statuses)
+        }
+    }
+
+    pub fn is_default_list(statuses: &[Self]) -> bool {
+        matches!(statuses, [Self::Current])
+    }
+
+    pub fn query_value(self) -> &'static str {
+        match self {
+            Self::Current => "current",
+            Self::Completed => "completed",
+            Self::Planning => "planning",
+            Self::Paused => "paused",
+            Self::Dropped => "dropped",
+        }
+    }
+
+    pub fn api_statuses(statuses: &[Self]) -> Vec<&'static str> {
+        let statuses = if statuses.is_empty() {
+            Self::default_statuses()
+        } else {
+            statuses.to_vec()
+        };
+        let mut api_statuses = Vec::new();
+        for status in statuses {
+            match status {
+                Self::Current => {
+                    api_statuses.push("CURRENT");
+                    api_statuses.push("REPEATING");
+                }
+                Self::Completed => api_statuses.push("COMPLETED"),
+                Self::Planning => api_statuses.push("PLANNING"),
+                Self::Paused => api_statuses.push("PAUSED"),
+                Self::Dropped => api_statuses.push("DROPPED"),
+            }
+        }
+        api_statuses
+    }
+
+    fn from_api_status(status: &str) -> Option<Self> {
+        match status {
+            "CURRENT" | "REPEATING" => Some(Self::Current),
+            "COMPLETED" => Some(Self::Completed),
+            "PLANNING" => Some(Self::Planning),
+            "PAUSED" => Some(Self::Paused),
+            "DROPPED" => Some(Self::Dropped),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnilistMediaTitles {
@@ -274,12 +372,13 @@ impl AnilistClient {
     }
 
     const USER_LIST_QUERY: &'static str = r#"
-    query ($username: String, $type: MediaType) {
-        MediaListCollection(userName: $username, type: $type, status_in: [CURRENT, REPEATING]) {
+    query ($username: String, $type: MediaType, $statuses: [MediaListStatus]) {
+        MediaListCollection(userName: $username, type: $type, status_in: $statuses) {
             lists {
                 name
                 status
                 entries {
+                    status
                     media {
                         id
                         title {
@@ -359,6 +458,14 @@ impl AnilistClient {
                         } else {
                             title_english
                         };
+                        let raw_status = entry["status"]
+                            .as_str()
+                            .or_else(|| list["status"].as_str())
+                            .unwrap_or("");
+                        let status = AnilistShelfStatus::from_api_status(raw_status)
+                            .unwrap_or(AnilistShelfStatus::Current)
+                            .query_value()
+                            .to_string();
 
                         entries.push(UserMediaEntry {
                             id: id_str,
@@ -366,6 +473,7 @@ impl AnilistClient {
                             title_romaji,
                             source: "anilist".to_string(),
                             media_type: media_type_str,
+                            status,
                         });
                     }
                 }
@@ -375,21 +483,23 @@ impl AnilistClient {
         entries
     }
 
-    /// Fetch a user's currently watching/reading media from AniList.
-    /// Queries separately for both ANIME and MANGA types of media.
-    pub async fn fetch_user_current_list(
+    /// Fetch a user's AniList media from the selected shelf statuses.
+    pub async fn fetch_user_list(
         &self,
         username: &str,
+        statuses: &[AnilistShelfStatus],
     ) -> Result<Vec<UserMediaEntry>, String> {
         let username = Self::parse_user_input(username);
         let mut entries = Vec::new();
         // Duplicates can exist across custom user lists, so we filter by unique media type + ID pairs
         let mut seen: HashSet<(String, String)> = HashSet::new();
+        let status_values = AnilistShelfStatus::api_statuses(statuses);
 
         for (media_type_gql, media_type_label) in &[("ANIME", "anime"), ("MANGA", "manga")] {
             let variables = serde_json::json!({
                 "username": username,
-                "type": media_type_gql
+                "type": media_type_gql,
+                "statuses": &status_values,
             });
 
             let response = send_with_retry(
@@ -1268,8 +1378,11 @@ mod tests {
         let query = AnilistClient::USER_LIST_QUERY;
         assert!(query.contains("MediaListCollection"));
         assert!(query.contains("userName"));
-        assert!(query.contains("status_in: [CURRENT, REPEATING]"));
+        assert!(query.contains("$statuses: [MediaListStatus]"));
+        assert!(query.contains("status_in: $statuses"));
         assert!(query.contains("$type: MediaType"));
+        assert!(query.contains("entries"));
+        assert!(query.contains("status"));
         assert!(query.contains("title"));
         assert!(query.contains("romaji"));
         assert!(query.contains("native"));
@@ -1473,12 +1586,46 @@ mod tests {
         assert_eq!(entries[0].title_romaji, "Steins;Gate Romaji");
         assert_eq!(entries[0].source, "anilist");
         assert_eq!(entries[0].media_type, media_type_label);
+        assert_eq!(entries[0].status, "current");
         // Second entry has null native → falls back to romaji
         assert_eq!(entries[1].id, "1535");
         assert_eq!(entries[1].title, "Death Note Romaji");
         assert_eq!(entries[1].title_romaji, "Death Note Romaji");
         assert_eq!(entries[0].source, "anilist");
         assert_eq!(entries[0].media_type, media_type_label);
+    }
+
+    #[test]
+    fn test_anilist_shelf_status_parsing_and_api_mapping() {
+        let statuses =
+            AnilistShelfStatus::parse_list(Some("current,completed,planning,paused,dropped"))
+                .unwrap();
+        let query_values: Vec<&str> = statuses.iter().map(|status| status.query_value()).collect();
+        let api_statuses = AnilistShelfStatus::api_statuses(&statuses);
+
+        assert_eq!(
+            query_values,
+            vec!["current", "completed", "planning", "paused", "dropped"]
+        );
+        assert_eq!(
+            api_statuses,
+            vec![
+                "CURRENT",
+                "REPEATING",
+                "COMPLETED",
+                "PLANNING",
+                "PAUSED",
+                "DROPPED"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_anilist_shelf_status_default_is_current() {
+        let statuses = AnilistShelfStatus::parse_list(None).unwrap();
+
+        assert_eq!(statuses, vec![AnilistShelfStatus::Current]);
+        assert!(AnilistShelfStatus::is_default_list(&statuses));
     }
 
     #[test]

@@ -1,0 +1,18 @@
+[build]
+snapshot_version = "2026-04-08"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+image_store_subdir = "image_store"
+
+[sources.vndb_dump]
+kind = "vndb_dump"
+enabled = true
+input = "vndb_seed_fixture.json"
+format = "json"
+license_class = "vndb_fixture"
+license_label = "VNDB Fixture"
+license_url = "https://example.invalid/vndb-fixture"

@@ -854,6 +854,48 @@ impl DictBuilder {
         self.create_index()
     }
 
+    #[allow(dead_code)]
+    pub fn add_prebuilt_entries_with_optional_honorifics(
+        &mut self,
+        term_readings: &[(String, String)],
+        tag_role: &str,
+        score: i32,
+        structured_content: &serde_json::Value,
+    ) -> usize {
+        self.finalize();
+        let mut added_terms = HashSet::new();
+        let mut added_count = 0;
+        let mut base_names_with_readings = Vec::new();
+
+        for (term, reading) in term_readings {
+            let term = term.trim();
+            if term.is_empty() || !added_terms.insert(term.to_string()) {
+                continue;
+            }
+            self.entries.push(ContentBuilder::create_term_entry(
+                term,
+                reading.trim(),
+                tag_role,
+                score,
+                structured_content,
+            ));
+            base_names_with_readings.push((term.to_string(), reading.trim().to_string()));
+            added_count += 1;
+        }
+
+        if self.settings.honorifics && !base_names_with_readings.is_empty() {
+            self.honorific_sources.push(HonorificSource {
+                base_names_with_readings,
+                structured_content: structured_content.clone(),
+                tag_role: tag_role.to_string(),
+                score,
+                added_terms,
+            });
+        }
+
+        added_count
+    }
+
     /// Create tag_bank_1.json — fixed tag definitions for character roles.
     fn create_tags(&self) -> serde_json::Value {
         let build_timestamp = env!("BUILD_TIMESTAMP")
@@ -1000,6 +1042,13 @@ impl DictBuilder {
             .finish()
             .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
         Ok(cursor.into_inner())
+    }
+
+    #[allow(dead_code)]
+    pub fn export_file(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let bytes = self.export_bytes()?;
+        std::fs::write(path, bytes)
+            .map_err(|e| format!("Failed to write ZIP to {}: {}", path.display(), e))
     }
 }
 

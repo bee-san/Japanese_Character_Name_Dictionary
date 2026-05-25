@@ -1,0 +1,21 @@
+[
+  {
+    "title": "吾輩は猫である",
+    "language": "ja",
+    "page_id": 100,
+    "page_type": "work",
+    "redirects": ["我輩は猫である"],
+    "wikidata_id": "Q333",
+    "categories": ["日本の小説", "1905年の小説"],
+    "url": "https://ja.wikipedia.org/wiki/%E5%90%BE%E8%BC%A9%E3%81%AF%E7%8C%AB%E3%81%A7%E3%81%82%E3%82%8B"
+  },
+  {
+    "title": "ドラえもん",
+    "language": "ja",
+    "page_id": 101,
+    "page_type": "fictional_character",
+    "redirects": ["ドラエもん"],
+    "readings": ["ドラえもん"],
+    "categories": ["架空のネコ", "漫画の登場人物"]
+  }
+]

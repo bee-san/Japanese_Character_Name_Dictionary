@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.wikidata_dump]
+kind = "wikidata_dump"
+enabled = true
+input = "../data/input/wikidata-entities.json.gz"
+format = "wikidata_dump"
+license_class = "wikidata_cc0"
+license_label = "Wikidata entity dump"
+license_url = "https://www.wikidata.org/wiki/Wikidata:Database_download"
+notes = "Offline line-oriented Wikidata JSON dump or equivalent JSON/JSONL export. The loader extracts labels, aliases, kana labels, selected external IDs, and sitelink titles."

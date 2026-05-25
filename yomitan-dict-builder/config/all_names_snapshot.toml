@@ -1,0 +1,70 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.vndb_dump]
+kind = "vndb_dump"
+enabled = true
+input = "../data/input/vndb-db-2026-04-08.tar.zst"
+format = "vndb_dump"
+license_class = "vndb_odbl_dbcl"
+license_label = "VNDB database dump"
+license_url = "https://vndb.org/d17"
+notes = "Full VNDB dump archive in PostgreSQL COPY format. Dump-only mode does not fetch remote image binaries."
+
+[sources.kaggle_anilist_snapshot]
+kind = "kaggle_anilist_snapshot"
+enabled = true
+input = "../data/input/anilist_anime_dataset.csv"
+format = "csv"
+license_class = "community_snapshot"
+license_label = "AniList Kaggle snapshot"
+license_url = "https://www.kaggle.com/datasets/calebmwelsh/anilist-anime-dataset"
+notes = "Offline Kaggle export. Image URLs are preserved, but dump-only builds do not fetch remote image bytes."
+
+[sources.jmnedict]
+kind = "jmnedict"
+enabled = true
+input = "../data/input/JMnedict.xml.gz"
+format = "jmnedict"
+license_class = "edrdg_cc_by_sa"
+license_label = "JMnedict proper-name lexicon"
+license_url = "https://www.edrdg.org/edrdg/licence.html"
+notes = "Official EDRDG JMnedict XML proper-name lexicon. This adds broad real-world proper-name coverage without requiring live API calls."
+
+[sources.web_ndl_authorities]
+kind = "web_ndl_authorities"
+enabled = true
+input = "../data/input/web_ndl_authorities.json"
+format = "web_ndl_authorities"
+license_class = "ndl_authority_data"
+license_label = "Web NDL Authorities export"
+license_url = "https://id.ndl.go.jp/information/sparql/"
+notes = "Offline SPARQL JSON export from the National Diet Library authority endpoint. Provide a harvested result file manually; the builder does not batch-query the live endpoint."
+
+[sources.wikidata_dump]
+kind = "wikidata_dump"
+enabled = true
+input = "../data/input/wikidata-entities.json.gz"
+format = "wikidata_dump"
+license_class = "wikidata_cc0"
+license_label = "Wikidata entity dump"
+license_url = "https://www.wikidata.org/wiki/Wikidata:Database_download"
+notes = "Offline line-oriented Wikidata JSON dump or equivalent JSON/JSONL export. The loader extracts labels, aliases, kana labels, selected external IDs, and sitelink titles."
+
+[sources.wikipedia_dump]
+kind = "wikipedia_dump"
+enabled = true
+input = "../data/input/jawiki_titles_and_redirects.jsonl"
+format = "wikipedia_dump"
+license_class = "wikimedia_cc_by_sa"
+license_label = "Wikipedia extracted title dump"
+license_url = "https://dumps.wikimedia.org/"
+notes = "Offline JSON/JSONL rows extracted from official Wikipedia dumps. The loader is designed for page-title, redirect, category, and Wikidata-link exports rather than raw XML pages-articles dumps."

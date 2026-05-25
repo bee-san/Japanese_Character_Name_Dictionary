@@ -317,7 +317,7 @@ impl FrequencyDictBuilder {
         rank: Option<usize>,
     ) -> String {
         match display_mode {
-            FrequencyDisplayMode::Occurrence => format!("{} occ.", aggregate.total_occurrences),
+            FrequencyDisplayMode::Occurrence => aggregate.total_occurrences.to_string(),
             FrequencyDisplayMode::PerMillion => {
                 let rate = self.frequency_rate(aggregate, combine_mode) * 1_000_000.0;
                 format!(
@@ -703,11 +703,11 @@ mod tests {
         assert_eq!(entries[0][0], "の");
         assert_eq!(entries[0][1], "freq");
         assert_eq!(entries[0][2]["value"], 2410);
-        assert_eq!(entries[0][2]["displayValue"], "2410 occ.");
+        assert_eq!(entries[0][2]["displayValue"], "2410");
         assert_eq!(entries[1][0], "岡部");
         assert_eq!(entries[1][2]["reading"], "おかべ");
         assert_eq!(entries[1][2]["frequency"]["value"], 1645);
-        assert_eq!(entries[1][2]["frequency"]["displayValue"], "1645 occ.");
+        assert_eq!(entries[1][2]["frequency"]["displayValue"], "1645");
     }
 
     #[test]
@@ -725,7 +725,7 @@ mod tests {
 
         let target = entries.iter().find(|entry| entry[0] == "target").unwrap();
         assert_eq!(target[2]["value"], 35);
-        assert_eq!(target[2]["displayValue"], "35 occ.");
+        assert_eq!(target[2]["displayValue"], "35");
     }
 
     #[test]

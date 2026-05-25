@@ -8,6 +8,12 @@ pub struct UserMediaEntry {
     pub title_romaji: String, // Romanized title
     pub source: String,       // "vndb" or "anilist"
     pub media_type: String,   // "vn", "anime", "manga"
+    #[serde(default = "default_user_media_status")]
+    pub status: String, // "playing", "finished", "current", "completed", etc.
+}
+
+fn default_user_media_status() -> String {
+    "current".to_string()
 }
 
 /// A trait with spoiler metadata.
@@ -112,6 +118,7 @@ mod tests {
             title_romaji: "Steins;Gate".to_string(),
             source: "vndb".to_string(),
             media_type: "vn".to_string(),
+            status: "playing".to_string(),
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("v17"));
@@ -122,6 +129,7 @@ mod tests {
         let deserialized: UserMediaEntry = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, "v17");
         assert_eq!(deserialized.source, "vndb");
+        assert_eq!(deserialized.status, "playing");
     }
 
     #[test]
@@ -330,6 +338,7 @@ mod tests {
                 title_romaji: "Test".to_string(),
                 source: source.to_string(),
                 media_type: media_type.to_string(),
+                status: "current".to_string(),
             };
             let json = serde_json::to_string(&entry).unwrap();
             let de: UserMediaEntry = serde_json::from_str(&json).unwrap();

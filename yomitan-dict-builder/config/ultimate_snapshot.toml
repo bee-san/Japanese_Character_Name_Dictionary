@@ -1,0 +1,77 @@
+[build]
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+image_store_subdir = "image_store"
+
+[sources.fixture_demo]
+kind = "fixture_bundle"
+enabled = true
+input = "../tests/fixtures/ultimate_snapshot/source_fixture.json"
+format = "json"
+license_class = "test_fixture"
+license_label = "Fixture Data"
+license_url = "https://example.invalid/fixture-license"
+notes = "Replace this with real offline source inputs before doing a non-demo build."
+
+[sources.vndb_dump]
+kind = "vndb_dump"
+enabled = false
+input = "../data/input/vndb_dump.jsonl"
+format = "jsonl"
+license_class = "vndb"
+license_label = "VNDB dump"
+
+[sources.kaggle_anilist_snapshot]
+kind = "kaggle_anilist_snapshot"
+enabled = false
+input = "../data/input/anilist_anime_dataset.csv"
+format = "csv"
+license_class = "community_snapshot"
+license_label = "Community AniList snapshot"
+license_url = "https://www.kaggle.com/datasets/calebmwelsh/anilist-anime-dataset"
+
+[sources.direct_anilist_api]
+kind = "direct_anilist_api"
+enabled = false
+license_class = "disabled"
+license_label = "Disabled"
+
+[sources.jmnedict]
+kind = "jmnedict"
+enabled = false
+input = "../data/input/JMnedict.xml.gz"
+format = "jmnedict"
+license_class = "edrdg_cc_by_sa"
+license_label = "JMnedict proper-name lexicon"
+license_url = "https://www.edrdg.org/edrdg/licence.html"
+
+[sources.web_ndl_authorities]
+kind = "web_ndl_authorities"
+enabled = false
+input = "../data/input/web_ndl_authorities.json"
+format = "web_ndl_authorities"
+license_class = "ndl_authority_data"
+license_label = "Web NDL Authorities export"
+license_url = "https://id.ndl.go.jp/information/sparql/"
+
+[sources.wikidata_dump]
+kind = "wikidata_dump"
+enabled = false
+input = "../data/input/wikidata-entities.json.gz"
+format = "wikidata_dump"
+license_class = "wikidata_cc0"
+license_label = "Wikidata entity dump"
+license_url = "https://www.wikidata.org/wiki/Wikidata:Database_download"
+
+[sources.wikipedia_dump]
+kind = "wikipedia_dump"
+enabled = false
+input = "../data/input/jawiki_titles_and_redirects.jsonl"
+format = "wikipedia_dump"
+license_class = "wikimedia_cc_by_sa"
+license_label = "Wikipedia extracted title dump"
+license_url = "https://dumps.wikimedia.org/"

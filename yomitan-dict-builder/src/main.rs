@@ -36,7 +36,7 @@ mod vndb_client;
 #[cfg(test)]
 mod anilist_name_test_data;
 
-use anilist_client::{AnilistClient, AnilistRetryPolicy};
+use anilist_client::{AnilistClient, AnilistRetryPolicy, AnilistShelfStatus};
 use content_builder::DictSettings;
 use dict_builder::DictBuilder;
 use frequency_dict_builder::{
@@ -47,7 +47,7 @@ use image_handler::ImageHandler;
 use jiten_client::JitenClient;
 use media_cache::MediaCache;
 use models::UserMediaEntry;
-use vndb_client::VndbClient;
+use vndb_client::{VndbClient, VndbShelfStatus};
 
 /// Returns the path to the `static` directory.
 ///
@@ -323,6 +323,7 @@ struct NormalizedManualEntry {
     source: String,
     id: String,
     media_type: String,
+    status: String,
 }
 
 // === Query parameter structs ===
@@ -336,6 +337,8 @@ struct DictQuery {
     media_type: String, // "ANIME" or "MANGA" (for AniList single-media)
     vndb_user: Option<String>, // VNDB username (for username mode)
     anilist_user: Option<String>, // AniList username (for username mode)
+    vndb_status: Option<String>, // comma-separated VNDB shelf statuses
+    anilist_status: Option<String>, // comma-separated AniList shelf statuses
     #[serde(default = "default_true")]
     honorifics: bool,
     #[serde(default = "default_true")]
@@ -398,12 +401,16 @@ struct ManualEntry {
     id: String,
     #[serde(default = "default_media_type")]
     media_type: String,
+    #[serde(default = "default_manual_status")]
+    status: String,
 }
 
 #[derive(Deserialize)]
 struct UserListQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
+    vndb_status: Option<String>,
+    anilist_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -421,6 +428,8 @@ struct VndbMediaSearchQuery {
 struct GenerateStreamQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
+    vndb_status: Option<String>,
+    anilist_status: Option<String>,
     #[serde(default = "default_true")]
     honorifics: bool,
     #[serde(default = "default_true")]
@@ -441,6 +450,8 @@ struct GenerateStreamQuery {
 struct FrequencyQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
+    vndb_status: Option<String>,
+    anilist_status: Option<String>,
     entries: Option<String>,
     min_occurrences: Option<u64>,
     max_terms: Option<usize>,
@@ -473,8 +484,65 @@ fn default_media_type() -> String {
     "ANIME".to_string()
 }
 
+fn default_manual_status() -> String {
+    "current".to_string()
+}
+
 fn default_true() -> bool {
     true
+}
+
+fn normalize_manual_status(status: &str) -> String {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "playing" => "playing".to_string(),
+        "finished" => "finished".to_string(),
+        "wishlist" => "wishlist".to_string(),
+        "completed" => "completed".to_string(),
+        "planning" => "planning".to_string(),
+        "paused" => "paused".to_string(),
+        "dropped" => "dropped".to_string(),
+        _ => "current".to_string(),
+    }
+}
+
+fn parse_shelf_status_params(
+    vndb_status: Option<&str>,
+    anilist_status: Option<&str>,
+) -> Result<(Vec<VndbShelfStatus>, Vec<AnilistShelfStatus>), String> {
+    let vndb_statuses = VndbShelfStatus::parse_list(vndb_status)
+        .map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?;
+    let anilist_statuses = AnilistShelfStatus::parse_list(anilist_status)
+        .map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?;
+    Ok((vndb_statuses, anilist_statuses))
+}
+
+fn status_query_value<T>(statuses: &[T], query_value: impl Fn(T) -> &'static str) -> String
+where
+    T: Copy,
+{
+    statuses
+        .iter()
+        .copied()
+        .map(query_value)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn append_shelf_status_params(
+    parts: &mut Vec<String>,
+    include_vndb: bool,
+    vndb_statuses: &[VndbShelfStatus],
+    include_anilist: bool,
+    anilist_statuses: &[AnilistShelfStatus],
+) {
+    if include_vndb && !VndbShelfStatus::is_default_list(vndb_statuses) {
+        let value = status_query_value(vndb_statuses, VndbShelfStatus::query_value);
+        parts.push(format!("vndb_status={}", urlencoding::encode(&value)));
+    }
+    if include_anilist && !AnilistShelfStatus::is_default_list(anilist_statuses) {
+        let value = status_query_value(anilist_statuses, AnilistShelfStatus::query_value);
+        parts.push(format!("anilist_status={}", urlencoding::encode(&value)));
+    }
 }
 
 fn normalize_anilist_media_search_query(
@@ -734,12 +802,14 @@ fn normalize_anilist_id_for_url(input: &str) -> String {
 
 fn normalize_manual_entry(entry: &ManualEntry) -> Result<NormalizedManualEntry, String> {
     let source = entry.source.trim().to_lowercase();
+    let status = normalize_manual_status(&entry.status);
     match source.as_str() {
         "vndb" => Ok(NormalizedManualEntry {
             source,
             id: VndbClient::parse_vn_id(&entry.id)
                 .map_err(|e| format!("{} {}", INVALID_INPUT_PREFIX, e))?,
             media_type: "vn".to_string(),
+            status,
         }),
         "anilist" => Ok(NormalizedManualEntry {
             source,
@@ -750,6 +820,7 @@ fn normalize_manual_entry(entry: &ManualEntry) -> Result<NormalizedManualEntry, 
                 "MANGA" => "MANGA".to_string(),
                 _ => "ANIME".to_string(),
             },
+            status,
         }),
         _ => Err(format!(
             "{} source must be 'vndb' or 'anilist'",
@@ -774,6 +845,9 @@ fn normalize_entries_json_for_url(entries_json: &str) -> String {
             });
             if entry.source == "anilist" {
                 value["media_type"] = serde_json::json!(entry.media_type);
+            }
+            if entry.status != "current" {
+                value["status"] = serde_json::json!(entry.status);
             }
             value
         })
@@ -1215,6 +1289,8 @@ async fn collect_user_media_entries(
     state: &AppState,
     vndb_user: Option<&str>,
     anilist_user: Option<&str>,
+    vndb_statuses: &[VndbShelfStatus],
+    anilist_statuses: &[AnilistShelfStatus],
 ) -> Result<(Vec<UserMediaEntry>, Vec<String>), String> {
     let vndb_user = normalize_vndb_user_input(vndb_user.unwrap_or(""));
     let anilist_user = normalize_anilist_user_input(anilist_user.unwrap_or(""));
@@ -1232,7 +1308,7 @@ async fn collect_user_media_entries(
 
     if !vndb_user.is_empty() {
         let client = VndbClient::with_client(state.http_client.clone());
-        match client.fetch_user_playing_list(&vndb_user).await {
+        match client.fetch_user_list(&vndb_user, vndb_statuses).await {
             Ok(entries) => all_entries.extend(entries),
             Err(error) => {
                 response_warnings.push(format!("VNDB: {}", public_error_message(&error)));
@@ -1243,7 +1319,10 @@ async fn collect_user_media_entries(
 
     if !anilist_user.is_empty() {
         let client = anilist_preview_client(state);
-        match client.fetch_user_current_list(&anilist_user).await {
+        match client
+            .fetch_user_list(&anilist_user, anilist_statuses)
+            .await
+        {
             Ok(entries) => all_entries.extend(entries),
             Err(error) => {
                 response_warnings.push(format!("AniList: {}", public_error_message(&error)));
@@ -1260,7 +1339,7 @@ async fn collect_user_media_entries(
     if all_entries.is_empty() {
         if raw_errors.is_empty() {
             Err(format!(
-                "{} No in-progress media found in the requested user lists",
+                "{} No selected media found in the requested user lists",
                 INVALID_INPUT_PREFIX
             ))
         } else {
@@ -1278,10 +1357,29 @@ async fn fetch_user_lists(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let request_id = new_request_id();
+    let (vndb_statuses, anilist_statuses) = match parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    ) {
+        Ok(statuses) => statuses,
+        Err(error) => {
+            return (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response();
+        }
+    };
     let (all_entries, response_errors) = match collect_user_media_entries(
         &state,
         params.vndb_user.as_deref(),
         params.anilist_user.as_deref(),
+        &vndb_statuses,
+        &anilist_statuses,
     )
     .await
     {
@@ -1467,17 +1565,28 @@ async fn generate_stream(
     let settings = params.to_settings();
     let vndb_user = normalize_vndb_user_input(&params.vndb_user.unwrap_or_default());
     let anilist_user = normalize_anilist_user_input(&params.anilist_user.unwrap_or_default());
+    let shelf_statuses = parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    );
 
     tokio::spawn(async move {
-        let result = generate_dict_from_usernames(
-            &request_id,
-            &vndb_user,
-            &anilist_user,
-            settings,
-            Some(&tx),
-            &state,
-        )
-        .await;
+        let result = match shelf_statuses {
+            Ok((vndb_statuses, anilist_statuses)) => {
+                generate_dict_from_usernames(
+                    &request_id,
+                    &vndb_user,
+                    &anilist_user,
+                    &vndb_statuses,
+                    &anilist_statuses,
+                    settings,
+                    Some(&tx),
+                    &state,
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
 
         send_stream_result(&request_id, &state, &tx, result).await;
     });
@@ -1759,7 +1868,7 @@ async fn generate_frequency_from_media_entries(
 ) -> Result<FrequencyGenerationResult, String> {
     if entries.is_empty() {
         return Err(format!(
-            "{} No current VNDB/AniList media were provided for frequency generation",
+            "{} No selected VNDB/AniList media were provided for frequency generation",
             INVALID_INPUT_PREFIX
         ));
     }
@@ -1818,7 +1927,7 @@ async fn generate_frequency_from_media_entries(
     if deck_ids.is_empty() {
         return if resolve_errors.is_empty() {
             Err(format!(
-                "{} No Jiten occurrence-count decks matched the provided current media",
+                "{} No Jiten occurrence-count decks matched the selected titles",
                 INVALID_INPUT_PREFIX
             ))
         } else {
@@ -1917,6 +2026,10 @@ async fn media_entries_from_frequency_query(
 ) -> Result<(Vec<UserMediaEntry>, Vec<String>), String> {
     let mut entries = Vec::new();
     let mut warnings = Vec::new();
+    let (vndb_statuses, anilist_statuses) = parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    )?;
 
     if let Some(entries_json) = params
         .entries
@@ -1945,6 +2058,8 @@ async fn media_entries_from_frequency_query(
             state,
             params.vndb_user.as_deref(),
             params.anilist_user.as_deref(),
+            &vndb_statuses,
+            &anilist_statuses,
         )
         .await?;
         entries.extend(user_entries);
@@ -1956,7 +2071,7 @@ async fn media_entries_from_frequency_query(
 
     if entries.is_empty() {
         Err(format!(
-            "{} No current VNDB/AniList media were found for frequency generation",
+            "{} No selected VNDB/AniList media were found for frequency generation",
             INVALID_INPUT_PREFIX
         ))
     } else {
@@ -1987,6 +2102,7 @@ fn parse_frequency_entries_json(entries_json: &str) -> Result<Vec<UserMediaEntry
             title_romaji: entry.id,
             source: entry.source,
             media_type: media_type.to_string(),
+            status: entry.status,
         });
     }
 
@@ -2001,7 +2117,7 @@ fn frequency_urls(params: &FrequencyQuery) -> Result<(String, String), String> {
         ));
     }
 
-    let parts = frequency_query_parts(params);
+    let parts = frequency_query_parts(params)?;
     let query = parts.join("&");
     let base = base_url();
     Ok((
@@ -2025,8 +2141,12 @@ fn has_frequency_media_input(params: &FrequencyQuery) -> bool {
             .is_some_and(|value| !value.trim().is_empty())
 }
 
-fn frequency_query_parts(params: &FrequencyQuery) -> Vec<String> {
+fn frequency_query_parts(params: &FrequencyQuery) -> Result<Vec<String>, String> {
     let mut parts = Vec::new();
+    let (vndb_statuses, anilist_statuses) = parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    )?;
 
     let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
     if !vndb_user.is_empty() {
@@ -2040,6 +2160,13 @@ fn frequency_query_parts(params: &FrequencyQuery) -> Vec<String> {
             urlencoding::encode(&anilist_user)
         ));
     }
+    append_shelf_status_params(
+        &mut parts,
+        !vndb_user.is_empty(),
+        &vndb_statuses,
+        !anilist_user.is_empty(),
+        &anilist_statuses,
+    );
 
     if let Some(entries) = params
         .entries
@@ -2064,7 +2191,7 @@ fn frequency_query_parts(params: &FrequencyQuery) -> Vec<String> {
         params.combine_mode.as_query_value()
     ));
 
-    parts
+    Ok(parts)
 }
 
 fn frequency_error_response(error: &str) -> axum::response::Response {
@@ -2264,6 +2391,8 @@ async fn generate_dict_from_usernames(
     request_id: &str,
     vndb_user: &str,
     anilist_user: &str,
+    vndb_statuses: &[VndbShelfStatus],
+    anilist_statuses: &[AnilistShelfStatus],
     settings: DictSettings,
     progress_tx: Option<&tokio::sync::mpsc::Sender<Result<Event, std::convert::Infallible>>>,
     state: &AppState,
@@ -2280,7 +2409,7 @@ async fn generate_dict_from_usernames(
 
     if !vndb_user.is_empty() {
         let client = VndbClient::with_client(state.http_client.clone());
-        match client.fetch_user_playing_list(&vndb_user).await {
+        match client.fetch_user_list(&vndb_user, vndb_statuses).await {
             Ok(entries) => media_entries.extend(entries),
             Err(e) => {
                 stats.record_failure(&e);
@@ -2310,7 +2439,10 @@ async fn generate_dict_from_usernames(
 
     if !anilist_user.is_empty() {
         let client = anilist_preview_client(state);
-        match client.fetch_user_current_list(&anilist_user).await {
+        match client
+            .fetch_user_list(&anilist_user, anilist_statuses)
+            .await
+        {
             Ok(entries) => media_entries.extend(entries),
             Err(e) => {
                 stats.record_failure(&e);
@@ -2349,7 +2481,7 @@ async fn generate_dict_from_usernames(
     if media_entries.is_empty() {
         let error = if collected_errors.is_empty() {
             format!(
-                "{} No in-progress media found in the requested user lists",
+                "{} No selected media found in the requested user lists",
                 INVALID_INPUT_PREFIX
             )
         } else {
@@ -2382,6 +2514,13 @@ async fn generate_dict_from_usernames(
             urlencoding::encode(&anilist_user)
         ));
     }
+    append_shelf_status_params(
+        &mut url_parts,
+        !vndb_user.is_empty(),
+        vndb_statuses,
+        !anilist_user.is_empty(),
+        anilist_statuses,
+    );
     // Append non-default settings
     if !settings.honorifics {
         url_parts.push("honorifics=false".to_string());
@@ -2675,6 +2814,9 @@ async fn generate_dict_from_entries(
             if e.source == "anilist" {
                 obj["media_type"] = serde_json::json!(e.media_type);
             }
+            if e.status != "current" {
+                obj["status"] = serde_json::json!(e.status);
+            }
             obj
         })
         .collect();
@@ -2879,12 +3021,23 @@ async fn generate_dict(
 
     let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
     let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
+    let (vndb_statuses, anilist_statuses) = match parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    ) {
+        Ok(statuses) => statuses,
+        Err(error) => {
+            return (status_code_for_error(&error), public_error_message(&error)).into_response();
+        }
+    };
 
     if !vndb_user.is_empty() || !anilist_user.is_empty() {
         match generate_dict_from_usernames(
             &request_id,
             &vndb_user,
             &anilist_user,
+            &vndb_statuses,
+            &anilist_statuses,
             settings,
             None,
             &state,
@@ -3071,6 +3224,15 @@ async fn generate_index(
     let request_id = new_request_id();
     let vndb_user = normalize_vndb_user_input(params.vndb_user.as_deref().unwrap_or(""));
     let anilist_user = normalize_anilist_user_input(params.anilist_user.as_deref().unwrap_or(""));
+    let (vndb_statuses, anilist_statuses) = match parse_shelf_status_params(
+        params.vndb_status.as_deref(),
+        params.anilist_status.as_deref(),
+    ) {
+        Ok(statuses) => statuses,
+        Err(error) => {
+            return (status_code_for_error(&error), public_error_message(&error)).into_response()
+        }
+    };
 
     let download_url = if !vndb_user.is_empty() || !anilist_user.is_empty() {
         let base = base_url();
@@ -3084,6 +3246,13 @@ async fn generate_index(
                 urlencoding::encode(&anilist_user)
             ));
         }
+        append_shelf_status_params(
+            &mut url_parts,
+            !vndb_user.is_empty(),
+            &vndb_statuses,
+            !anilist_user.is_empty(),
+            &anilist_statuses,
+        );
         params.append_settings_params(&mut url_parts);
         format!("{}/api/yomitan-dict?{}", base, url_parts.join("&"))
     } else if let Some(ref entries_json) = params.entries {
@@ -3184,8 +3353,8 @@ async fn fetch_vndb_cached(
 
     // Apply voice actor data from VN endpoint to characters
     for c in char_data.all_characters_mut() {
-        if let Some(va_name) = vn_info.va_map.get(&c.id) {
-            c.seiyuu = Some(va_name.clone());
+        if let Some(va_info) = vn_info.va_map.get(&c.id) {
+            c.seiyuu = Some(va_info.display_name.clone());
         }
     }
 
@@ -3572,6 +3741,7 @@ mod tests {
             source: "vndb".to_string(),
             id: "17".to_string(),
             media_type: default_media_type(),
+            status: default_manual_status(),
         };
 
         let normalized = normalize_manual_entry(&entry).unwrap();
@@ -3587,6 +3757,7 @@ mod tests {
             source: "vndb".to_string(),
             id: "https://vndb.org/v17/steins-gate?view=chars".to_string(),
             media_type: default_media_type(),
+            status: default_manual_status(),
         };
 
         let normalized = normalize_manual_entry(&entry).unwrap();
@@ -3610,6 +3781,8 @@ mod tests {
         let params = FrequencyQuery {
             vndb_user: Some("https://vndb.org/u306797".to_string()),
             anilist_user: Some("Bee User".to_string()),
+            vndb_status: Some("playing,finished,wishlist".to_string()),
+            anilist_status: Some("current,completed,planning,paused,dropped".to_string()),
             entries: None,
             min_occurrences: Some(5),
             max_terms: Some(1000),
@@ -3622,6 +3795,9 @@ mod tests {
         assert!(index_url.contains("/api/yomitan-frequency-index?"));
         assert!(download_url.contains("vndb_user=u306797"));
         assert!(download_url.contains("anilist_user=Bee%20User"));
+        assert!(download_url.contains("vndb_status=playing%2Cfinished%2Cwishlist"));
+        assert!(download_url
+            .contains("anilist_status=current%2Ccompleted%2Cplanning%2Cpaused%2Cdropped"));
         assert!(download_url.contains("min_occurrences=5"));
         assert!(download_url.contains("max_terms=1000"));
         assert!(download_url.contains("display_mode=occurrence"));
@@ -3686,6 +3862,30 @@ mod tests {
     }
 
     #[test]
+    fn test_frequency_urls_omit_default_status_params() {
+        let params = FrequencyQuery {
+            vndb_user: Some("Bee".to_string()),
+            anilist_user: Some("Bee".to_string()),
+            ..FrequencyQuery::default()
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(!download_url.contains("vndb_status="));
+        assert!(!download_url.contains("anilist_status="));
+        assert!(!index_url.contains("vndb_status="));
+        assert!(!index_url.contains("anilist_status="));
+    }
+
+    #[test]
+    fn test_parse_shelf_status_params_defaults_to_current_only() {
+        let (vndb_statuses, anilist_statuses) = parse_shelf_status_params(None, None).unwrap();
+
+        assert_eq!(vndb_statuses, vec![VndbShelfStatus::Playing]);
+        assert_eq!(anilist_statuses, vec![AnilistShelfStatus::Current]);
+    }
+
+    #[test]
     fn test_frequency_query_accepts_average_combine_mode() {
         let params: FrequencyQuery = serde_json::from_value(serde_json::json!({
             "vndb_user": "Bee",
@@ -3709,9 +3909,11 @@ mod tests {
         assert_eq!(entries[0].source, "vndb");
         assert_eq!(entries[0].id, "v17");
         assert_eq!(entries[0].media_type, "vn");
+        assert_eq!(entries[0].status, "current");
         assert_eq!(entries[1].source, "anilist");
         assert_eq!(entries[1].id, "9253");
         assert_eq!(entries[1].media_type, "anime");
+        assert_eq!(entries[1].status, "current");
     }
 
     #[test]
@@ -3885,11 +4087,13 @@ mod tests {
                 source: "vndb".to_string(),
                 id: "v17".to_string(),
                 media_type: default_media_type(),
+                status: default_manual_status(),
             },
             ManualEntry {
                 source: "anilist".to_string(),
                 id: "not-a-number".to_string(),
                 media_type: "ANIME".to_string(),
+                status: default_manual_status(),
             },
         ];
 
@@ -4043,6 +4247,7 @@ mod tests {
                 title_romaji: "Steins;Gate".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "playing".to_string(),
             },
             UserMediaEntry {
                 id: "v17".to_string(),
@@ -4050,6 +4255,7 @@ mod tests {
                 title_romaji: "Steins;Gate".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "playing".to_string(),
             },
             UserMediaEntry {
                 id: "9253".to_string(),
@@ -4057,6 +4263,7 @@ mod tests {
                 title_romaji: "Steins;Gate".to_string(),
                 source: "anilist".to_string(),
                 media_type: "anime".to_string(),
+                status: "current".to_string(),
             },
         ];
 
@@ -4079,6 +4286,7 @@ mod tests {
                 title_romaji: "Steins;Gate".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "playing".to_string(),
             },
             UserMediaEntry {
                 id: "9253".to_string(),
@@ -4086,6 +4294,7 @@ mod tests {
                 title_romaji: "Steins;Gate".to_string(),
                 source: "anilist".to_string(),
                 media_type: "anime".to_string(),
+                status: "current".to_string(),
             },
         ];
 
@@ -4110,6 +4319,7 @@ mod tests {
                 title_romaji: "First".to_string(),
                 source: "anilist".to_string(),
                 media_type: "manga".to_string(),
+                status: "current".to_string(),
             },
             UserMediaEntry {
                 id: "30002".to_string(),
@@ -4117,6 +4327,7 @@ mod tests {
                 title_romaji: "Second".to_string(),
                 source: "anilist".to_string(),
                 media_type: "manga".to_string(),
+                status: "completed".to_string(),
             },
         ];
 
@@ -4203,6 +4414,7 @@ mod tests {
             title_romaji: "Test".to_string(),
             source: "vndb".to_string(),
             media_type: "vn".to_string(),
+            status: "playing".to_string(),
         }];
         let mut seen = HashSet::new();
         entries.retain(|entry| seen.insert((entry.source.clone(), entry.id.clone())));
@@ -4218,6 +4430,7 @@ mod tests {
                 title_romaji: "Test".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "playing".to_string(),
             })
             .collect();
         let mut seen = HashSet::new();
@@ -4234,6 +4447,7 @@ mod tests {
                 title_romaji: "A".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "playing".to_string(),
             },
             UserMediaEntry {
                 id: "1".to_string(),
@@ -4241,6 +4455,7 @@ mod tests {
                 title_romaji: "A".to_string(),
                 source: "anilist".to_string(),
                 media_type: "anime".to_string(),
+                status: "current".to_string(),
             },
             UserMediaEntry {
                 id: "2".to_string(),
@@ -4248,6 +4463,7 @@ mod tests {
                 title_romaji: "B".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "finished".to_string(),
             },
             UserMediaEntry {
                 id: "2".to_string(),
@@ -4255,6 +4471,7 @@ mod tests {
                 title_romaji: "B".to_string(),
                 source: "anilist".to_string(),
                 media_type: "manga".to_string(),
+                status: "completed".to_string(),
             },
             UserMediaEntry {
                 id: "1".to_string(),
@@ -4262,6 +4479,7 @@ mod tests {
                 title_romaji: "A".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
+                status: "wishlist".to_string(),
             },
         ];
         let mut seen = HashSet::new();
@@ -4292,6 +4510,8 @@ mod tests {
             media_type: default_media_type(),
             vndb_user: None,
             anilist_user: None,
+            vndb_status: None,
+            anilist_status: None,
             honorifics: true,
             image: true,
             tag: true,
@@ -4310,6 +4530,8 @@ mod tests {
         GenerateStreamQuery {
             vndb_user: None,
             anilist_user: None,
+            vndb_status: None,
+            anilist_status: None,
             honorifics: true,
             image: true,
             tag: true,

@@ -18,7 +18,7 @@ A web application that generates **Yomitan-compatible character dictionaries** f
 * Dictionary has photos, descriptions, and tags
 * Extensive honorific support, dictionary will tell you exactly how that person is being addressed
 * Generates name variants (kanji, given name, hiragana, katakana etc)
-* Generates **Bee's Frequency Dictionary** from the VNDB/AniList media you are currently consuming
+* Generates **Bee's Frequency Dictionary** from selected VNDB/AniList shelves
 * Uses Jiten frequency decks and combines raw occurrence counts across matched anime, manga, and VNs
 
 ## Quick Start
@@ -213,7 +213,7 @@ Frequency dictionary:
 
 1. Open `/frequency`
 2. Enter a VNDB username/ID, an AniList username/ID, or both
-3. Preview the currently consumed media list
+3. Preview the selected titles
 4. Click "Generate Frequency Dictionary"
 5. Import `bee_frequency.zip` into Yomitan, or use the shown auto-update index URL
 
@@ -245,7 +245,7 @@ yomitan-dict-builder/
 | `/` | GET | Serves the web frontend |
 | `/api/yomitan-dict` | GET | Generates and returns dictionary ZIP |
 | `/api/yomitan-index` | GET | Returns lightweight index metadata (for update checks) |
-| `/api/yomitan-frequency-dict` | GET | Generates Bee's Frequency Dictionary ZIP from current media |
+| `/api/yomitan-frequency-dict` | GET | Generates Bee's Frequency Dictionary ZIP from selected media |
 | `/api/yomitan-frequency-index` | GET | Returns frequency dictionary index metadata for update checks |
 | `/api/generate-frequency-stream` | GET | Server-sent events generation flow for the Frequency page |
 
@@ -258,7 +258,7 @@ yomitan-dict-builder/
 | `spoiler_level` | No | `0`, `1`, `2` | Spoiler filtering (default: `0`) |
 | `media_type` | No | `ANIME`, `MANGA` | AniList media type (default: `ANIME`) |
 
-Frequency endpoints use `vndb_user` and/or `anilist_user`. They only include currently consumed media: VNDB `Playing`, and AniList `CURRENT` / `REPEATING`. Jiten matches are resolved through `https://api.jiten.moe`; VNDB IDs keep their `v` prefix.
+Frequency endpoints use `vndb_user` and/or `anilist_user`. By default they include current media only: VNDB `Playing`, and AniList `CURRENT` / `REPEATING`. Pass `vndb_status=playing,finished,wishlist` and/or `anilist_status=current,completed,planning,paused,dropped` to include other shelves. Jiten matches are resolved through `https://api.jiten.moe`; VNDB IDs keep their `v` prefix.
 
 ## Spoiler Levels
 
