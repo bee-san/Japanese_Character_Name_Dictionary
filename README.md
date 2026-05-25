@@ -50,6 +50,7 @@ Install Rust
 ### Build & Run
 
 ```bash
+cd yomitan-dict-builder
 cargo build --release
 cargo run --release
 ```

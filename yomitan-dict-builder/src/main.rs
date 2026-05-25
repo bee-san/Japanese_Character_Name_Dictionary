@@ -1621,7 +1621,7 @@ async fn generate_frequency_from_media_entries(
             send_frequency_warning(
                 tx,
                 serde_json::json!({
-                    "message": "Some media did not have Jiten frequency data.",
+                    "message": "Some media did not have Jiten occurrence-count data.",
                     "unmatched": unmatched.clone()
                 }),
             )
@@ -1632,7 +1632,7 @@ async fn generate_frequency_from_media_entries(
     if deck_ids.is_empty() {
         return if resolve_errors.is_empty() {
             Err(format!(
-                "{} No Jiten frequency decks matched the provided current media",
+                "{} No Jiten occurrence-count decks matched the provided current media",
                 INVALID_INPUT_PREFIX
             ))
         } else {
@@ -1650,7 +1650,7 @@ async fn generate_frequency_from_media_entries(
             progress_tx,
             idx + 1,
             deck_ids.len(),
-            "Downloading Jiten frequency data",
+            "Downloading Jiten occurrence counts",
             &format!("Deck {}", deck_id),
         )
         .await;
@@ -1689,7 +1689,7 @@ async fn generate_frequency_from_media_entries(
 
     if builder.is_empty() {
         return Err(format!(
-            "{} Jiten decks were found, but no frequency entries could be parsed",
+            "{} Jiten decks were found, but no occurrence entries could be parsed",
             INVALID_INPUT_PREFIX
         ));
     }
@@ -1706,7 +1706,7 @@ async fn generate_frequency_from_media_entries(
     let total_terms = builder.filtered_entry_count(params.min_occurrences, params.max_terms);
     if total_terms == 0 {
         return Err(format!(
-            "{} No frequency entries matched the requested filters",
+            "{} No occurrence entries matched the requested filters",
             INVALID_INPUT_PREFIX
         ));
     }
@@ -1745,7 +1745,7 @@ async fn media_entries_from_frequency_query(
     {
         if entries.is_empty() {
             return Err(format!(
-                "{} At least one username (vndb_user or anilist_user) is required",
+                "{} At least one username (vndb_user or anilist_user) or media entry is required",
                 INVALID_INPUT_PREFIX
             ));
         }
@@ -1805,7 +1805,7 @@ fn parse_frequency_entries_json(entries_json: &str) -> Result<Vec<UserMediaEntry
 fn frequency_urls(params: &FrequencyQuery) -> Result<(String, String), String> {
     if !has_frequency_media_input(params) {
         return Err(format!(
-            "{} At least one username (vndb_user or anilist_user) is required",
+            "{} At least one username (vndb_user or anilist_user) or media entry is required",
             INVALID_INPUT_PREFIX
         ));
     }
@@ -3281,6 +3281,7 @@ mod tests {
 
         assert_eq!(status_code_for_error(&error), StatusCode::BAD_REQUEST);
         assert!(public_error_message(&error).contains("At least one username"));
+        assert!(public_error_message(&error).contains("media entry"));
     }
 
     #[test]
@@ -3304,6 +3305,47 @@ mod tests {
     }
 
     #[test]
+    fn test_frequency_urls_accept_manual_entries_without_usernames() {
+        let params = FrequencyQuery {
+            vndb_user: None,
+            anilist_user: None,
+            entries: Some(
+                r#"[{"source":"vndb","id":"17"},{"source":"anilist","id":"https://anilist.co/manga/30002","media_type":"MANGA"}]"#
+                    .to_string(),
+            ),
+            min_occurrences: None,
+            max_terms: None,
+        };
+
+        let (download_url, index_url) = frequency_urls(&params).unwrap();
+
+        assert!(download_url.contains("/api/yomitan-frequency-dict?"));
+        assert!(index_url.contains("/api/yomitan-frequency-index?"));
+        assert!(download_url.contains("entries="));
+        assert!(download_url.contains("%22source%22%3A%22vndb%22"));
+        assert!(download_url.contains("%22id%22%3A%22v17%22"));
+        assert!(download_url.contains("%22source%22%3A%22anilist%22"));
+        assert!(download_url.contains("%22id%22%3A%2230002%22"));
+        assert!(download_url.contains("%22media_type%22%3A%22MANGA%22"));
+    }
+
+    #[test]
+    fn test_parse_frequency_entries_json_normalizes_manual_entries() {
+        let entries = parse_frequency_entries_json(
+            r#"[{"source":"vndb","id":"17"},{"source":"anilist","id":"https://anilist.co/anime/9253","media_type":"ANIME"}]"#,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].source, "vndb");
+        assert_eq!(entries[0].id, "v17");
+        assert_eq!(entries[0].media_type, "vn");
+        assert_eq!(entries[1].source, "anilist");
+        assert_eq!(entries[1].id, "9253");
+        assert_eq!(entries[1].media_type, "anime");
+    }
+
+    #[test]
     fn test_frequency_index_metadata_title_and_update_urls() {
         let builder = FrequencyDictBuilder::new(
             Some("https://example.com/api/yomitan-frequency-dict?vndb_user=Bee".to_string()),
@@ -3315,6 +3357,15 @@ mod tests {
         assert_eq!(index["title"], FREQUENCY_DICTIONARY_TITLE);
         assert_eq!(index["format"], 3);
         assert_eq!(index["frequencyMode"], "occurrence-based");
+        assert_eq!(
+            index["attribution"],
+            "Data from jiten.moe licensed under CC BY-SA 4.0."
+        );
+        assert_eq!(index["sourceUrl"], "https://jiten.moe/");
+        assert_eq!(
+            index["licenseUrl"],
+            "https://creativecommons.org/licenses/by-sa/4.0/"
+        );
         assert_eq!(index["isUpdatable"], true);
         assert!(index["downloadUrl"]
             .as_str()

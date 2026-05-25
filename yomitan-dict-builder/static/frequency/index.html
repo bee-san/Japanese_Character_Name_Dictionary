@@ -11,14 +11,15 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <link rel="manifest" href="/static/site.webmanifest">
     <link rel="icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/frequency/style.css">
     <link rel="stylesheet" href="/static/nav.css">
 </head>
 <body>
     <nav class="site-nav" aria-label="Primary navigation">
-        <a class="site-brand" href="/" aria-label="Bee's Character Dictionary home">
+        <a class="site-brand" href="/" aria-label="Bee's Yomitan Dictionaries home">
             <span class="site-logo" aria-hidden="true">🐝</span>
-            <span class="site-title">Bee's Character Dictionary</span>
+            <span class="site-title">Bee's Yomitan Dictionaries</span>
         </a>
         <div class="site-nav-links">
             <a href="/">Character</a>
@@ -31,39 +32,48 @@
         </div>
     </nav>
 
-    <main class="frequency-shell">
-        <section class="page-hero">
-            <h1>Bee's Frequency Dictionary</h1>
-            <p>Generate an auto-updating Yomitan frequency dictionary from the VNDB/AniList media you are consuming.</p>
-        </section>
+    <h1 class="dictionary-title">Bee's <span>Frequency</span> Dictionary</h1>
+    <p class="subtitle" style="max-width: 700px;">Generate an auto-updating Yomitan frequency dictionary from the VNDB/AniList media you are consuming.</p>
 
-        <section class="frequency-card">
-            <div class="form-grid">
-                <div>
-                    <label for="vndbUser">VNDB username/ID <span class="label-hint">(optional)</span></label>
-                    <input type="text" id="vndbUser" placeholder="e.g., https://vndb.org/u306797">
-                </div>
-                <div>
-                    <label for="anilistUser">AniList username/ID <span class="label-hint">(optional)</span></label>
-                    <input type="text" id="anilistUser" placeholder="e.g., https://anilist.co/user/Josh">
-                </div>
+    <div class="page-layout">
+        <div class="main-col">
+        <div class="container">
+            <div class="tabs">
+                <div class="tab active" data-tab="username" role="tab" aria-selected="true">From VNDB / AniList Username</div>
+                <div class="tab" data-tab="manual" role="tab" aria-selected="false">From VNDB / AniList Media ID</div>
             </div>
 
-            <div class="action-row">
+            <div class="tab-content active" id="tab-username" role="tabpanel">
+                <div class="form-group inline">
+                    <div>
+                        <label for="vndbUser">VNDB ID <span class="label-hint">(optional)</span></label>
+                        <input type="text" id="vndbUser" placeholder="e.g., https://vndb.org/u306797" oninput="validateVndbUser(); updateIndexUrl();">
+                        <div class="input-hint" id="vndbUserHint"></div>
+                    </div>
+                    <div>
+                        <label for="anilistUser">AniList ID <span class="label-hint">(optional)</span></label>
+                        <input type="text" id="anilistUser" placeholder="e.g., https://anilist.co/user/Josh" oninput="validateAnilistUser(); updateIndexUrl();">
+                        <div class="input-hint" id="anilistUserHint"></div>
+                    </div>
+                </div>
+                <p style="text-align: center; color: #f78fb3; font-size: 0.85em; margin-top: -12px; margin-bottom: 12px;">You can do both at the same time!</p>
+
                 <button type="button" id="fetchListsBtn" onclick="fetchFrequencyLists()">Fetch Lists &amp; Preview</button>
-                <button type="button" id="generateBtn" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
             </div>
 
-            <div class="status" id="status" role="status" aria-live="polite"></div>
+            <div class="tab-content" id="tab-manual" role="tabpanel">
+                <div id="manualEntries"></div>
+                <button type="button" id="addEntryBtn" onclick="addManualEntry()">+ Add Another Entry</button>
+                <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Media List</button>
+            </div>
+
+            <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
 
             <div class="progress-bar-container" id="progressContainer">
                 <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Frequency dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
             </div>
 
-            <div class="media-preview" id="mediaPreview">
-                <div class="media-preview-header" id="mediaPreviewHeader">Consumed Media (0)</div>
-                <div id="mediaPreviewList"></div>
-            </div>
+            <div class="status" id="status" role="status" aria-live="polite"></div>
 
             <div class="result-panel" id="resultPanel">
                 <div class="result-header">
@@ -76,12 +86,18 @@
                 <input id="indexUrl" type="text" readonly>
             </div>
 
+            <div class="media-preview" id="mediaPreview">
+                <div class="media-preview-header" id="mediaPreviewHeader">Consumed Media (0)</div>
+                <div id="mediaPreviewList"></div>
+            </div>
+
             <div class="unmatched-panel" id="unmatchedPanel">
                 <div class="unmatched-title">Unmatched media</div>
                 <div id="unmatchedList"></div>
             </div>
-        </section>
-    </main>
+        </div>
+        </div>
+    </div>
 
     <script src="/static/frequency/app.js"></script>
 </body>

@@ -27,41 +27,38 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  padding: 20px;
+  gap: 20px;
 }
 
 body > .site-nav {
-  margin-top: 14px;
-  margin-bottom: 20px;
   flex-shrink: 0;
+  line-height: normal;
 }
 
-/* ── Header ── */
-header {
-  width: min(100%, 760px);
-  margin: 0 auto;
-  padding: 2px 20px 0;
-  background: transparent;
-  border-bottom: 0;
-  box-shadow: none;
+.dictionary-title {
+  width: 100%;
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  margin-bottom: 8px;
   text-align: center;
 }
 
-header h1 {
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-
-header h1 span {
+.dictionary-title span {
   color: var(--accent);
 }
 
 .subtitle {
-  max-width: 620px;
-  margin: 6px auto 0;
-  color: #7b6370;
-  font-size: 0.96rem;
+  max-width: 700px;
+  width: 100%;
+  margin: 0 auto 24px;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: normal;
+  text-align: center;
 }
 
 .back-link {
@@ -81,7 +78,7 @@ header h1 span {
   display: flex;
   flex: 1;
   gap: 16px;
-  padding: 20px;
+  width: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -417,12 +414,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 }
 
 /* ── Responsive ── */
-@media (max-width: 768px) {
-  body { height: auto; overflow: auto; }
-  .layout { flex-direction: column; gap: 12px; padding: 14px; overflow: visible; }
+@media (max-width: 850px) {
+  body { height: auto; overflow: auto; padding: 12px; }
+  .layout { flex-direction: column; gap: 12px; overflow: visible; }
   .sidebar { width: 100%; overflow-y: visible; }
-  header { padding: 16px 20px 14px; }
   .editor-pane { padding: 18px 16px; overflow: visible; }
   .field-row { align-items: stretch; flex-direction: column; gap: 8px; }
   textarea#entry-area { min-height: 300px; }
+}
+
+@media (max-width: 480px) {
+  body { padding: 8px; }
 }

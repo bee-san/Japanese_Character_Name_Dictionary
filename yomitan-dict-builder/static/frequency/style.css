@@ -1,242 +1,21 @@
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-    min-height: 100vh;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
-    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 30%, #ff9a9e 60%, #fecfef 100%);
-    color: #444;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+.manual-preview-btn {
+    margin-top: 4px;
 }
 
-.frequency-shell {
-    width: min(100%, 760px);
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-
-.page-hero {
-    text-align: center;
-}
-
-.page-hero h1 {
-    color: #e84393;
-    font-size: 1.7rem;
-    line-height: 1.2;
-    margin-bottom: 8px;
-}
-
-.page-hero p {
-    max-width: 620px;
-    margin: 0 auto;
-    color: #7b6370;
-    font-size: 0.96rem;
-    line-height: 1.55;
-}
-
-.frequency-card {
-    width: 100%;
-    padding: 34px;
-    background: rgba(255, 255, 255, 0.96);
-    border: 1px solid rgba(232, 67, 147, 0.12);
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(255, 105, 135, 0.2);
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-label {
-    display: block;
-    margin-bottom: 8px;
-    color: #666;
-    font-size: 0.95rem;
-    font-weight: 650;
-}
-
-.label-hint {
-    color: #c8a5b4;
-    font-size: 0.84rem;
-    font-weight: 450;
-}
-
-input {
-    width: 100%;
-    min-height: 46px;
-    padding: 11px 12px;
-    border: 2px solid #f0dde5;
-    border-radius: 8px;
-    background: #fff8fb;
-    color: #444;
-    font-size: 1rem;
-    transition: border-color 0.18s, box-shadow 0.18s;
-}
-
-input:focus {
-    outline: none;
-    border-color: #f78fb3;
-    box-shadow: 0 0 0 3px rgba(247, 143, 179, 0.18);
-}
-
-.action-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-button {
-    width: 100%;
-    min-height: 44px;
-    padding: 11px 14px;
-    border: none;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
-    color: #fff;
-    cursor: pointer;
-    font-size: 0.96rem;
-    font-weight: 700;
-    transition: transform 0.18s, opacity 0.18s, box-shadow 0.18s;
-    box-shadow: 0 10px 20px rgba(232, 67, 147, 0.16);
-}
-
-button:hover { transform: translateY(-1px); }
-button:disabled { opacity: 0.58; cursor: not-allowed; transform: none; }
-
-#fetchListsBtn {
-    background: #fff1f7;
-    color: #e84393;
-    box-shadow: inset 0 0 0 1px rgba(232, 67, 147, 0.16);
-}
-
-.status {
-    display: none;
-    margin-top: 18px;
-    padding: 12px 14px;
-    border-radius: 8px;
-    font-size: 0.94rem;
-    line-height: 1.45;
-}
-
-.status.show { display: block; }
-.status.success { background: #d4edda; color: #155724; }
-.status.error { background: #f8d7da; color: #721c24; }
-.status.loading { background: #fce4ec; color: #880e4f; }
-
-.progress-bar-container {
-    display: none;
-    height: 24px;
-    margin-top: 12px;
-    overflow: hidden;
-    border-radius: 8px;
-    background: #fce4ec;
-}
-
-.progress-bar-container.show { display: block; }
-
-.progress-bar {
-    height: 100%;
-    min-width: 38px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #f78fb3 0%, #e84393 100%);
-    color: #fff;
-    font-size: 0.78rem;
-    font-weight: 700;
-    transition: width 0.25s ease;
-}
-
-.media-preview,
 .result-panel,
 .unmatched-panel {
     display: none;
     margin-top: 18px;
-    border: 1px solid #f0dde5;
+    border: 1px solid #f0f0f0;
     border-radius: 8px;
     background: #fffcff;
     overflow: hidden;
 }
 
-.media-preview.show,
 .result-panel.show,
 .unmatched-panel.show {
     display: block;
 }
-
-.media-preview {
-    max-height: 280px;
-    overflow-y: auto;
-}
-
-.media-preview-header,
-.unmatched-title {
-    padding: 10px 14px;
-    border-bottom: 1px solid #f0dde5;
-    background: #fff5f7;
-    color: #e84393;
-    font-size: 0.9rem;
-    font-weight: 750;
-}
-
-.media-item,
-.unmatched-item {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 9px 14px;
-    border-bottom: 1px solid #faf0f4;
-    font-size: 0.9rem;
-}
-
-.media-item:last-child,
-.unmatched-item:last-child {
-    border-bottom: none;
-}
-
-.media-main {
-    min-width: 0;
-    flex: 1;
-}
-
-.media-title {
-    color: #444;
-    font-weight: 650;
-    overflow-wrap: anywhere;
-}
-
-.media-romaji,
-.unmatched-reason {
-    margin-top: 2px;
-    color: #9a7d8a;
-    font-size: 0.82rem;
-    overflow-wrap: anywhere;
-}
-
-.unmatched-reason {
-    flex-basis: 100%;
-}
-
-.badge {
-    flex: 0 0 auto;
-    padding: 3px 8px;
-    border-radius: 999px;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 750;
-}
-
-.badge.vndb { background: #4a90d9; }
-.badge.anime { background: #e74c3c; }
-.badge.manga { background: #2ecc71; }
 
 .result-panel {
     padding: 14px;
@@ -252,13 +31,13 @@ button:disabled { opacity: 0.58; cursor: not-allowed; transform: none; }
 
 .result-title {
     color: #444;
-    font-weight: 750;
+    font-weight: 700;
 }
 
 .result-subtitle {
     margin-top: 2px;
-    color: #8a6c79;
-    font-size: 0.84rem;
+    color: #777;
+    font-size: 0.84em;
     line-height: 1.45;
 }
 
@@ -266,50 +45,38 @@ button:disabled { opacity: 0.58; cursor: not-allowed; transform: none; }
     width: auto;
     min-height: 34px;
     padding: 7px 13px;
-    font-size: 0.84rem;
+    font-size: 0.84em;
 }
 
 #indexUrl {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.84rem;
+    font-size: 0.84em;
 }
 
-@media (max-width: 720px) {
-    body {
-        padding: 12px;
-    }
+.unmatched-title {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff5f7;
+    color: #e84393;
+    font-size: 0.9em;
+    font-weight: 600;
+}
 
-    .frequency-card {
-        padding: 24px 18px;
-    }
+.unmatched-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 4px;
+}
 
-    .form-grid,
-    .action-row {
-        grid-template-columns: 1fr;
-    }
+.unmatched-reason {
+    flex-basis: 100%;
+    color: #999;
+    font-size: 0.85em;
+    overflow-wrap: anywhere;
+}
 
-    .media-item,
-    .unmatched-item,
+@media (max-width: 850px) {
     .result-header {
-        align-items: stretch;
         flex-direction: column;
-    }
-
-    .badge {
-        width: max-content;
-    }
-}
-
-@media (max-width: 460px) {
-    body {
-        padding: 8px;
-    }
-
-    .frequency-card {
-        padding: 20px 14px;
-    }
-
-    .page-hero h1 {
-        font-size: 1.45rem;
     }
 }

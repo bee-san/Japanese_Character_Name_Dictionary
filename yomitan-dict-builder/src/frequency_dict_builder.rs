@@ -9,6 +9,11 @@ use crate::jiten_client::JitenFrequencyEntry;
 
 const FREQUENCY_BANK_LIMIT: usize = 20_000;
 pub const FREQUENCY_DICTIONARY_TITLE: &str = "Bee's Frequency Dictionary";
+pub const JITEN_SOURCE_URL: &str = "https://jiten.moe/";
+pub const JITEN_LICENSE_LABEL: &str = "CC BY-SA 4.0";
+pub const JITEN_LICENSE_URL: &str = "https://creativecommons.org/licenses/by-sa/4.0/";
+pub const JITEN_ATTRIBUTION: &str = "Data from jiten.moe licensed under CC BY-SA 4.0.";
+const JITEN_ATTRIBUTION_FILE: &str = "attribution.txt";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FrequencyKey {
@@ -79,7 +84,11 @@ impl FrequencyDictBuilder {
             "frequencyMode": "occurrence-based",
             "author": "Bee / Jiten",
             "url": "https://characterdictionary.tokyo/frequency",
-            "description": "Combined occurrence-based frequency data from Jiten for the user's VNDB/AniList media.",
+            "description": "Combined occurrence counts from jiten.moe for the user's VNDB/AniList media. Data from jiten.moe licensed under CC BY-SA 4.0.",
+            "attribution": JITEN_ATTRIBUTION,
+            "sourceUrl": JITEN_SOURCE_URL,
+            "license": JITEN_LICENSE_LABEL,
+            "licenseUrl": JITEN_LICENSE_URL,
         });
 
         if let Some(download_url) = &self.download_url {
@@ -116,6 +125,21 @@ impl FrequencyDictBuilder {
             .map_err(|e| format!("Failed to serialize frequency index.json: {}", e))?;
         zip.write_all(index_json.as_bytes())
             .map_err(|e| format!("Failed to write frequency index.json: {}", e))?;
+
+        zip.start_file(JITEN_ATTRIBUTION_FILE, options)
+            .map_err(|e| {
+                format!(
+                    "Failed to create {} in frequency ZIP: {}",
+                    JITEN_ATTRIBUTION_FILE, e
+                )
+            })?;
+        zip.write_all(attribution_text().as_bytes())
+            .map_err(|e| {
+                format!(
+                    "Failed to write {} in frequency ZIP: {}",
+                    JITEN_ATTRIBUTION_FILE, e
+                )
+            })?;
 
         for (bank_idx, chunk) in sorted_entries.chunks(FREQUENCY_BANK_LIMIT).enumerate() {
             if chunk.is_empty() {
@@ -166,6 +190,12 @@ impl FrequencyDictBuilder {
 
         entries
     }
+}
+
+fn attribution_text() -> String {
+    format!(
+        "{JITEN_ATTRIBUTION}\n\nSource: {JITEN_SOURCE_URL}\nLicense: {JITEN_LICENSE_URL}\n"
+    )
 }
 
 fn frequency_entry_value(key: &FrequencyKey, occurrences: u64) -> serde_json::Value {
@@ -332,6 +362,7 @@ mod tests {
         let names: Vec<String> = archive.file_names().map(ToOwned::to_owned).collect();
 
         assert!(names.contains(&"index.json".to_string()));
+        assert!(names.contains(&JITEN_ATTRIBUTION_FILE.to_string()));
         assert!(names.contains(&"term_meta_bank_1.json".to_string()));
         assert!(!names.contains(&"term_bank_1.json".to_string()));
 
@@ -341,6 +372,15 @@ mod tests {
         assert_eq!(index["format"], 3);
         assert_eq!(index["frequencyMode"], "occurrence-based");
         assert_eq!(index["isUpdatable"], true);
+        assert_eq!(index["attribution"], JITEN_ATTRIBUTION);
+        assert_eq!(index["sourceUrl"], JITEN_SOURCE_URL);
+        assert_eq!(index["license"], JITEN_LICENSE_LABEL);
+        assert_eq!(index["licenseUrl"], JITEN_LICENSE_URL);
+
+        let attribution = read_zip_entry(&mut archive, JITEN_ATTRIBUTION_FILE);
+        assert!(attribution.contains(JITEN_ATTRIBUTION));
+        assert!(attribution.contains(JITEN_SOURCE_URL));
+        assert!(attribution.contains(JITEN_LICENSE_URL));
 
         let entries: serde_json::Value =
             serde_json::from_str(&read_zip_entry(&mut archive, "term_meta_bank_1.json")).unwrap();
