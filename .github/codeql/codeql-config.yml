@@ -3,9 +3,6 @@ name: CodeQL Config
 queries:
   - uses: security-extended
 
-paths:
-  - .
-
 paths-ignore:
   - yomitan-dict-builder/target/**
   - yomitan-dict-builder/static/data/**
