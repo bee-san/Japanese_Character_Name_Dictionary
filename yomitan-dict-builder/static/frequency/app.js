@@ -348,8 +348,8 @@ function addManualEntry() {
             </select>
         </div>
         <div class="entry-id">
-            <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, Steins;Gate, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
+            <label>Title or ID</label>
+            <input type="text" data-field="id" placeholder="e.g., Steins;Gate, v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
             <div class="input-hint"></div>
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
@@ -738,7 +738,7 @@ function validateManualId(input) {
             clearHint(hint, input);
             return true;
         }
-        setHint(hint, input, 'Expected a VNDB VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
+        setHint(hint, input, 'Choose a VNDB suggestion, or enter a VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
         return false;
     }
 
@@ -747,7 +747,7 @@ function validateManualId(input) {
         return true;
     }
 
-    setHint(hint, input, 'Expected a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
+    setHint(hint, input, 'Choose an AniList suggestion, or enter a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
     return false;
 }
 

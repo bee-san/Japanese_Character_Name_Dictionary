@@ -274,6 +274,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 }
 .media-autocomplete-badge.static { background: #e84393; }
 .media-autocomplete-badge.live { background: #4a90d9; }
+.media-autocomplete-badge.vndb { background: #7b61ff; }
 .remove-entry-btn {
     flex: 0 0 32px;
     width: 32px;

@@ -1,4 +1,5 @@
 use reqwest::Client;
+use serde::Serialize;
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -46,6 +47,14 @@ fn map_request_error(err: RequestError) -> String {
             attempts, last_wait_ms
         ),
     }
+}
+
+fn non_empty_json_string(value: &serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
@@ -122,6 +131,28 @@ pub struct VnInfo {
     pub title: String,                   // romanized
     pub alttitle: String,                // Japanese
     pub va_map: HashMap<String, String>, // character_id → VA display name
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VndbMediaTitles {
+    pub romaji: Option<String>,
+    pub english: Option<String>,
+    pub native: Option<String>,
+    pub user_preferred: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VndbMediaSearchResult {
+    pub id: String,
+    pub url: String,
+    #[serde(rename = "type")]
+    pub media_type: String,
+    pub titles: VndbMediaTitles,
+    pub synonyms: Vec<String>,
+    pub format: Option<String>,
+    pub year: Option<i32>,
+    pub popularity: Option<i32>,
 }
 
 impl VndbClient {
@@ -459,6 +490,93 @@ impl VndbClient {
         })
     }
 
+    /// Search VNDB visual novels by title for manual media autocomplete.
+    pub async fn search_vns(
+        &self,
+        search: &str,
+        limit: usize,
+    ) -> Result<Vec<VndbMediaSearchResult>, String> {
+        let payload = serde_json::json!({
+            "filters": ["search", "=", search.trim()],
+            "fields": "id,title,alttitle,released,votecount",
+            "sort": "searchrank",
+            "results": limit.clamp(1, 8)
+        });
+
+        let response = send_with_retry(
+            self.client
+                .post("https://api.vndb.org/kana/vn")
+                .json(&payload),
+            &self.client,
+        )
+        .await
+        .map_err(map_request_error)?;
+
+        if response.status() != 200 {
+            return Err(format!(
+                "UPSTREAM: VNDB VN search API returned status {}",
+                response.status()
+            ));
+        }
+
+        let data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("UPSTREAM: Failed to parse VNDB JSON: {}", e))?;
+
+        Self::parse_vn_search_results(&data)
+    }
+
+    fn parse_vn_search_results(
+        data: &serde_json::Value,
+    ) -> Result<Vec<VndbMediaSearchResult>, String> {
+        let results = data["results"]
+            .as_array()
+            .ok_or_else(|| "UPSTREAM: Invalid VNDB VN search response".to_string())?;
+
+        let mut parsed = Vec::new();
+        for item in results {
+            let id = item["id"].as_str().unwrap_or("").trim();
+            if id.is_empty() {
+                continue;
+            }
+
+            let title = non_empty_json_string(&item["title"]);
+            let alttitle = non_empty_json_string(&item["alttitle"]);
+            if title.is_none() && alttitle.is_none() {
+                continue;
+            }
+
+            let user_preferred = alttitle.clone().or_else(|| title.clone());
+            let year = item["released"]
+                .as_str()
+                .and_then(|released| released.get(0..4))
+                .and_then(|year| year.parse::<i32>().ok())
+                .filter(|year| *year > 0);
+            let popularity = item["votecount"]
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok());
+
+            parsed.push(VndbMediaSearchResult {
+                id: id.to_string(),
+                url: format!("https://vndb.org/{id}"),
+                media_type: "VN".to_string(),
+                titles: VndbMediaTitles {
+                    romaji: title,
+                    english: None,
+                    native: alttitle,
+                    user_preferred,
+                },
+                synonyms: Vec::new(),
+                format: Some("VN".to_string()),
+                year,
+                popularity,
+            });
+        }
+
+        Ok(parsed)
+    }
+
     /// Fetch all characters for a VN, with automatic pagination.
     pub async fn fetch_characters(&self, vn_id: &str) -> Result<CharacterData, String> {
         let vn_id = Self::normalize_id(vn_id);
@@ -700,6 +818,55 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, "v17763");
         assert_eq!(entries[0].title, "マブラヴ オルタネイティヴ");
+    }
+
+    #[test]
+    fn test_parse_vn_search_results_maps_vndb_shape() {
+        let data = serde_json::json!({
+            "results": [
+                {
+                    "id": "v17",
+                    "title": "Ever17 -The Out of Infinity-",
+                    "alttitle": "Ever17 -the out of infinity-",
+                    "released": "2002-08-29",
+                    "votecount": 14823
+                }
+            ]
+        });
+
+        let results = VndbClient::parse_vn_search_results(&data).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "v17");
+        assert_eq!(results[0].url, "https://vndb.org/v17");
+        assert_eq!(results[0].media_type, "VN");
+        assert_eq!(
+            results[0].titles.romaji.as_deref(),
+            Some("Ever17 -The Out of Infinity-")
+        );
+        assert_eq!(
+            results[0].titles.native.as_deref(),
+            Some("Ever17 -the out of infinity-")
+        );
+        assert_eq!(results[0].year, Some(2002));
+        assert_eq!(results[0].popularity, Some(14823));
+    }
+
+    #[test]
+    fn test_parse_vn_search_results_skips_entries_without_titles() {
+        let data = serde_json::json!({
+            "results": [
+                {"id": "v1", "title": "", "alttitle": null},
+                {"id": "v2", "title": "Valid VN", "alttitle": ""}
+            ]
+        });
+
+        let results = VndbClient::parse_vn_search_results(&data).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "v2");
+        assert_eq!(
+            results[0].titles.user_preferred.as_deref(),
+            Some("Valid VN")
+        );
     }
 
     // Helper to assert parse_user_input results

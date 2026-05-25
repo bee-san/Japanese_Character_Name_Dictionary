@@ -61,6 +61,13 @@ const fixture = {
 };
 
 assert.strictEqual(helpers.normalizeQuery(' Steins;Gate!! '), 'steins gate');
+assert.strictEqual(helpers.itemType({ type: 'VN' }), 'VN');
+assert.strictEqual(helpers.itemUrl({ type: 'VN', id: 'v17' }), 'https://vndb.org/v17');
+assert.strictEqual(helpers.looksLikeDirectVndbId('v17'), true);
+assert.strictEqual(helpers.looksLikeDirectVndbId('https://vndb.org/v17'), true);
+assert.strictEqual(helpers.looksLikeDirectVndbId('Ever17'), false);
+assert.strictEqual(helpers.looksLikeDirectAnilistId('9253'), true);
+assert.strictEqual(helpers.looksLikeDirectAnilistId('Steins;Gate'), false);
 
 let results = helpers.searchStaticItems(fixture, 'steins', 8);
 assert.strictEqual(results[0].id, 9253);

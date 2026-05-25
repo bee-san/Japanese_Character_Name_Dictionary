@@ -109,6 +109,7 @@ const UPSTREAM_PREFIX: &str = "UPSTREAM:";
 const DEFAULT_LOG_FILTER: &str = "info,tower_governor=warn";
 const MULTI_MEDIA_ABORT_MESSAGE_PREFIX: &str = "Dictionary generation aborted because";
 const ANILIST_MEDIA_SEARCH_MAX_RESULTS: usize = 8;
+const VNDB_MEDIA_SEARCH_MAX_RESULTS: usize = 8;
 
 #[derive(Clone)]
 struct AppState {
@@ -412,6 +413,11 @@ struct AnilistMediaSearchQuery {
 }
 
 #[derive(Deserialize)]
+struct VndbMediaSearchQuery {
+    q: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct GenerateStreamQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
@@ -495,6 +501,18 @@ fn normalize_anilist_media_search_query(
             INVALID_INPUT_PREFIX
         )),
     }
+}
+
+fn normalize_vndb_media_search_query(params: &VndbMediaSearchQuery) -> Result<String, String> {
+    let query = params.q.as_deref().unwrap_or("").trim().to_string();
+    if query.chars().filter(|ch| !ch.is_whitespace()).count() < 2 {
+        return Err(format!(
+            "{} q must contain at least 2 non-space characters",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    Ok(query)
 }
 
 /// Parse an AniList media ID from either a raw numeric string (e.g. "9253")
@@ -1045,6 +1063,7 @@ async fn main() {
     let api_routes = Router::new()
         .route("/api/user-lists", get(fetch_user_lists))
         .route("/api/anilist-media-search", get(anilist_media_search))
+        .route("/api/vndb-media-search", get(vndb_media_search))
         .route("/api/download", get(download_zip))
         .route("/api/yomitan-index", get(generate_index))
         .route(
@@ -1361,6 +1380,68 @@ async fn anilist_media_search(
                 media_type = %media_type,
                 error = %error,
                 "AniList media search failed"
+            );
+            (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn vndb_media_search(
+    Query(params): Query<VndbMediaSearchQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let request_id = new_request_id();
+    let query = match normalize_vndb_media_search_query(&params) {
+        Ok(value) => value,
+        Err(error) => {
+            return (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    let client = VndbClient::with_client(state.http_client.clone());
+    match client
+        .search_vns(&query, VNDB_MEDIA_SEARCH_MAX_RESULTS)
+        .await
+    {
+        Ok(results) => {
+            debug!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                result_count = results.len(),
+                "Searched VNDB media"
+            );
+            (
+                StatusCode::OK,
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"results": results}).to_string(),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            warn!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                error = %error,
+                "VNDB media search failed"
             );
             (
                 status_code_for_error(&error),
@@ -3440,6 +3521,28 @@ mod tests {
         let error = normalize_anilist_media_search_query(&query).unwrap_err();
 
         assert!(error.contains("ANIME or MANGA"));
+    }
+
+    #[test]
+    fn test_normalize_vndb_media_search_query_accepts_trimmed_query() {
+        let query = VndbMediaSearchQuery {
+            q: Some("  ever17  ".to_string()),
+        };
+
+        let search = normalize_vndb_media_search_query(&query).unwrap();
+
+        assert_eq!(search, "ever17");
+    }
+
+    #[test]
+    fn test_normalize_vndb_media_search_query_rejects_short_query() {
+        let query = VndbMediaSearchQuery {
+            q: Some("  e ".to_string()),
+        };
+
+        let error = normalize_vndb_media_search_query(&query).unwrap_err();
+
+        assert!(error.contains("at least 2"));
     }
 
     #[test]

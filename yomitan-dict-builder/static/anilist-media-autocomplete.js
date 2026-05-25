@@ -3,6 +3,7 @@
 
     const STATIC_INDEX_URL = '/static/data/anilist-media-index.json';
     const LIVE_SEARCH_URL = '/api/anilist-media-search';
+    const VNDB_SEARCH_URL = '/api/vndb-media-search';
     const MIN_QUERY_CHARS = 2;
     const MAX_RESULTS = 8;
     const DEBOUNCE_MS = 220;
@@ -51,13 +52,14 @@
     }
 
     function itemType(item) {
-        return String(item.type || item.media_type || 'ANIME').toUpperCase() === 'MANGA'
-            ? 'MANGA'
-            : 'ANIME';
+        const type = String(item.type || item.media_type || 'ANIME').toUpperCase();
+        if (type === 'VN' || type === 'VNDB') return 'VN';
+        return type === 'MANGA' ? 'MANGA' : 'ANIME';
     }
 
     function itemUrl(item) {
         if (item.url) return item.url;
+        if (itemType(item) === 'VN') return `https://vndb.org/${item.id}`;
         const domain = itemType(item) === 'MANGA' ? 'manga' : 'anime';
         return `https://anilist.co/${domain}/${item.id}`;
     }
@@ -81,9 +83,14 @@
         return String(query || '').replace(/\s+/g, '').length;
     }
 
-    function looksLikeDirectId(query) {
+    function looksLikeDirectAnilistId(query) {
         const value = String(query || '').trim();
         return /^\d+$/.test(value) || /anilist\.co\/(anime|manga)\/\d+/i.test(value);
+    }
+
+    function looksLikeDirectVndbId(query) {
+        const value = String(query || '').trim();
+        return /^v?\d+$/i.test(value) || /vndb\.org\/v\d+/i.test(value);
     }
 
     function scoreStaticItem(item, normalizedQuery) {
@@ -179,6 +186,25 @@
         return results;
     }
 
+    async function searchVndb(query, signal) {
+        const normalized = normalizeQuery(query);
+        if (nonSpaceLength(normalized) < MIN_QUERY_CHARS) return [];
+
+        const key = `VN:${normalized}`;
+        if (liveCache.has(key)) return liveCache.get(key);
+
+        const params = new URLSearchParams({ q: query.trim() });
+        const response = await fetch(`${VNDB_SEARCH_URL}?${params.toString()}`, { signal });
+        if (!response.ok) return [];
+
+        const payload = await response.json();
+        const results = (payload.results || [])
+            .slice(0, MAX_RESULTS)
+            .map(item => normalizedResult(item, 'vndb', 0));
+        liveCache.set(key, results);
+        return results;
+    }
+
     function clearList(state) {
         state.results = [];
         state.activeIndex = -1;
@@ -207,6 +233,11 @@
 
             const parts = [item.format, item.year].filter(Boolean).join(' / ');
             const secondary = secondaryTitle(item);
+            const sourceLabel = item.source === 'static'
+                ? 'Index'
+                : item.source === 'vndb'
+                    ? 'VNDB'
+                    : 'Live';
             button.innerHTML = `
                 <span class="media-autocomplete-main">
                     <span class="media-autocomplete-title">${escapeHtml(displayTitle(item))}</span>
@@ -214,7 +245,7 @@
                 </span>
                 <span class="media-autocomplete-meta">
                     ${parts ? `<span>${escapeHtml(parts)}</span>` : ''}
-                    <span class="media-autocomplete-badge ${item.source}">${item.source === 'static' ? 'Index' : 'Live'}</span>
+                    <span class="media-autocomplete-badge ${item.source}">${sourceLabel}</span>
                 </span>
             `;
             button.addEventListener('mousedown', event => {
@@ -242,15 +273,18 @@
         const sourceSelect = state.row.querySelector('[data-field="source"]');
         const mediaTypeSelect = state.row.querySelector('[data-field="media_type"]');
 
-        if (sourceSelect && sourceSelect.value !== 'anilist') {
-            sourceSelect.value = 'anilist';
+        const resultType = itemType(item);
+        const targetSource = resultType === 'VN' ? 'vndb' : 'anilist';
+
+        if (sourceSelect && sourceSelect.value !== targetSource) {
+            sourceSelect.value = targetSource;
             if (typeof window.onEntrySourceChange === 'function') {
                 window.onEntrySourceChange(sourceSelect);
             }
         }
 
-        if (mediaTypeSelect) {
-            mediaTypeSelect.value = item.type === 'MANGA' ? 'MANGA' : 'ANIME';
+        if (mediaTypeSelect && resultType !== 'VN') {
+            mediaTypeSelect.value = resultType === 'MANGA' ? 'MANGA' : 'ANIME';
         }
 
         state.input.value = item.url;
@@ -274,10 +308,16 @@
     async function runSearch(state) {
         const sourceSelect = state.row.querySelector('[data-field="source"]');
         const mediaTypeSelect = state.row.querySelector('[data-field="media_type"]');
+        const source = sourceSelect ? sourceSelect.value : '';
         const mediaType = mediaTypeSelect && mediaTypeSelect.value === 'MANGA' ? 'MANGA' : 'ANIME';
         const query = state.input.value.trim();
 
-        if (!sourceSelect || sourceSelect.value !== 'anilist' || looksLikeDirectId(query) || nonSpaceLength(query) < MIN_QUERY_CHARS) {
+        if (
+            !sourceSelect ||
+            nonSpaceLength(query) < MIN_QUERY_CHARS ||
+            (source === 'anilist' && looksLikeDirectAnilistId(query)) ||
+            (source === 'vndb' && looksLikeDirectVndbId(query))
+        ) {
             clearList(state);
             return;
         }
@@ -289,20 +329,33 @@
         }
         state.abortController = new AbortController();
 
-        let staticResults = [];
-        if (mediaType === 'ANIME') {
-            staticResults = searchStaticItems(await loadStaticIndex(), query, MAX_RESULTS);
-        }
-
-        let results = staticResults;
-        if (mediaType === 'MANGA' || shouldUseLiveFallback(staticResults)) {
+        let results = [];
+        if (source === 'vndb') {
             try {
-                const liveResults = await searchLive(query, mediaType, state.abortController.signal);
-                results = mergeResults(staticResults, liveResults, MAX_RESULTS);
+                results = await searchVndb(query, state.abortController.signal);
             } catch (error) {
                 if (error.name === 'AbortError') return;
-                results = staticResults;
+                results = [];
             }
+        } else if (source === 'anilist') {
+            let staticResults = [];
+            if (mediaType === 'ANIME') {
+                staticResults = searchStaticItems(await loadStaticIndex(), query, MAX_RESULTS);
+            }
+
+            results = staticResults;
+            if (mediaType === 'MANGA' || shouldUseLiveFallback(staticResults)) {
+                try {
+                    const liveResults = await searchLive(query, mediaType, state.abortController.signal);
+                    results = mergeResults(staticResults, liveResults, MAX_RESULTS);
+                } catch (error) {
+                    if (error.name === 'AbortError') return;
+                    results = staticResults;
+                }
+            }
+        } else {
+            clearList(state);
+            return;
         }
 
         if (sequence !== state.sequence) return;
@@ -404,8 +457,12 @@
             searchStaticItems,
             shouldUseLiveFallback,
             mergeResults,
+            itemType,
+            itemUrl,
             displayTitle,
             secondaryTitle,
+            looksLikeDirectAnilistId,
+            looksLikeDirectVndbId,
         },
     };
 
