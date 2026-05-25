@@ -536,10 +536,10 @@ function updateFrequencyPreview() {
 
     if (displayMode === 'occurrence') {
         modeEl.textContent = 'freq';
-        valueEl.textContent = `${totalOccurrences} total occurrences`;
+        valueEl.textContent = `${totalOccurrences} occ.`;
     } else if (displayMode === 'per_million') {
         modeEl.textContent = 'freq';
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} per million (${combineModeLabel(combineMode)})`;
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
     } else if (displayMode === 'percent') {
         modeEl.textContent = 'freq';
         valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% (${combineModeLabel(combineMode)})`;
@@ -549,11 +549,11 @@ function updateFrequencyPreview() {
     }
 
     if (displayMode === 'occurrence') {
-        copyEl.textContent = 'Raw total from selected titles.';
+        copyEl.textContent = 'Total count.';
     } else if (combineMode === 'average') {
-        copyEl.textContent = 'Average per title; missing titles count as zero.';
+        copyEl.textContent = 'Avg per title. Missing = 0.';
     } else {
-        copyEl.textContent = 'Combined corpus; longer titles have more weight.';
+        copyEl.textContent = 'Merged titles.';
     }
 
     countsEl.innerHTML = SAMPLE_FREQUENCY_DECKS.map(deck => `
@@ -562,7 +562,7 @@ function updateFrequencyPreview() {
 }
 
 function combineModeLabel(mode) {
-    return mode === 'average' ? 'average per title' : 'combined corpus';
+    return mode === 'average' ? 'avg' : 'sum';
 }
 
 function formatPreviewNumber(value) {

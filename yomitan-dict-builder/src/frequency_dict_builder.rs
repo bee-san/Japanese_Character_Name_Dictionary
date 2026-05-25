@@ -317,19 +317,11 @@ impl FrequencyDictBuilder {
         rank: Option<usize>,
     ) -> String {
         match display_mode {
-            FrequencyDisplayMode::Occurrence => format!(
-                "{} total occurrence{}",
-                aggregate.total_occurrences,
-                if aggregate.total_occurrences == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            ),
+            FrequencyDisplayMode::Occurrence => format!("{} occ.", aggregate.total_occurrences),
             FrequencyDisplayMode::PerMillion => {
                 let rate = self.frequency_rate(aggregate, combine_mode) * 1_000_000.0;
                 format!(
-                    "{} per million ({})",
+                    "{} / 1M ({})",
                     format_decimal(rate),
                     combine_mode.display_label()
                 )
@@ -407,8 +399,8 @@ fn attribution_text() -> String {
 impl FrequencyCombineMode {
     fn display_label(self) -> &'static str {
         match self {
-            Self::Average => "average per title",
-            Self::Sum => "combined corpus",
+            Self::Average => "avg",
+            Self::Sum => "sum",
         }
     }
 }
@@ -711,14 +703,11 @@ mod tests {
         assert_eq!(entries[0][0], "の");
         assert_eq!(entries[0][1], "freq");
         assert_eq!(entries[0][2]["value"], 2410);
-        assert_eq!(entries[0][2]["displayValue"], "2410 total occurrences");
+        assert_eq!(entries[0][2]["displayValue"], "2410 occ.");
         assert_eq!(entries[1][0], "岡部");
         assert_eq!(entries[1][2]["reading"], "おかべ");
         assert_eq!(entries[1][2]["frequency"]["value"], 1645);
-        assert_eq!(
-            entries[1][2]["frequency"]["displayValue"],
-            "1645 total occurrences"
-        );
+        assert_eq!(entries[1][2]["frequency"]["displayValue"], "1645 occ.");
     }
 
     #[test]
@@ -736,7 +725,7 @@ mod tests {
 
         let target = entries.iter().find(|entry| entry[0] == "target").unwrap();
         assert_eq!(target[2]["value"], 35);
-        assert_eq!(target[2]["displayValue"], "35 total occurrences");
+        assert_eq!(target[2]["displayValue"], "35 occ.");
     }
 
     #[test]
@@ -754,7 +743,7 @@ mod tests {
 
         assert_eq!(
             display_value_for(&entries, "target"),
-            "116666.67 per million (average per title)"
+            "116666.67 / 1M (avg)"
         );
     }
 
@@ -771,10 +760,7 @@ mod tests {
             FrequencyCombineMode::Sum,
         );
 
-        assert_eq!(
-            display_value_for(&entries, "target"),
-            "29166.67 per million (combined corpus)"
-        );
+        assert_eq!(display_value_for(&entries, "target"), "29166.67 / 1M (sum)");
     }
 
     #[test]
@@ -797,12 +783,9 @@ mod tests {
 
         assert_eq!(
             display_value_for(&average_entries, "target"),
-            "11.67% (average per title)"
+            "11.67% (avg)"
         );
-        assert_eq!(
-            display_value_for(&sum_entries, "target"),
-            "2.92% (combined corpus)"
-        );
+        assert_eq!(display_value_for(&sum_entries, "target"), "2.92% (sum)");
     }
 
     #[test]
@@ -844,13 +827,10 @@ mod tests {
         assert_eq!(average_entries[0][0], "average_winner");
         assert_eq!(
             display_value_for(&average_entries, "average_winner"),
-            "#1 (average per title)"
+            "#1 (avg)"
         );
         assert_eq!(sum_entries[0][0], "sum_winner");
-        assert_eq!(
-            display_value_for(&sum_entries, "sum_winner"),
-            "#1 (combined corpus)"
-        );
+        assert_eq!(display_value_for(&sum_entries, "sum_winner"), "#1 (sum)");
     }
 
     #[test]
