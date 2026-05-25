@@ -251,6 +251,14 @@ function generateFrequencyDictionary() {
     };
 }
 
+function attachManualMediaAutocomplete(row) {
+    if (!window.BeeMediaAutocomplete) return;
+    window.BeeMediaAutocomplete.attach(row, {
+        validate: validateManualId,
+        onChange: () => updateIndexUrl(),
+    });
+}
+
 function addManualEntry() {
     const container = document.getElementById('manualEntries');
     const row = document.createElement('div');
@@ -273,12 +281,13 @@ function addManualEntry() {
         </div>
         <div class="entry-id">
             <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
+            <input type="text" data-field="id" placeholder="e.g., v17, Steins;Gate, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
             <div class="input-hint"></div>
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
     `;
     container.appendChild(row);
+    attachManualMediaAutocomplete(row);
     updateRemoveButtons();
     updateIndexUrl();
 }
@@ -298,6 +307,9 @@ function onEntrySourceChange(select) {
     const idInput = row.querySelector('[data-field="id"]');
     if (idInput && idInput.value.trim()) {
         validateManualId(idInput);
+    }
+    if (window.BeeMediaAutocomplete) {
+        window.BeeMediaAutocomplete.refresh(row);
     }
 }
 
@@ -330,15 +342,23 @@ function getManualEntries() {
 }
 
 function manualEntriesForPreview() {
-    return getManualEntries().map(entry => ({
-        source: entry.source,
-        id: entry.id,
-        title: entry.id,
-        title_romaji: entry.id,
-        media_type: entry.source === 'vndb'
-            ? 'vn'
-            : (entry.media_type || 'ANIME').toLowerCase(),
-    }));
+    return Array.from(document.querySelectorAll('.manual-entry-row')).map(row => {
+        const source = row.querySelector('[data-field="source"]').value;
+        const idInput = row.querySelector('[data-field="id"]');
+        const mediaType = row.querySelector('[data-field="media_type"]').value;
+        const id = idInput.value.trim();
+        if (!id) return null;
+
+        return {
+            source,
+            id,
+            title: idInput.dataset.mediaTitle || id,
+            title_romaji: idInput.dataset.mediaTitleRomaji || idInput.dataset.mediaTitle || id,
+            media_type: source === 'vndb'
+                ? 'vn'
+                : (mediaType || 'ANIME').toLowerCase(),
+        };
+    }).filter(Boolean);
 }
 
 function validateUsernameInputs() {

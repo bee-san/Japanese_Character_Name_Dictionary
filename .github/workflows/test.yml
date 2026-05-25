@@ -25,5 +25,11 @@ jobs:
       - name: Check code format
         run: cargo fmt --all --check
 
+      - name: Test static AniList index builder
+        run: python scripts/test_refresh_anilist_media_index.py
+
+      - name: Test media autocomplete helpers
+        run: node scripts/test_anilist_media_autocomplete.js
+
       - name: Run tests
         run: cargo test

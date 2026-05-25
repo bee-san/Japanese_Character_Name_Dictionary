@@ -133,13 +133,12 @@ impl FrequencyDictBuilder {
                     JITEN_ATTRIBUTION_FILE, e
                 )
             })?;
-        zip.write_all(attribution_text().as_bytes())
-            .map_err(|e| {
-                format!(
-                    "Failed to write {} in frequency ZIP: {}",
-                    JITEN_ATTRIBUTION_FILE, e
-                )
-            })?;
+        zip.write_all(attribution_text().as_bytes()).map_err(|e| {
+            format!(
+                "Failed to write {} in frequency ZIP: {}",
+                JITEN_ATTRIBUTION_FILE, e
+            )
+        })?;
 
         for (bank_idx, chunk) in sorted_entries.chunks(FREQUENCY_BANK_LIMIT).enumerate() {
             if chunk.is_empty() {
@@ -193,9 +192,7 @@ impl FrequencyDictBuilder {
 }
 
 fn attribution_text() -> String {
-    format!(
-        "{JITEN_ATTRIBUTION}\n\nSource: {JITEN_SOURCE_URL}\nLicense: {JITEN_LICENSE_URL}\n"
-    )
+    format!("{JITEN_ATTRIBUTION}\n\nSource: {JITEN_SOURCE_URL}\nLicense: {JITEN_LICENSE_URL}\n")
 }
 
 fn frequency_entry_value(key: &FrequencyKey, occurrences: u64) -> serde_json::Value {

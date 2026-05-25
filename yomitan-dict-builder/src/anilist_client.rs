@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use rand::Rng;
 use reqwest::Client;
+use serde::Serialize;
 use tracing::warn;
 
 use crate::models::*;
@@ -119,6 +120,14 @@ fn map_request_error(err: RequestError) -> String {
     }
 }
 
+fn non_empty_json_string(value: &serde_json::Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 /// Send a request with automatic retry on HTTP 429 (Too Many Requests).
 /// Uses the configured retry profile's exponential backoff with jitter.
 async fn send_with_retry(
@@ -187,6 +196,28 @@ async fn send_with_retry(
 pub struct AnilistClient {
     client: Client,
     retry_policy: AnilistRetryPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnilistMediaTitles {
+    pub romaji: Option<String>,
+    pub english: Option<String>,
+    pub native: Option<String>,
+    pub user_preferred: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AnilistMediaSearchResult {
+    pub id: i32,
+    pub url: String,
+    #[serde(rename = "type")]
+    pub media_type: String,
+    pub titles: AnilistMediaTitles,
+    pub synonyms: Vec<String>,
+    pub format: Option<String>,
+    pub year: Option<i32>,
+    pub popularity: Option<i32>,
 }
 
 impl AnilistClient {
@@ -258,6 +289,30 @@ impl AnilistClient {
                         }
                     }
                 }
+            }
+        }
+    }
+    "#;
+
+    const MEDIA_SEARCH_QUERY: &'static str = r#"
+    query ($search: String!, $type: MediaType!, $perPage: Int!) {
+        Page(page: 1, perPage: $perPage) {
+            media(search: $search, type: $type, sort: [SEARCH_MATCH, POPULARITY_DESC]) {
+                id
+                type
+                format
+                startDate {
+                    year
+                }
+                popularity
+                siteUrl
+                title {
+                    romaji
+                    english
+                    native
+                    userPreferred
+                }
+                synonyms
             }
         }
     }
@@ -392,6 +447,110 @@ impl AnilistClient {
         }
 
         Ok(entries)
+    }
+
+    /// Search AniList media by title for manual media autocomplete.
+    pub async fn search_media(
+        &self,
+        search: &str,
+        media_type: &str,
+        limit: usize,
+    ) -> Result<Vec<AnilistMediaSearchResult>, String> {
+        let variables = serde_json::json!({
+            "search": search.trim(),
+            "type": media_type.to_uppercase(),
+            "perPage": limit.clamp(1, 8),
+        });
+
+        let response = send_with_retry(
+            self.client
+                .post("https://graphql.anilist.co")
+                .json(&serde_json::json!({
+                    "query": Self::MEDIA_SEARCH_QUERY,
+                    "variables": variables
+                })),
+            &self.client,
+            self.retry_policy,
+        )
+        .await
+        .map_err(map_request_error)?;
+
+        if response.status() != 200 {
+            return Err(format!(
+                "UPSTREAM: AniList API returned status {}",
+                response.status()
+            ));
+        }
+
+        let data: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("UPSTREAM: Failed to parse AniList JSON: {}", e))?;
+
+        Self::parse_media_search_results(&data)
+    }
+
+    fn parse_media_search_results(
+        data: &serde_json::Value,
+    ) -> Result<Vec<AnilistMediaSearchResult>, String> {
+        if data["errors"].is_array() {
+            return Err(format!(
+                "UPSTREAM: AniList GraphQL error: {:?}",
+                data["errors"]
+            ));
+        }
+
+        let media = data["data"]["Page"]["media"]
+            .as_array()
+            .ok_or_else(|| "UPSTREAM: Invalid AniList media search response".to_string())?;
+
+        let mut results = Vec::new();
+        for item in media {
+            let id = match item["id"].as_i64().and_then(|id| i32::try_from(id).ok()) {
+                Some(id) => id,
+                None => continue,
+            };
+            let media_type = item["type"].as_str().unwrap_or("ANIME").to_string();
+            let domain = if media_type.eq_ignore_ascii_case("MANGA") {
+                "manga"
+            } else {
+                "anime"
+            };
+            let title = &item["title"];
+            let titles = AnilistMediaTitles {
+                romaji: non_empty_json_string(&title["romaji"]),
+                english: non_empty_json_string(&title["english"]),
+                native: non_empty_json_string(&title["native"]),
+                user_preferred: non_empty_json_string(&title["userPreferred"]),
+            };
+            let synonyms = item["synonyms"]
+                .as_array()
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(non_empty_json_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            results.push(AnilistMediaSearchResult {
+                id,
+                url: non_empty_json_string(&item["siteUrl"])
+                    .unwrap_or_else(|| format!("https://anilist.co/{domain}/{id}")),
+                media_type,
+                titles,
+                synonyms,
+                format: non_empty_json_string(&item["format"]),
+                year: item["startDate"]["year"]
+                    .as_i64()
+                    .and_then(|year| i32::try_from(year).ok()),
+                popularity: item["popularity"]
+                    .as_i64()
+                    .and_then(|popularity| i32::try_from(popularity).ok()),
+            });
+        }
+
+        Ok(results)
     }
 
     const CHARACTERS_QUERY: &'static str = r#"
@@ -1134,6 +1293,97 @@ mod tests {
         assert!(query.contains("age"));
         assert!(query.contains("description"));
         assert!(query.contains("sort: [ROLE, RELEVANCE, ID]"));
+    }
+
+    #[test]
+    fn test_media_search_query_is_valid_graphql_shape() {
+        let query = AnilistClient::MEDIA_SEARCH_QUERY;
+        assert!(query.contains("media(search: $search, type: $type"));
+        assert!(query.contains("sort: [SEARCH_MATCH, POPULARITY_DESC]"));
+        assert!(query.contains("userPreferred"));
+        assert!(query.contains("synonyms"));
+        assert!(query.contains("siteUrl"));
+        assert!(query.contains("popularity"));
+    }
+
+    #[test]
+    fn test_parse_media_search_results() {
+        let response_json = serde_json::json!({
+            "data": {
+                "Page": {
+                    "media": [
+                        {
+                            "id": 9253,
+                            "type": "ANIME",
+                            "format": "TV",
+                            "startDate": {"year": 2011},
+                            "popularity": 493871,
+                            "siteUrl": "https://anilist.co/anime/9253",
+                            "title": {
+                                "romaji": "Steins;Gate",
+                                "english": "Steins;Gate",
+                                "native": "シュタインズ・ゲート",
+                                "userPreferred": "Steins;Gate"
+                            },
+                            "synonyms": ["StG", "", null, "Steins Gate"]
+                        }
+                    ]
+                }
+            }
+        });
+
+        let results = AnilistClient::parse_media_search_results(&response_json).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, 9253);
+        assert_eq!(results[0].media_type, "ANIME");
+        assert_eq!(
+            results[0].titles.native.as_deref(),
+            Some("シュタインズ・ゲート")
+        );
+        assert_eq!(results[0].synonyms, vec!["StG", "Steins Gate"]);
+        assert_eq!(results[0].format.as_deref(), Some("TV"));
+        assert_eq!(results[0].year, Some(2011));
+        assert_eq!(results[0].popularity, Some(493871));
+    }
+
+    #[test]
+    fn test_parse_media_search_results_falls_back_to_url() {
+        let response_json = serde_json::json!({
+            "data": {
+                "Page": {
+                    "media": [
+                        {
+                            "id": 30002,
+                            "type": "MANGA",
+                            "title": {
+                                "romaji": "Berserk",
+                                "english": null,
+                                "native": null,
+                                "userPreferred": "Berserk"
+                            },
+                            "synonyms": []
+                        }
+                    ]
+                }
+            }
+        });
+
+        let results = AnilistClient::parse_media_search_results(&response_json).unwrap();
+
+        assert_eq!(results[0].url, "https://anilist.co/manga/30002");
+        assert_eq!(results[0].media_type, "MANGA");
+    }
+
+    #[test]
+    fn test_parse_media_search_results_rejects_graphql_errors() {
+        let response_json = serde_json::json!({
+            "errors": [{"message": "Bad request"}]
+        });
+
+        let error = AnilistClient::parse_media_search_results(&response_json).unwrap_err();
+
+        assert!(error.starts_with("UPSTREAM: AniList GraphQL error"));
     }
 
     // ── Role categorization in fetch_characters response simulation ──

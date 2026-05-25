@@ -186,6 +186,80 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
     padding: 10px;
     font-size: 14px;
 }
+.manual-entry-row .entry-id { position: relative; }
+.media-autocomplete {
+    position: relative;
+    z-index: 30;
+}
+.media-autocomplete-list {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #f3b5ce;
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(232, 67, 147, 0.18);
+}
+.media-autocomplete-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    margin: 0;
+    background: white;
+    border: 0;
+    border-bottom: 1px solid #f7e1ec;
+    border-radius: 0;
+    color: #444;
+    text-align: left;
+    cursor: pointer;
+}
+.media-autocomplete-option:last-child { border-bottom: 0; }
+.media-autocomplete-option:hover,
+.media-autocomplete-option.active {
+    background: #fff3f8;
+    transform: none;
+}
+.media-autocomplete-main {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.media-autocomplete-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+.media-autocomplete-secondary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #999;
+    font-size: 0.82em;
+}
+.media-autocomplete-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #999;
+    font-size: 0.78em;
+    white-space: nowrap;
+}
+.media-autocomplete-badge {
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: white;
+    font-weight: 700;
+}
+.media-autocomplete-badge.static { background: #e84393; }
+.media-autocomplete-badge.live { background: #4a90d9; }
 .remove-entry-btn {
     flex: 0 0 32px;
     width: 32px;

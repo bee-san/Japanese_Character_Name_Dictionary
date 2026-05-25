@@ -126,6 +126,13 @@ document.querySelectorAll('.tab').forEach(tab => {
 // === Manual tab: dynamic entry rows ===
 let manualEntryCounter = 0;
 
+function attachManualMediaAutocomplete(row) {
+    if (!window.BeeMediaAutocomplete) return;
+    window.BeeMediaAutocomplete.attach(row, {
+        validate: validateManualId,
+    });
+}
+
 function addManualEntry() {
     const container = document.getElementById('manualEntries');
     const row = document.createElement('div');
@@ -149,12 +156,14 @@ function addManualEntry() {
         </div>
         <div class="entry-id">
             <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this)">
+            <input type="text" data-field="id" placeholder="e.g., v17, Steins;Gate, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this)">
+            <div class="input-hint"></div>
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
     `;
 
     container.appendChild(row);
+    attachManualMediaAutocomplete(row);
     updateRemoveButtons();
 }
 
@@ -171,6 +180,9 @@ function onEntrySourceChange(select) {
     // Re-validate the media ID for the new source
     const idInput = row.querySelector('[data-field="id"]');
     if (idInput && idInput.value.trim()) validateManualId(idInput);
+    if (window.BeeMediaAutocomplete) {
+        window.BeeMediaAutocomplete.refresh(row);
+    }
 }
 
 function updateRemoveButtons() {

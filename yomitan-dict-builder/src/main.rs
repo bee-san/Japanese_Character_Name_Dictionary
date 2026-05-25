@@ -17,7 +17,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tower_http::services::ServeDir;
+use tower_http::{compression::CompressionLayer, services::ServeDir};
 use tracing::{debug, error, info, warn};
 
 mod anilist_client;
@@ -106,6 +106,7 @@ const RATE_LIMIT_PREFIX: &str = "RATE_LIMIT:";
 const UPSTREAM_PREFIX: &str = "UPSTREAM:";
 const DEFAULT_LOG_FILTER: &str = "info,tower_governor=warn";
 const MULTI_MEDIA_ABORT_MESSAGE_PREFIX: &str = "Dictionary generation aborted because";
+const ANILIST_MEDIA_SEARCH_MAX_RESULTS: usize = 8;
 
 #[derive(Clone)]
 struct AppState {
@@ -403,6 +404,12 @@ struct UserListQuery {
 }
 
 #[derive(Deserialize)]
+struct AnilistMediaSearchQuery {
+    q: Option<String>,
+    media_type: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct GenerateStreamQuery {
     vndb_user: Option<String>,
     anilist_user: Option<String>,
@@ -456,6 +463,32 @@ fn default_media_type() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn normalize_anilist_media_search_query(
+    params: &AnilistMediaSearchQuery,
+) -> Result<(String, String), String> {
+    let query = params.q.as_deref().unwrap_or("").trim().to_string();
+    if query.chars().filter(|ch| !ch.is_whitespace()).count() < 2 {
+        return Err(format!(
+            "{} q must contain at least 2 non-space characters",
+            INVALID_INPUT_PREFIX
+        ));
+    }
+
+    let media_type = params
+        .media_type
+        .as_deref()
+        .unwrap_or("ANIME")
+        .trim()
+        .to_uppercase();
+    match media_type.as_str() {
+        "ANIME" | "MANGA" => Ok((query, media_type)),
+        _ => Err(format!(
+            "{} media_type must be ANIME or MANGA",
+            INVALID_INPUT_PREFIX
+        )),
+    }
 }
 
 /// Parse an AniList media ID from either a raw numeric string (e.g. "9253")
@@ -1005,6 +1038,7 @@ async fn main() {
     // Lightweight API endpoints — relaxed rate limit only
     let api_routes = Router::new()
         .route("/api/user-lists", get(fetch_user_lists))
+        .route("/api/anilist-media-search", get(anilist_media_search))
         .route("/api/download", get(download_zip))
         .route("/api/yomitan-index", get(generate_index))
         .route(
@@ -1026,6 +1060,7 @@ async fn main() {
         .merge(generate_routes)
         .merge(api_routes)
         .nest_service("/static", ServeDir::new(static_dir()))
+        .layer(CompressionLayer::new())
         .with_state(state);
 
     let port = std::env::var("PORT")
@@ -1268,6 +1303,70 @@ async fn fetch_user_lists(
         response.to_string(),
     )
         .into_response()
+}
+
+async fn anilist_media_search(
+    Query(params): Query<AnilistMediaSearchQuery>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let request_id = new_request_id();
+    let (query, media_type) = match normalize_anilist_media_search_query(&params) {
+        Ok(value) => value,
+        Err(error) => {
+            return (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    let client = AnilistClient::with_client(state.http_client.clone());
+    match client
+        .search_media(&query, &media_type, ANILIST_MEDIA_SEARCH_MAX_RESULTS)
+        .await
+    {
+        Ok(results) => {
+            debug!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                media_type = %media_type,
+                result_count = results.len(),
+                "Searched AniList media"
+            );
+            (
+                StatusCode::OK,
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"results": results}).to_string(),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            warn!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                media_type = %media_type,
+                error = %error,
+                "AniList media search failed"
+            );
+            (
+                status_code_for_error(&error),
+                [
+                    ("content-type", "application/json"),
+                    ("access-control-allow-origin", "*"),
+                ],
+                serde_json::json!({"error": public_error_message(&error)}).to_string(),
+            )
+                .into_response()
+        }
+    }
 }
 
 // === SSE progress stream endpoint ===
@@ -3273,6 +3372,85 @@ mod tests {
             status_code_for_error("INVALID_INPUT: bad request"),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[test]
+    fn test_normalize_anilist_media_search_query_accepts_trimmed_anime_query() {
+        let query = AnilistMediaSearchQuery {
+            q: Some("  steins gate  ".to_string()),
+            media_type: Some("anime".to_string()),
+        };
+
+        let (search, media_type) = normalize_anilist_media_search_query(&query).unwrap();
+
+        assert_eq!(search, "steins gate");
+        assert_eq!(media_type, "ANIME");
+    }
+
+    #[test]
+    fn test_normalize_anilist_media_search_query_accepts_manga() {
+        let query = AnilistMediaSearchQuery {
+            q: Some("berserk".to_string()),
+            media_type: Some("MANGA".to_string()),
+        };
+
+        let (_, media_type) = normalize_anilist_media_search_query(&query).unwrap();
+
+        assert_eq!(media_type, "MANGA");
+    }
+
+    #[test]
+    fn test_normalize_anilist_media_search_query_rejects_short_query() {
+        let query = AnilistMediaSearchQuery {
+            q: Some("  a ".to_string()),
+            media_type: Some("ANIME".to_string()),
+        };
+
+        let error = normalize_anilist_media_search_query(&query).unwrap_err();
+
+        assert!(error.contains("at least 2"));
+    }
+
+    #[test]
+    fn test_normalize_anilist_media_search_query_rejects_invalid_type() {
+        let query = AnilistMediaSearchQuery {
+            q: Some("naruto".to_string()),
+            media_type: Some("NOVEL".to_string()),
+        };
+
+        let error = normalize_anilist_media_search_query(&query).unwrap_err();
+
+        assert!(error.contains("ANIME or MANGA"));
+    }
+
+    #[test]
+    fn test_normalize_manual_entry_accepts_vndb_number() {
+        let entry = ManualEntry {
+            source: "vndb".to_string(),
+            id: "17".to_string(),
+            media_type: default_media_type(),
+        };
+
+        let normalized = normalize_manual_entry(&entry).unwrap();
+
+        assert_eq!(normalized.source, "vndb");
+        assert_eq!(normalized.id, "v17");
+        assert_eq!(normalized.media_type, "vn");
+    }
+
+    #[test]
+    fn test_normalize_manual_entry_accepts_vndb_url() {
+        let entry = ManualEntry {
+            source: "vndb".to_string(),
+            id: "https://vndb.org/v17/steins-gate?view=chars".to_string(),
+            media_type: default_media_type(),
+        };
+
+        let normalized = normalize_manual_entry(&entry).unwrap();
+
+        assert_eq!(normalized.source, "vndb");
+        assert_eq!(normalized.id, "v17");
+        assert_eq!(normalized.media_type, "vn");
     }
 
     #[test]

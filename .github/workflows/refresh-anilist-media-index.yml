@@ -1,0 +1,55 @@
+name: Refresh AniList Media Index
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: refresh-anilist-media-index
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Kaggle CLI
+        run: python -m pip install --upgrade kaggle
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          if [ -z "${KAGGLE_USERNAME}" ] || [ -z "${KAGGLE_KEY}" ]; then
+            echo "KAGGLE_USERNAME and KAGGLE_KEY secrets are required." >&2
+            exit 1
+          fi
+          mkdir -p ~/.kaggle
+          python -c 'import json, os; from pathlib import Path; path = Path.home() / ".kaggle/kaggle.json"; path.write_text(json.dumps({"username": os.environ["KAGGLE_USERNAME"], "key": os.environ["KAGGLE_KEY"]}), encoding="utf-8"); path.chmod(0o600)'
+
+      - name: Build compact index
+        working-directory: yomitan-dict-builder
+        run: python scripts/refresh_anilist_media_index.py
+
+      - name: Commit changed index
+        run: |
+          if git diff --quiet -- yomitan-dict-builder/static/data/anilist-media-index.json; then
+            echo "AniList media index is unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add yomitan-dict-builder/static/data/anilist-media-index.json
+          git commit -m "Refresh AniList media index"
+          git push
