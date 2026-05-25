@@ -4,9 +4,7 @@ queries:
   - uses: security-extended
 
 paths:
-  - .github/workflows
-  - log_stats.py
-  - yomitan-dict-builder
+  - .
 
 paths-ignore:
   - yomitan-dict-builder/target/**
