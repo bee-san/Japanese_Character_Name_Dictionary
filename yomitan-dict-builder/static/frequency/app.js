@@ -519,8 +519,14 @@ function updateFrequencyPreview() {
 }
 
 function formatPreviewNumber(value) {
-    const formatted = value.toFixed(2).replace(/\.?0+$/, '');
-    return formatted || '0';
+    const fixed = value.toFixed(2);
+    if (fixed.endsWith('.00')) {
+        return fixed.slice(0, -3);
+    }
+    if (fixed.endsWith('0')) {
+        return fixed.slice(0, -1);
+    }
+    return fixed;
 }
 
 function showResult() {

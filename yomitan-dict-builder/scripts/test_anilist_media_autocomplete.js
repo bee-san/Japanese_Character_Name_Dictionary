@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 
-const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const assert = require('node:assert');
+const path = require('node:path');
 
-global.window = {
+globalThis.window = {
   setTimeout,
   clearTimeout,
 };
-global.document = {
+globalThis.document = {
   createElement() {
     return {
       set textContent(value) {
@@ -23,9 +21,8 @@ global.document = {
 };
 
 const scriptPath = path.join(__dirname, '..', 'static', 'anilist-media-autocomplete.js');
-vm.runInThisContext(fs.readFileSync(scriptPath, 'utf8'), { filename: scriptPath });
-
-const helpers = window.BeeMediaAutocomplete._test;
+const autocomplete = require(scriptPath);
+const helpers = autocomplete._test;
 const fixture = {
   media: [
     {

@@ -1,4 +1,4 @@
-(function () {
+(function (root) {
     'use strict';
 
     const STATIC_INDEX_URL = '/static/data/anilist-media-index.json';
@@ -395,7 +395,7 @@
         return div.innerHTML;
     }
 
-    window.BeeMediaAutocomplete = {
+    root.BeeMediaAutocomplete = {
         attach,
         refresh,
         _test: {
@@ -408,4 +408,8 @@
             secondaryTitle,
         },
     };
-})();
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = root.BeeMediaAutocomplete;
+    }
+})(globalThis);
