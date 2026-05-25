@@ -167,13 +167,6 @@
     font-weight: 700;
 }
 
-.result-subtitle {
-    margin-top: 2px;
-    color: #777;
-    font-size: 0.84em;
-    line-height: 1.45;
-}
-
 .copy-btn {
     width: auto;
     min-height: 34px;
