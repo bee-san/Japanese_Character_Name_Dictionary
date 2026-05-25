@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.web_ndl_authorities]
+kind = "web_ndl_authorities"
+enabled = true
+input = "../data/input/web_ndl_authorities.json"
+format = "web_ndl_authorities"
+license_class = "ndl_authority_data"
+license_label = "Web NDL Authorities export"
+license_url = "https://id.ndl.go.jp/information/sparql/"
+notes = "Offline SPARQL JSON export from the National Diet Library authority endpoint. Provide a harvested result file manually; the builder does not batch-query the live endpoint."

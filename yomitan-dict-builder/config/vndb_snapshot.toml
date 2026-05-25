@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-08"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.vndb_dump]
+kind = "vndb_dump"
+enabled = true
+input = "../data/input/vndb-db-2026-04-08.tar.zst"
+format = "vndb_dump"
+license_class = "vndb_odbl_dbcl"
+license_label = "VNDB database dump"
+license_url = "https://vndb.org/d17"
+notes = "Full VNDB dump archive in PostgreSQL COPY format. Dump-only mode does not fetch remote image binaries."

@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-08"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.kaggle_anilist_snapshot]
+kind = "kaggle_anilist_snapshot"
+enabled = true
+input = "../data/input/anilist_anime_dataset.csv"
+format = "csv"
+license_class = "community_snapshot"
+license_label = "AniList Kaggle snapshot"
+license_url = "https://www.kaggle.com/datasets/calebmwelsh/anilist-anime-dataset"
+notes = "Offline Kaggle export. This path ingests work, character, staff, and voice actor names directly from the dataset. Image URLs are preserved, but dump-only builds do not fetch remote image bytes."

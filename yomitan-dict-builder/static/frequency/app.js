@@ -4,6 +4,21 @@ let manualEntryCounter = 0;
 const VNDB_VN_URL_RE = /vndb\.org\/v\d+/i;
 const VNDB_VN_ID_RE = /^v\d+$/i;
 const ANILIST_MEDIA_URL_RE = /anilist\.co\/(anime|manga)\/\d+/i;
+const DEFAULT_VNDB_STATUSES = ['playing'];
+const DEFAULT_ANILIST_STATUSES = ['current'];
+const STATUS_LABELS = {
+    playing: 'Current',
+    current: 'Current',
+    finished: 'Completed',
+    completed: 'Completed',
+    wishlist: 'Wishlist',
+    planning: 'Planning',
+    paused: 'Paused',
+    dropped: 'Dropped',
+};
+const SAMPLE_TOTAL_OCCURRENCES = 35;
+const SAMPLE_AVERAGE_RATE = (30 / 10000 + 5 / 5000 + 0 / 8000) / 3;
+const SAMPLE_SUM_RATE = 35 / 23000;
 
 function activeMode() {
     const activeTab = document.querySelector('.tab.active');
@@ -33,9 +48,12 @@ function switchFrequencyTab(mode) {
         const active = tab.dataset.tab === mode;
         tab.classList.toggle('active', active);
         tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        tab.tabIndex = active ? 0 : -1;
     });
     document.querySelectorAll('.tab-content').forEach(panel => {
-        panel.classList.toggle('active', panel.id === 'tab-' + mode);
+        const active = panel.id === 'tab-' + mode;
+        panel.classList.toggle('active', active);
+        panel.hidden = !active;
     });
 
     clearUnmatched();
@@ -48,10 +66,118 @@ function switchFrequencyTab(mode) {
 function updateActionButtons() {
     const fetchBtn = document.getElementById('fetchListsBtn');
     const previewManualBtn = document.getElementById('previewManualBtn');
-    fetchBtn.textContent = 'Fetch Lists & Preview';
+    fetchBtn.textContent = 'Find My Titles';
     if (previewManualBtn) {
-        previewManualBtn.textContent = 'Preview Media List';
+        previewManualBtn.textContent = 'Preview Selected Titles';
     }
+}
+
+function moveFrequencyTabFocus(currentTab, direction) {
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const currentIndex = tabs.indexOf(currentTab);
+    if (currentIndex === -1) return;
+
+    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    switchFrequencyTab(nextTab.dataset.tab);
+    nextTab.focus();
+}
+
+function handleFrequencyTabKeydown(event) {
+    const tab = event.currentTarget;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveFrequencyTabFocus(tab, -1);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveFrequencyTabFocus(tab, 1);
+    } else if (event.key === 'Home') {
+        event.preventDefault();
+        const firstTab = document.querySelector('.tab');
+        if (firstTab) {
+            switchFrequencyTab(firstTab.dataset.tab);
+            firstTab.focus();
+        }
+    } else if (event.key === 'End') {
+        event.preventDefault();
+        const tabs = document.querySelectorAll('.tab');
+        const lastTab = tabs[tabs.length - 1];
+        if (lastTab) {
+            switchFrequencyTab(lastTab.dataset.tab);
+            lastTab.focus();
+        }
+    }
+}
+
+function selectedDisplayMode() {
+    return document.getElementById('displayMode')?.value || 'occurrence';
+}
+
+function selectedCombineMode() {
+    return document.querySelector('input[name="combineMode"]:checked')?.value || 'average';
+}
+
+function appendFrequencyOptions(params) {
+    params.set('display_mode', selectedDisplayMode());
+    params.set('combine_mode', selectedCombineMode());
+}
+
+function selectedShelfStatuses(source) {
+    return Array.from(document.querySelectorAll(`input[data-status-source="${source}"]:checked`))
+        .map(input => input.value);
+}
+
+function appendShelfStatusParams(params) {
+    const vndbStatuses = selectedShelfStatuses('vndb');
+    const anilistStatuses = selectedShelfStatuses('anilist');
+    if (vndbStatuses.join(',') !== DEFAULT_VNDB_STATUSES.join(',')) {
+        params.set('vndb_status', vndbStatuses.join(','));
+    }
+    if (anilistStatuses.join(',') !== DEFAULT_ANILIST_STATUSES.join(',')) {
+        params.set('anilist_status', anilistStatuses.join(','));
+    }
+}
+
+function toggleShelfOptions() {
+    const options = document.getElementById('shelfOptions');
+    const toggle = document.getElementById('shelfToggle');
+    const expanded = options.hidden;
+    options.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function onShelfStatusChange(input) {
+    const source = input.dataset.statusSource;
+    const selected = selectedShelfStatuses(source);
+    if (selected.length === 0) {
+        input.checked = true;
+    }
+    input.closest('.shelf-chip')?.classList.toggle('active', input.checked);
+    updateShelfSummary();
+    updateIndexUrl();
+}
+
+function updateShelfSummary() {
+    document.querySelectorAll('.shelf-chip').forEach(chip => {
+        const input = chip.querySelector('input');
+        chip.classList.toggle('active', Boolean(input?.checked));
+    });
+
+    const labels = Array.from(document.querySelectorAll('input[data-status-source]:checked'))
+        .map(input => input.dataset.summaryLabel || statusLabel(input.value))
+        .filter((label, index, all) => all.indexOf(label) === index);
+    const summary = labels.length <= 2
+        ? labels.join(', ')
+        : `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+    document.getElementById('shelfSummary').textContent = summary || 'Current titles';
+}
+
+function hasFrequencyMediaParams(params) {
+    return params && (
+        params.has('vndb_user') ||
+        params.has('anilist_user') ||
+        params.has('entries')
+    );
 }
 
 function buildFrequencyParams({ validate = false } = {}) {
@@ -63,6 +189,7 @@ function buildFrequencyParams({ validate = false } = {}) {
         if (entries.length > 0) {
             params.set('entries', JSON.stringify(entries));
         }
+        appendFrequencyOptions(params);
         return params;
     }
 
@@ -72,7 +199,9 @@ function buildFrequencyParams({ validate = false } = {}) {
 
     if (vndbUser) params.set('vndb_user', vndbUser);
     if (anilistUser) params.set('anilist_user', anilistUser);
+    appendShelfStatusParams(params);
 
+    appendFrequencyOptions(params);
     return params;
 }
 
@@ -96,14 +225,14 @@ async function fetchFrequencyLists() {
             return;
         }
 
-        renderMediaPreview(entries, 'Selected Media');
+        renderMediaPreview(entries, 'Selected Titles');
         updateIndexUrl();
-        setStatus(status, `Prepared ${entries.length} title${entries.length === 1 ? '' : 's'} for frequency generation.`, 'success');
+        setStatus(status, `Prepared ${entries.length} title${entries.length === 1 ? '' : 's'} for the Yomitan dictionary.`, 'success');
         return;
     }
 
     const params = buildFrequencyParams({ validate: true });
-    if (!params || !params.toString()) {
+    if (!hasFrequencyMediaParams(params)) {
         setStatus(status, 'Please enter at least one VNDB or AniList username.', 'error');
         return;
     }
@@ -111,7 +240,7 @@ async function fetchFrequencyLists() {
     fetchBtn.disabled = true;
     fetchBtn.textContent = 'Fetching...';
     preview.classList.remove('show');
-    setStatus(status, 'Fetching current VNDB/AniList media...', 'loading');
+    setStatus(status, 'Fetching selected VNDB/AniList titles...', 'loading');
 
     try {
         const response = await fetch('/api/user-lists?' + params.toString());
@@ -120,9 +249,9 @@ async function fetchFrequencyLists() {
             throw new Error(data.error || `HTTP ${response.status}`);
         }
 
-        renderMediaPreview(data.entries || [], 'Consumed Media');
+        renderMediaPreview(data.entries || [], 'Selected Titles');
 
-        let message = `Found ${(data.entries || []).length} current title${(data.entries || []).length === 1 ? '' : 's'}.`;
+        let message = `Found ${(data.entries || []).length} selected title${(data.entries || []).length === 1 ? '' : 's'}.`;
         if (data.errors && data.errors.length > 0) {
             message += ` Warnings: ${data.errors.join('; ')}`;
         }
@@ -146,7 +275,7 @@ function generateFrequencyDictionary() {
     clearUnmatched();
     hideResult();
 
-    if (!params || !params.toString()) {
+    if (!hasFrequencyMediaParams(params)) {
         const message = activeMode() === 'manual'
             ? 'Please enter at least one media ID.'
             : 'Please enter at least one VNDB or AniList username.';
@@ -162,7 +291,7 @@ function generateFrequencyDictionary() {
     progressBar.style.width = '0%';
     progressBar.setAttribute('aria-valuenow', '0');
     progressBar.textContent = '';
-    setStatus(status, 'Starting frequency dictionary generation...', 'loading');
+    setStatus(status, 'Building your Yomitan dictionary...', 'loading');
 
     const eventSource = new EventSource('/api/generate-frequency-stream?' + params.toString());
 
@@ -212,13 +341,13 @@ function generateFrequencyDictionary() {
             showResult();
             const matched = Number(data.matchedCount) || 0;
             const terms = Number(data.termCount) || 0;
-            setStatus(status, `Frequency dictionary downloaded. Matched ${matched} title${matched === 1 ? '' : 's'} and combined ${terms} term${terms === 1 ? '' : 's'}.`, 'success');
+            setStatus(status, `Yomitan dictionary downloaded. Matched ${matched} title${matched === 1 ? '' : 's'} and combined ${terms} word/name entr${terms === 1 ? 'y' : 'ies'}.`, 'success');
         } catch (err) {
             setStatus(status, `Download error: ${err.message}`, 'error');
         } finally {
             generateBtn.disabled = false;
             setPreviewButtonsDisabled(false);
-            generateBtn.textContent = 'Generate Frequency Dictionary';
+            generateBtn.textContent = 'Generate Yomitan Dictionary';
             updateActionButtons();
         }
     });
@@ -233,7 +362,7 @@ function generateFrequencyDictionary() {
         eventSource.close();
         generateBtn.disabled = false;
         setPreviewButtonsDisabled(false);
-        generateBtn.textContent = 'Generate Frequency Dictionary';
+        generateBtn.textContent = 'Generate Yomitan Dictionary';
         hideProgress();
         updateActionButtons();
     });
@@ -244,11 +373,19 @@ function generateFrequencyDictionary() {
             setStatus(status, 'Connection lost. Please try again.', 'error');
             generateBtn.disabled = false;
             setPreviewButtonsDisabled(false);
-            generateBtn.textContent = 'Generate Frequency Dictionary';
+            generateBtn.textContent = 'Generate Yomitan Dictionary';
             hideProgress();
             updateActionButtons();
         }
     };
+}
+
+function attachManualMediaAutocomplete(row) {
+    if (!window.BeeMediaAutocomplete) return;
+    window.BeeMediaAutocomplete.attach(row, {
+        validate: validateManualId,
+        onChange: () => updateIndexUrl(),
+    });
 }
 
 function addManualEntry() {
@@ -272,13 +409,14 @@ function addManualEntry() {
             </select>
         </div>
         <div class="entry-id">
-            <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
+            <label>Title or ID</label>
+            <input type="text" data-field="id" placeholder="e.g., Steins;Gate, v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this); updateIndexUrl();">
             <div class="input-hint"></div>
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
     `;
     container.appendChild(row);
+    attachManualMediaAutocomplete(row);
     updateRemoveButtons();
     updateIndexUrl();
 }
@@ -298,6 +436,9 @@ function onEntrySourceChange(select) {
     const idInput = row.querySelector('[data-field="id"]');
     if (idInput && idInput.value.trim()) {
         validateManualId(idInput);
+    }
+    if (window.BeeMediaAutocomplete) {
+        window.BeeMediaAutocomplete.refresh(row);
     }
 }
 
@@ -330,15 +471,23 @@ function getManualEntries() {
 }
 
 function manualEntriesForPreview() {
-    return getManualEntries().map(entry => ({
-        source: entry.source,
-        id: entry.id,
-        title: entry.id,
-        title_romaji: entry.id,
-        media_type: entry.source === 'vndb'
-            ? 'vn'
-            : (entry.media_type || 'ANIME').toLowerCase(),
-    }));
+    return Array.from(document.querySelectorAll('.manual-entry-row')).map(row => {
+        const source = row.querySelector('[data-field="source"]').value;
+        const idInput = row.querySelector('[data-field="id"]');
+        const mediaType = row.querySelector('[data-field="media_type"]').value;
+        const id = idInput.value.trim();
+        if (!id) return null;
+
+        return {
+            source,
+            id,
+            title: idInput.dataset.mediaTitle || id,
+            title_romaji: idInput.dataset.mediaTitleRomaji || idInput.dataset.mediaTitle || id,
+            media_type: source === 'vndb'
+                ? 'vn'
+                : (mediaType || 'ANIME').toLowerCase(),
+        };
+    }).filter(Boolean);
 }
 
 function validateUsernameInputs() {
@@ -356,7 +505,7 @@ function validateManualEntries() {
     return valid;
 }
 
-function renderMediaPreview(entries, label = 'Consumed Media') {
+function renderMediaPreview(entries, label = 'Selected Titles') {
     const preview = document.getElementById('mediaPreview');
     const header = document.getElementById('mediaPreviewHeader');
     const list = document.getElementById('mediaPreviewList');
@@ -394,7 +543,7 @@ function renderUnmatched(unmatched) {
         item.className = 'media-item unmatched-item';
         item.innerHTML = `
             ${mediaMarkup(entry)}
-            <div class="unmatched-reason">${escapeHtml(entry.reason || 'No matching Jiten frequency deck found')}</div>
+            <div class="unmatched-reason">${escapeHtml(entry.reason || 'No matching word-count data found for this title')}</div>
         `;
         list.appendChild(item);
     });
@@ -411,22 +560,72 @@ function mediaMarkup(entry) {
     const romaji = entry.title_romaji && entry.title_romaji !== title
         ? `<span class="romaji">${escapeHtml(entry.title_romaji)}</span>`
         : '';
+    const shelf = entry.status
+        ? `<span class="shelf-label">List: ${escapeHtml(statusLabel(entry.status))}</span>`
+        : '';
 
     return `
         <span class="title">${escapeHtml(title)}</span>
         ${romaji}
         <span class="badge ${escapeHtml(badgeClass || '')}">${escapeHtml(badgeText)}</span>
+        ${shelf}
     `;
+}
+
+function statusLabel(status) {
+    return STATUS_LABELS[String(status || '').toLowerCase()] || 'Current';
 }
 
 function updateIndexUrl() {
     const params = buildFrequencyParams();
-    lastIndexUrl = params && params.toString()
+    lastIndexUrl = hasFrequencyMediaParams(params)
         ? `${location.origin}/api/yomitan-frequency-index?${params.toString()}`
         : '';
     const input = document.getElementById('indexUrl');
     input.value = lastIndexUrl;
     return lastIndexUrl;
+}
+
+function updateFrequencyPreview() {
+    const valueEl = document.getElementById('frequencyPreviewValue');
+    if (!valueEl) return;
+
+    const displayMode = selectedDisplayMode();
+    const optionsEl = document.querySelector('.frequency-options');
+    const combineGroupEl = document.getElementById('combineModeGroup');
+    const hideCombine = displayMode === 'occurrence';
+    if (optionsEl && combineGroupEl) {
+        optionsEl.classList.toggle('combine-hidden', hideCombine);
+        combineGroupEl.hidden = hideCombine;
+    }
+    const combineMode = selectedCombineMode();
+    const selectedRate = combineMode === 'average' ? SAMPLE_AVERAGE_RATE : SAMPLE_SUM_RATE;
+
+    if (displayMode === 'occurrence') {
+        valueEl.textContent = `${SAMPLE_TOTAL_OCCURRENCES}`;
+    } else if (displayMode === 'per_million') {
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
+    } else if (displayMode === 'percent') {
+        valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% (${combineModeLabel(combineMode)})`;
+    } else {
+        valueEl.textContent = `#1 (${combineModeLabel(combineMode)})`;
+    }
+
+}
+
+function combineModeLabel(mode) {
+    return mode === 'average' ? 'per title' : 'total';
+}
+
+function formatPreviewNumber(value) {
+    const fixed = value.toFixed(2);
+    if (fixed.endsWith('.00')) {
+        return fixed.slice(0, -3);
+    }
+    if (fixed.endsWith('0')) {
+        return fixed.slice(0, -1);
+    }
+    return fixed;
 }
 
 function showResult() {
@@ -458,7 +657,7 @@ async function copyIndexUrl() {
     const status = document.getElementById('status');
     const url = updateIndexUrl();
     if (!url) {
-        setStatus(status, 'Generate a frequency URL first.', 'error');
+        setStatus(status, 'Generate a Yomitan URL first.', 'error');
         return;
     }
 
@@ -593,7 +792,7 @@ function validateManualId(input) {
             clearHint(hint, input);
             return true;
         }
-        setHint(hint, input, 'Expected a VNDB VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
+        setHint(hint, input, 'Choose a VNDB suggestion, or enter a VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
         return false;
     }
 
@@ -602,7 +801,7 @@ function validateManualId(input) {
         return true;
     }
 
-    setHint(hint, input, 'Expected a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
+    setHint(hint, input, 'Choose an AniList suggestion, or enter a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
     return false;
 }
 
@@ -615,8 +814,11 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => switchFrequencyTab(tab.dataset.tab));
+        tab.addEventListener('keydown', handleFrequencyTabKeydown);
     });
     addManualEntry();
     updateActionButtons();
+    updateShelfSummary();
+    updateFrequencyPreview();
     updateIndexUrl();
 });

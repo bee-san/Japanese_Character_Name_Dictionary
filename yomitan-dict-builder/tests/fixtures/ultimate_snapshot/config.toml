@@ -1,0 +1,17 @@
+[build]
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = true
+image_store_subdir = "image_store"
+
+[sources.fixture_demo]
+kind = "fixture_bundle"
+enabled = true
+input = "source_fixture.json"
+format = "json"
+license_class = "test_fixture"
+license_label = "Fixture Data"
+license_url = "https://example.invalid/fixture-license"

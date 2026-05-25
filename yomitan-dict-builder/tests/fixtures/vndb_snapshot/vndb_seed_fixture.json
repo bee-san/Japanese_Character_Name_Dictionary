@@ -1,0 +1,126 @@
+{
+  "records": [
+    {
+      "record_id": "vn:v17",
+      "record_uri": "https://vndb.org/v17",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "work",
+      "domain": "visual_novel",
+      "context_key": "vndb:v17",
+      "primary_name": {
+        "value": "シュタインズ・ゲート",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "aliases": [
+        {
+          "value": "Steins;Gate",
+          "locale": "en",
+          "name_type": "romanized_title"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "vndb",
+          "value": "v17",
+          "uri": "https://vndb.org/v17"
+        }
+      ],
+      "fields": {
+        "source_title": "Steins;Gate",
+        "source_alttitle": "シュタインズ・ゲート"
+      }
+    },
+    {
+      "record_id": "character:c11",
+      "record_uri": "https://vndb.org/c11",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "fictional_character",
+      "domain": "visual_novel",
+      "context_key": "vndb:v17",
+      "primary_name": {
+        "value": "岡部 倫太郎",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "aliases": [
+        {
+          "value": "Okabe Rintarou",
+          "locale": "en",
+          "name_type": "romanized"
+        },
+        {
+          "value": "Okarin",
+          "name_type": "alias"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "vndb",
+          "value": "c11",
+          "uri": "https://vndb.org/c11"
+        }
+      ],
+      "relationships": [
+        {
+          "predicate": "appears_in",
+          "target_source_name": "vndb",
+          "target_external_id": "v17",
+          "confidence": 1.0
+        },
+        {
+          "predicate": "voiced_by",
+          "target_source_name": "vndb",
+          "target_external_id": "s44",
+          "context_source_name": "vndb",
+          "context_external_id": "v17",
+          "confidence": 1.0
+        }
+      ],
+      "fields": {
+        "role": "main",
+        "description": "Self-proclaimed mad scientist.",
+        "traits": {
+          "personality": [
+            {
+              "name": "Eccentric",
+              "spoiler": 0
+            }
+          ],
+          "roles": [],
+          "engages_in": [],
+          "subject_of": []
+        }
+      }
+    },
+    {
+      "record_id": "staff:s44",
+      "record_uri": "https://vndb.org/s44",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "real_person",
+      "domain": "voice_actor",
+      "primary_name": {
+        "value": "宮野真守",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "aliases": [
+        {
+          "value": "Mamoru Miyano",
+          "locale": "en",
+          "name_type": "romanized"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "vndb",
+          "value": "s44",
+          "uri": "https://vndb.org/s44"
+        }
+      ],
+      "fields": {
+        "role": "voice_actor"
+      }
+    }
+  ]
+}

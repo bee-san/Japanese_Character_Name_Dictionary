@@ -1,0 +1,138 @@
+{
+  "records": [
+    {
+      "record_id": "work-anilist-9253",
+      "record_uri": "https://anilist.co/anime/9253",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "work",
+      "domain": "anime",
+      "context_key": "anilist:9253",
+      "primary_name": {
+        "value": "Steins;Gate",
+        "locale": "en",
+        "name_type": "primary"
+      },
+      "aliases": [
+        {
+          "value": "シュタインズ・ゲート",
+          "locale": "ja",
+          "name_type": "native"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "anilist",
+          "value": "9253",
+          "uri": "https://anilist.co/anime/9253"
+        }
+      ]
+    },
+    {
+      "record_id": "char-anilist-1",
+      "record_uri": "https://anilist.co/character/1",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "fictional_character",
+      "domain": "anime",
+      "context_key": "anilist:9253",
+      "primary_name": {
+        "value": "岡部倫太郎",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "aliases": [
+        {
+          "value": "オカリン",
+          "locale": "ja",
+          "name_type": "nickname"
+        }
+      ],
+      "readings": [
+        {
+          "value": "おかべりんたろう",
+          "for_name": "岡部倫太郎",
+          "reading_type": "kana"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "anilist",
+          "value": "1",
+          "uri": "https://anilist.co/character/1"
+        },
+        {
+          "source_name": "mal",
+          "value": "123",
+          "uri": "https://myanimelist.net/character/123"
+        }
+      ],
+      "relationships": [
+        {
+          "predicate": "appears_in",
+          "target_source_name": "anilist",
+          "target_external_id": "9253",
+          "confidence": 1.0
+        }
+      ],
+      "images": [
+        {
+          "url": "https://example.invalid/okabe.png",
+          "bytes_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS9sAAAAASUVORK5CYII=",
+          "ext": "png",
+          "rights_status": "shareable"
+        }
+      ]
+    },
+    {
+      "record_id": "char-mal-123",
+      "record_uri": "https://myanimelist.net/character/123",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "fictional_character",
+      "domain": "anime",
+      "context_key": "anilist:9253",
+      "primary_name": {
+        "value": "岡部 倫太郎",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "readings": [
+        {
+          "value": "オカベ リンタロウ",
+          "for_name": "岡部 倫太郎",
+          "reading_type": "kana"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "mal",
+          "value": "123",
+          "uri": "https://myanimelist.net/character/123"
+        }
+      ]
+    },
+    {
+      "record_id": "person-jmnedict-hanazawa",
+      "record_uri": "https://example.invalid/jmnedict/hanazawa",
+      "retrieved_at": "2026-04-08",
+      "entity_kind": "real_person",
+      "domain": "voice_actor",
+      "primary_name": {
+        "value": "花澤香菜",
+        "locale": "ja",
+        "name_type": "primary"
+      },
+      "readings": [
+        {
+          "value": "はなざわかな",
+          "for_name": "花澤香菜",
+          "reading_type": "kana"
+        }
+      ],
+      "external_ids": [
+        {
+          "source_name": "jmnedict",
+          "value": "hanazawa_kana"
+        }
+      ]
+    }
+  ]
+}

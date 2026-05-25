@@ -9,7 +9,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://characterdictionary.tokyo/">
     <meta property="og:title" content="Bee's Character Dictionary">
-    <meta property="og:description" content="Generate auto-updating character name dictionaries for Yomitan based on what you are currently playing/reading">
+    <meta property="og:description" content="Generate auto-updating character name dictionaries for Yomitan based on selected VNDB and AniList shelves">
     <meta property="og:image" content="https://characterdictionary.tokyo/static/main_image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -81,10 +81,58 @@
                     </div>
                     <p style="text-align: center; color: #f78fb3; font-size: 0.85em; margin-top: -12px; margin-bottom: 12px;">You can do both at the same time!</p>
 
+                    <div class="shelf-control">
+                        <button type="button" class="shelf-summary" id="shelfToggle" aria-expanded="false" aria-controls="shelfOptions" onclick="toggleShelfOptions()">
+                            <span>Include:</span>
+                            <span id="shelfSummary">Current titles</span>
+                            <span class="shelf-change-text">Change</span>
+                        </button>
+                        <div class="shelf-options" id="shelfOptions" hidden>
+                            <div class="shelf-group">
+                                <span class="shelf-group-label">VNDB</span>
+                                <label class="shelf-chip active">
+                                    <input type="checkbox" data-status-source="vndb" value="playing" data-summary-label="Current titles" checked onchange="onShelfStatusChange(this)">
+                                    Playing
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="vndb" value="finished" data-summary-label="Completed" onchange="onShelfStatusChange(this)">
+                                    Finished
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="vndb" value="wishlist" data-summary-label="Wishlist" onchange="onShelfStatusChange(this)">
+                                    Wishlist
+                                </label>
+                            </div>
+                            <div class="shelf-group">
+                                <span class="shelf-group-label">AniList</span>
+                                <label class="shelf-chip active">
+                                    <input type="checkbox" data-status-source="anilist" value="current" data-summary-label="Current titles" checked onchange="onShelfStatusChange(this)">
+                                    Watching/Reading
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="anilist" value="completed" data-summary-label="Completed" onchange="onShelfStatusChange(this)">
+                                    Completed
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="anilist" value="planning" data-summary-label="Planning" onchange="onShelfStatusChange(this)">
+                                    Planning
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="anilist" value="paused" data-summary-label="Paused" onchange="onShelfStatusChange(this)">
+                                    Paused
+                                </label>
+                                <label class="shelf-chip">
+                                    <input type="checkbox" data-status-source="anilist" value="dropped" data-summary-label="Dropped" onchange="onShelfStatusChange(this)">
+                                    Dropped
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <button id="fetchListsBtn" onclick="fetchLists()">Fetch Lists & Preview</button>
 
                     <div class="media-preview" id="mediaPreview">
-                        <div class="media-preview-header" id="mediaPreviewHeader">In-Progress Media (0)</div>
+                        <div class="media-preview-header" id="mediaPreviewHeader">Selected Titles (0)</div>
                         <div id="mediaPreviewList"></div>
                     </div>
                 </div>
@@ -217,9 +265,8 @@
         <div class="info-card">
             <h3>Auto-Updating Dictionary</h3>
             <p>
-                This dictionary is auto-updating! Every time you read a new visual novel, manga, or watch a new anime this dictionary will auto-update to include those characters.
-                When you finish a game or VN or manga, we will remove those characters
-                from the dictionary.
+                This dictionary is auto-updating! Every time your selected VNDB or AniList shelves change, the dictionary will auto-update to match those titles.
+                Use the default current titles for the classic focused dictionary, or include completed and planned titles when you want broader coverage.
             </p>
         </div>
 
@@ -299,6 +346,7 @@
 
     <div style="text-align: center; color: #ccc; font-size: 0.8em; margin-top: 8px;" id="buildInfo"></div>
 
+    <script src="/static/anilist-media-autocomplete.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

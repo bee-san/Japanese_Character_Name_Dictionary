@@ -1,0 +1,35 @@
+{
+  "head": {
+    "vars": [
+      "uri1",
+      "heading",
+      "yomi",
+      "variant",
+      "variant_yomi",
+      "entity_type",
+      "birth",
+      "death"
+    ]
+  },
+  "results": {
+    "bindings": [
+      {
+        "uri1": { "type": "uri", "value": "https://id.ndl.go.jp/auth/ndlna/00000001" },
+        "heading": { "type": "literal", "xml:lang": "ja", "value": "夏目漱石" },
+        "yomi": { "type": "literal", "xml:lang": "ja-Kana", "value": "ナツメ ソウセキ" },
+        "variant": { "type": "literal", "xml:lang": "ja", "value": "夏目金之助" },
+        "variant_yomi": { "type": "literal", "xml:lang": "ja-Kana", "value": "ナツメ キンノスケ" },
+        "entity_type": { "type": "literal", "value": "person" },
+        "birth": { "type": "literal", "value": "1867" },
+        "death": { "type": "literal", "value": "1916" }
+      },
+      {
+        "uri1": { "type": "uri", "value": "https://id.ndl.go.jp/auth/ndlna/00600065" },
+        "heading": { "type": "literal", "xml:lang": "ja", "value": "日本放送協会" },
+        "yomi": { "type": "literal", "xml:lang": "ja-Kana", "value": "ニッポン ホウソウ キョウカイ" },
+        "variant": { "type": "literal", "value": "NHK" },
+        "entity_type": { "type": "literal", "value": "organization" }
+      }
+    ]
+  }
+}

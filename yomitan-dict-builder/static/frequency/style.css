@@ -2,6 +2,139 @@
     margin-top: 4px;
 }
 
+.frequency-options {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.2fr);
+    gap: 12px;
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid #f7d2e2;
+    border-radius: 8px;
+    background: #fff9fc;
+}
+
+.frequency-options.combine-hidden {
+    grid-template-columns: minmax(180px, 360px);
+    justify-content: center;
+}
+
+.combine-option-group[hidden] {
+    display: none;
+}
+
+.frequency-option-group label,
+.option-label {
+    display: block;
+    margin-bottom: 8px;
+    color: #666;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.frequency-option-group select {
+    width: 100%;
+}
+
+.segmented-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.segmented-controls label {
+    margin: 0;
+}
+
+.segmented-controls input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.segmented-controls span {
+    display: flex;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px;
+    border: 1px solid #f2c2d5;
+    border-radius: 8px;
+    background: #fff;
+    color: #555;
+    font-size: 0.88em;
+    font-weight: 700;
+    text-align: center;
+}
+
+.segmented-controls input:checked + span {
+    border-color: #e84393;
+    background: #fff0f7;
+    color: #d63384;
+}
+
+.segmented-controls input:focus-visible + span {
+    outline: 3px solid rgba(232, 67, 147, 0.24);
+    outline-offset: 2px;
+}
+
+.frequency-example-card {
+    margin-top: 12px;
+}
+
+.frequency-preview-label {
+    margin: 0 0 8px;
+    color: #999;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.frequency-yomitan-card .yomitan-card-header {
+    background: #fafafa;
+}
+
+.frequency-yomitan-card .yomitan-term {
+    margin-bottom: 6px;
+}
+
+.frequency-tag {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 2px;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.frequency-tag-label,
+.frequency-tag-value {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 6px;
+    border: 1px solid #31b24a;
+    font-size: 0.78em;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.frequency-tag-label {
+    border-radius: 3px 0 0 3px;
+    background: #31b24a;
+    color: #fff;
+}
+
+.frequency-tag-value {
+    border-left: 0;
+    border-radius: 0 3px 3px 0;
+    background: #f7fff8;
+    color: #111;
+}
+
+.frequency-gloss {
+    color: #444;
+    font-size: 0.98em;
+    line-height: 1.45;
+}
+
 .result-panel,
 .unmatched-panel {
     display: none;
@@ -78,5 +211,9 @@
 @media (max-width: 850px) {
     .result-header {
         flex-direction: column;
+    }
+
+    .frequency-options {
+        grid-template-columns: 1fr;
     }
 }

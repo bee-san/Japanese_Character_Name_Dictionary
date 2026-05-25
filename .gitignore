@@ -3,6 +3,15 @@ yomitan-dict-builder/target/
 
 # Runtime cache (images, zips, api responses)
 yomitan-dict-builder/cache/
+yomitan-dict-builder/data/
+yomitan-dict-builder/export_available_names*.log
+.codex
+
+# Kaggle AniList raw dumps; only the compact static index is checked in.
+yomitan-dict-builder/data/input/anilist-anime-dataset*.zip
+yomitan-dict-builder/data/input/anilist_anime_data_complete.*
+yomitan-dict-builder/data/input/kaggle_dataset_description.md
+yomitan-dict-builder/data/input/anilist-media-index/
 
 # macOS
 .DS_Store

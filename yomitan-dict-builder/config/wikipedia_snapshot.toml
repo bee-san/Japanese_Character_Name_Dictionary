@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.wikipedia_dump]
+kind = "wikipedia_dump"
+enabled = true
+input = "../data/input/jawiki_titles_and_redirects.jsonl"
+format = "wikipedia_dump"
+license_class = "wikimedia_cc_by_sa"
+license_label = "Wikipedia extracted title dump"
+license_url = "https://dumps.wikimedia.org/"
+notes = "Offline JSON/JSONL rows extracted from official Wikipedia dumps. The loader is designed for page-title, redirect, category, and Wikidata-link exports rather than raw XML pages-articles dumps."

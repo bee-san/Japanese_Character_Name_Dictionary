@@ -1,0 +1,20 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.web_ndl_authorities]
+kind = "web_ndl_authorities"
+enabled = true
+input = "./web_ndl_authorities_sample.json"
+format = "web_ndl_authorities"
+license_class = "ndl_fixture"
+license_label = "Web NDL Authorities Fixture"
+license_url = "https://id.ndl.go.jp/information/sparql/"
+notes = "Small SPARQL JSON fixture for personal and corporate authority headings."

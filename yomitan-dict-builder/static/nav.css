@@ -1,5 +1,6 @@
 .site-nav {
   width: min(100%, 1120px);
+  max-width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -22,7 +23,7 @@
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  min-width: max-content;
+  min-width: 0;
   font-weight: 750;
 }
 
@@ -41,6 +42,7 @@
 .site-title {
   color: #e84393;
   font-size: 0.98rem;
+  overflow-wrap: anywhere;
 }
 
 .site-nav-links,

@@ -1,0 +1,18 @@
+[build]
+snapshot_version = "2026-04-08"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.kaggle_anilist_snapshot]
+kind = "kaggle_anilist_snapshot"
+enabled = true
+input = "./anilist_kaggle_sample.csv"
+format = "csv"
+license_class = "community_snapshot"
+license_label = "AniList Kaggle fixture"

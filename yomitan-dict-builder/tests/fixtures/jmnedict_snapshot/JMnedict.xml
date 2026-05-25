@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE JMnedict [
+<!ENTITY person "full name of a particular person">
+<!ENTITY fem "female given name">
+<!ENTITY organization "organization name">
+<!ENTITY place "place name">
+<!ENTITY surname "surname">
+<!ENTITY work "work of literature, art, film, etc.">
+]>
+<JMnedict>
+  <entry>
+    <ent_seq>1000001</ent_seq>
+    <k_ele>
+      <keb>花澤香菜</keb>
+    </k_ele>
+    <r_ele>
+      <reb>はなざわかな</reb>
+    </r_ele>
+    <trans>
+      <name_type>&person;</name_type>
+      <name_type>&fem;</name_type>
+      <trans_det>Kana Hanazawa</trans_det>
+    </trans>
+  </entry>
+  <entry>
+    <ent_seq>1000002</ent_seq>
+    <k_ele>
+      <keb>国際馬術連盟</keb>
+    </k_ele>
+    <r_ele>
+      <reb>こくさいばじゅつれんめい</reb>
+    </r_ele>
+    <trans>
+      <name_type>&organization;</name_type>
+      <trans_det>Federation Equestre Internationale</trans_det>
+    </trans>
+  </entry>
+  <entry>
+    <ent_seq>1000003</ent_seq>
+    <k_ele>
+      <keb>南島</keb>
+    </k_ele>
+    <r_ele>
+      <reb>みなみじま</reb>
+    </r_ele>
+    <trans>
+      <name_type>&place;</name_type>
+      <trans_det>Minamijima</trans_det>
+    </trans>
+    <trans>
+      <name_type>&surname;</name_type>
+      <trans_det>Minamijima</trans_det>
+    </trans>
+  </entry>
+</JMnedict>

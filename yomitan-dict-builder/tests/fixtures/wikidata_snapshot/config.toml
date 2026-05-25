@@ -1,0 +1,19 @@
+[build]
+snapshot_version = "2026-04-09"
+fail_on_policy_error = true
+fail_on_no_enabled_sources = true
+fail_on_missing_input = true
+
+[image_policy]
+mirror_locally = false
+fetch_remote = false
+image_store_subdir = "image_store"
+
+[sources.wikidata_dump]
+kind = "wikidata_dump"
+enabled = true
+input = "./wikidata_sample.jsonl"
+format = "wikidata_dump"
+license_class = "wikidata_fixture"
+license_label = "Wikidata Fixture"
+license_url = "https://www.wikidata.org/wiki/Wikidata:Database_download"

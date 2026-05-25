@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Bee's Frequency Dictionary</title>
-    <meta name="description" content="Generate an auto-updating Yomitan frequency dictionary from current VNDB and AniList media.">
+    <meta name="description" content="Generate an auto-updating Yomitan dictionary that shows how common words and names are in selected VNDB and AniList titles.">
     <meta name="theme-color" content="#e84393">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
@@ -33,17 +33,17 @@
     </nav>
 
     <h1 class="dictionary-title">Bee's <span>Frequency</span> Dictionary</h1>
-    <p class="subtitle" style="max-width: 700px;">Generate an auto-updating Yomitan frequency dictionary from the VNDB/AniList media you are consuming.</p>
+    <p class="subtitle" style="max-width: 700px;">Make Yomitan show how common a word or name is in the VNDB/AniList titles you are reading and watching.</p>
 
     <div class="page-layout">
         <div class="main-col">
         <div class="container">
-            <div class="tabs">
-                <div class="tab active" data-tab="username" role="tab" aria-selected="true">From VNDB / AniList Username</div>
-                <div class="tab" data-tab="manual" role="tab" aria-selected="false">From VNDB / AniList Media ID</div>
+            <div class="tabs" role="tablist" aria-label="Choose titles by profile or manually">
+                <button type="button" class="tab active" id="tab-button-username" data-tab="username" role="tab" aria-selected="true" aria-controls="tab-username" tabindex="0">Use my VNDB / AniList profile</button>
+                <button type="button" class="tab" id="tab-button-manual" data-tab="manual" role="tab" aria-selected="false" aria-controls="tab-manual" tabindex="-1">Pick titles manually</button>
             </div>
 
-            <div class="tab-content active" id="tab-username" role="tabpanel">
+            <div class="tab-content active" id="tab-username" role="tabpanel" aria-labelledby="tab-button-username">
                 <div class="form-group inline">
                     <div>
                         <label for="vndbUser">VNDB ID <span class="label-hint">(optional)</span></label>
@@ -58,19 +58,115 @@
                 </div>
                 <p style="text-align: center; color: #f78fb3; font-size: 0.85em; margin-top: -12px; margin-bottom: 12px;">You can do both at the same time!</p>
 
-                <button type="button" id="fetchListsBtn" onclick="fetchFrequencyLists()">Fetch Lists &amp; Preview</button>
+                <div class="shelf-control">
+                    <button type="button" class="shelf-summary" id="shelfToggle" aria-expanded="false" aria-controls="shelfOptions" onclick="toggleShelfOptions()">
+                        <span>Include:</span>
+                        <span id="shelfSummary">Current titles</span>
+                        <span class="shelf-change-text">Change</span>
+                    </button>
+                    <div class="shelf-options" id="shelfOptions" hidden>
+                        <div class="shelf-group">
+                            <span class="shelf-group-label">VNDB</span>
+                            <label class="shelf-chip active">
+                                <input type="checkbox" data-status-source="vndb" value="playing" data-summary-label="Current titles" checked onchange="onShelfStatusChange(this)">
+                                Playing
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="vndb" value="finished" data-summary-label="Completed" onchange="onShelfStatusChange(this)">
+                                Finished
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="vndb" value="wishlist" data-summary-label="Wishlist" onchange="onShelfStatusChange(this)">
+                                Wishlist
+                            </label>
+                        </div>
+                        <div class="shelf-group">
+                            <span class="shelf-group-label">AniList</span>
+                            <label class="shelf-chip active">
+                                <input type="checkbox" data-status-source="anilist" value="current" data-summary-label="Current titles" checked onchange="onShelfStatusChange(this)">
+                                Watching/Reading
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="anilist" value="completed" data-summary-label="Completed" onchange="onShelfStatusChange(this)">
+                                Completed
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="anilist" value="planning" data-summary-label="Planning" onchange="onShelfStatusChange(this)">
+                                Planning
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="anilist" value="paused" data-summary-label="Paused" onchange="onShelfStatusChange(this)">
+                                Paused
+                            </label>
+                            <label class="shelf-chip">
+                                <input type="checkbox" data-status-source="anilist" value="dropped" data-summary-label="Dropped" onchange="onShelfStatusChange(this)">
+                                Dropped
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="button" id="fetchListsBtn" onclick="fetchFrequencyLists()">Find My Titles</button>
             </div>
 
-            <div class="tab-content" id="tab-manual" role="tabpanel">
+            <div class="tab-content" id="tab-manual" role="tabpanel" aria-labelledby="tab-button-manual" hidden>
                 <div id="manualEntries"></div>
                 <button type="button" id="addEntryBtn" onclick="addManualEntry()">+ Add Another Entry</button>
-                <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Media List</button>
+                <button type="button" id="previewManualBtn" class="manual-preview-btn" onclick="fetchFrequencyLists()">Preview Selected Titles</button>
             </div>
 
-            <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Frequency Dictionary</button>
+            <div class="frequency-example-card" aria-live="polite">
+                <p class="frequency-preview-label">Yomitan preview</p>
+                <div class="yomitan-preview-section">
+                    <div class="yomitan-card frequency-yomitan-card">
+                        <div class="yomitan-card-header">
+                            <span class="yomitan-ruby">あき</span>
+                            <div class="yomitan-term">秋</div>
+                            <div class="yomitan-tags">
+                                <span class="yomitan-tag tag-name">noun</span>
+                                <span class="frequency-tag">
+                                    <span class="frequency-tag-label">Bee's Frequency Dictionary</span>
+                                    <span class="frequency-tag-value" id="frequencyPreviewValue">35</span>
+                                </span>
+                                <span class="yomitan-tag tag-dict">Jitendex.org</span>
+                            </div>
+                        </div>
+                        <div class="yomitan-card-body">
+                            <div class="frequency-gloss">autumn; fall</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="frequency-options" aria-label="Yomitan number options">
+                <div class="frequency-option-group">
+                    <label for="displayMode">Number shown in Yomitan</label>
+                    <select id="displayMode" onchange="updateFrequencyPreview(); updateIndexUrl();">
+                        <option value="occurrence">Occurrences</option>
+                        <option value="per_million">Per 1M words</option>
+                        <option value="percent">Percent</option>
+                        <option value="rank">Popularity rank</option>
+                    </select>
+                </div>
+                <div class="frequency-option-group combine-option-group" id="combineModeGroup">
+                    <div class="option-label">Combine multiple titles</div>
+                    <div class="segmented-controls">
+                        <label>
+                            <input type="radio" name="combineMode" value="average" checked onchange="updateFrequencyPreview(); updateIndexUrl();">
+                            <span>Average per title</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="combineMode" value="sum" onchange="updateFrequencyPreview(); updateIndexUrl();">
+                            <span>Add totals</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" id="generateBtn" style="margin-top: 16px;" onclick="generateFrequencyDictionary()">Generate Yomitan Dictionary</button>
 
             <div class="progress-bar-container" id="progressContainer">
-                <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Frequency dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+                <div class="progress-bar" id="progressBar" style="width: 0%" role="progressbar" aria-label="Yomitan dictionary generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
             </div>
 
             <div class="status" id="status" role="status" aria-live="polite"></div>
@@ -87,7 +183,7 @@
             </div>
 
             <div class="media-preview" id="mediaPreview">
-                <div class="media-preview-header" id="mediaPreviewHeader">Consumed Media (0)</div>
+                <div class="media-preview-header" id="mediaPreviewHeader">Selected Titles (0)</div>
                 <div id="mediaPreviewList"></div>
             </div>
 
@@ -99,6 +195,7 @@
         </div>
     </div>
 
+    <script src="/static/anilist-media-autocomplete.js"></script>
     <script src="/static/frequency/app.js"></script>
 </body>
 </html>

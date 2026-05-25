@@ -9,6 +9,19 @@ const settings = {
     seiyuu: true,
 };
 
+const DEFAULT_VNDB_STATUSES = ['playing'];
+const DEFAULT_ANILIST_STATUSES = ['current'];
+const STATUS_LABELS = {
+    playing: 'Current',
+    current: 'Current',
+    finished: 'Completed',
+    completed: 'Completed',
+    wishlist: 'Wishlist',
+    planning: 'Planning',
+    paused: 'Paused',
+    dropped: 'Dropped',
+};
+
 function toggleSetting(key) {
     settings[key] = !settings[key];
 
@@ -103,6 +116,55 @@ function settingsParams() {
     return parts.join('&');
 }
 
+function selectedShelfStatuses(source) {
+    return Array.from(document.querySelectorAll(`input[data-status-source="${source}"]:checked`))
+        .map(input => input.value);
+}
+
+function appendShelfStatusParts(parts) {
+    const vndbStatuses = selectedShelfStatuses('vndb');
+    const anilistStatuses = selectedShelfStatuses('anilist');
+    if (vndbStatuses.join(',') !== DEFAULT_VNDB_STATUSES.join(',')) {
+        parts.push('vndb_status=' + encodeURIComponent(vndbStatuses.join(',')));
+    }
+    if (anilistStatuses.join(',') !== DEFAULT_ANILIST_STATUSES.join(',')) {
+        parts.push('anilist_status=' + encodeURIComponent(anilistStatuses.join(',')));
+    }
+}
+
+function toggleShelfOptions() {
+    const options = document.getElementById('shelfOptions');
+    const toggle = document.getElementById('shelfToggle');
+    const expanded = options.hidden;
+    options.hidden = !expanded;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function onShelfStatusChange(input) {
+    const source = input.dataset.statusSource;
+    const selected = selectedShelfStatuses(source);
+    if (selected.length === 0) {
+        input.checked = true;
+    }
+    input.closest('.shelf-chip')?.classList.toggle('active', input.checked);
+    updateShelfSummary();
+}
+
+function updateShelfSummary() {
+    document.querySelectorAll('.shelf-chip').forEach(chip => {
+        const input = chip.querySelector('input');
+        chip.classList.toggle('active', Boolean(input?.checked));
+    });
+
+    const labels = Array.from(document.querySelectorAll('input[data-status-source]:checked'))
+        .map(input => input.dataset.summaryLabel || statusLabel(input.value))
+        .filter((label, index, all) => all.indexOf(label) === index);
+    const summary = labels.length <= 2
+        ? labels.join(', ')
+        : `${labels.slice(0, 2).join(', ')} +${labels.length - 2}`;
+    document.getElementById('shelfSummary').textContent = summary || 'Current titles';
+}
+
 // === Fetch and display build timestamp ===
 fetch('/api/build-info')
     .then(r => r.json())
@@ -126,6 +188,13 @@ document.querySelectorAll('.tab').forEach(tab => {
 // === Manual tab: dynamic entry rows ===
 let manualEntryCounter = 0;
 
+function attachManualMediaAutocomplete(row) {
+    if (!window.BeeMediaAutocomplete) return;
+    window.BeeMediaAutocomplete.attach(row, {
+        validate: validateManualId,
+    });
+}
+
 function addManualEntry() {
     const container = document.getElementById('manualEntries');
     const row = document.createElement('div');
@@ -148,13 +217,15 @@ function addManualEntry() {
             </select>
         </div>
         <div class="entry-id">
-            <label>Media ID</label>
-            <input type="text" data-field="id" placeholder="e.g., v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this)">
+            <label>Title or ID</label>
+            <input type="text" data-field="id" placeholder="e.g., Steins;Gate, v17, 9253, or https://anilist.co/anime/9253" oninput="validateManualId(this)">
+            <div class="input-hint"></div>
         </div>
         <button type="button" class="remove-entry-btn" onclick="removeManualEntry(this)" title="Remove entry">&times;</button>
     `;
 
     container.appendChild(row);
+    attachManualMediaAutocomplete(row);
     updateRemoveButtons();
 }
 
@@ -171,6 +242,9 @@ function onEntrySourceChange(select) {
     // Re-validate the media ID for the new source
     const idInput = row.querySelector('[data-field="id"]');
     if (idInput && idInput.value.trim()) validateManualId(idInput);
+    if (window.BeeMediaAutocomplete) {
+        window.BeeMediaAutocomplete.refresh(row);
+    }
 }
 
 function updateRemoveButtons() {
@@ -249,6 +323,7 @@ async function fetchLists() {
         const params = [];
         if (vndbUser) params.push('vndb_user=' + encodeURIComponent(vndbUser));
         if (anilistUser) params.push('anilist_user=' + encodeURIComponent(anilistUser));
+        appendShelfStatusParts(params);
         url += params.join('&');
 
         const response = await fetch(url);
@@ -261,14 +336,14 @@ async function fetchLists() {
         const entries = data.entries || [];
 
         if (entries.length === 0) {
-            status.textContent = 'No in-progress media found. Make sure you have titles marked as "Playing" (VNDB) or "Watching/Reading" (AniList).';
+            status.textContent = 'No selected titles found. Try including another status or check that your profile lists are public.';
             status.className = 'status show error';
             return;
         }
 
         // Show preview
         const header = document.getElementById('mediaPreviewHeader');
-        header.textContent = `In-Progress Media (${entries.length})`;
+        header.textContent = `Selected Titles (${entries.length})`;
 
         const list = document.getElementById('mediaPreviewList');
         list.innerHTML = '';
@@ -287,13 +362,14 @@ async function fetchLists() {
                     ? `<span class="romaji">${escapeHtml(entry.title_romaji)}</span>`
                     : ''}
                 <span class="badge ${badgeClass}">${badgeText}</span>
+                ${entry.status ? `<span class="shelf-label">List: ${escapeHtml(statusLabel(entry.status))}</span>` : ''}
             `;
             list.appendChild(item);
         });
 
         preview.classList.add('show');
 
-        let msg = `Found ${entries.length} in-progress title${entries.length !== 1 ? 's' : ''}.`;
+        let msg = `Found ${entries.length} selected title${entries.length !== 1 ? 's' : ''}.`;
         if (data.errors && data.errors.length > 0) {
             msg += ` (Warnings: ${data.errors.join('; ')})`;
         }
@@ -341,6 +417,7 @@ function generateFromUsername() {
     const params = [];
     if (vndbUser) params.push('vndb_user=' + encodeURIComponent(vndbUser));
     if (anilistUser) params.push('anilist_user=' + encodeURIComponent(anilistUser));
+    appendShelfStatusParts(params);
     const sp = settingsParams();
     if (sp) params.push(sp);
     url += params.join('&');
@@ -502,6 +579,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function statusLabel(status) {
+    return STATUS_LABELS[String(status || '').toLowerCase()] || 'Current';
+}
+
 // === Input Validation ===
 
 // Patterns for detecting media URLs/IDs pasted into the wrong field
@@ -639,7 +720,7 @@ function validateManualId(input) {
             clearHint(hint, input);
             return true;
         }
-        setHint(hint, input, 'Expected a VNDB VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
+        setHint(hint, input, 'Choose a VNDB suggestion, or enter a VN ID like <b>v17</b>, <b>17</b>, or a vndb.org URL.', 'error');
         return false;
     }
 
@@ -648,7 +729,7 @@ function validateManualId(input) {
             clearHint(hint, input);
             return true;
         }
-        setHint(hint, input, 'Expected a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
+        setHint(hint, input, 'Choose an AniList suggestion, or enter a numeric AniList ID like <b>9253</b> or an anilist.co URL.', 'error');
         return false;
     }
 
@@ -660,4 +741,5 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     updatePreviewCard();
     addManualEntry();
+    updateShelfSummary();
 });

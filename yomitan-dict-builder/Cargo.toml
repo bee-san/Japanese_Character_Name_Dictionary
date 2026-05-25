@@ -3,22 +3,34 @@ name = "yomitan-dict-builder"
 version = "0.1.0"
 edition = "2021"
 default-run = "yomitan-dict-builder"
-autolib = false
 
 [dependencies]
+anyhow = "1"
+arrow-array = "53"
+arrow-schema = "53"
 axum = "0.7"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+csv = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate", "time"] }
-tower-http = { version = "0.5", features = ["fs", "cors"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "compression-br", "compression-gzip"] }
 rand = "0.8"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 futures = "0.3"
+flate2 = "1"
+parquet = "53"
+quick-xml = "0.38"
+tar = "0.4"
+toml = "0.8"
+unicode-normalization = "0.1"
+zstd = "0.13"
 
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
