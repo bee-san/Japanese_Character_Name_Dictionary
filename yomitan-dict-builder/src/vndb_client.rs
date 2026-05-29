@@ -798,8 +798,8 @@ impl VndbClient {
             }
         });
 
-        // Aliases: array of strings
-        let aliases = data["aliases"]
+        // Explicitly annotate the vector type so Rust can infer the collection target.
+        let aliases: Vec<String> = data["aliases"]
             .as_array()
             .map(|arr| {
                 arr.iter()
@@ -809,10 +809,18 @@ impl VndbClient {
             })
             .unwrap_or_default();
 
+        // If the original name is empty or romanized, prefer a Japanese alias when available.
+        let mut name_original = data["original"].as_str().unwrap_or("").to_string();
+        if !is_japanese(&name_original) {
+            if let Some(jp_alias) = aliases.iter().find(|a| is_japanese(a)) {
+                name_original = jp_alias.clone();
+            }
+        }
+
         Some(Character {
             id: data["id"].as_str().unwrap_or("").to_string(),
             name: data["name"].as_str().unwrap_or("").to_string(),
-            name_original: data["original"].as_str().unwrap_or("").to_string(),
+            name_original,
             role,
             source: "vndb".to_string(),
             sex,
@@ -1166,4 +1174,13 @@ mod tests {
     fn test_normalize_id_zero() {
         assert_eq!(VndbClient::normalize_id("0"), "v0");
     }
+}
+
+fn is_japanese(text: &str) -> bool {
+    text.chars().any(|c| {
+        let cp = c as u32;
+        (0x3040..=0x309F).contains(&cp)
+            || (0x30A0..=0x30FF).contains(&cp)
+            || (0x4E00..=0x9FFF).contains(&cp)
+    })
 }
