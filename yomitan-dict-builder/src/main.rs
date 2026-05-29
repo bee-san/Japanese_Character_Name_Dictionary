@@ -1926,9 +1926,10 @@ async fn generate_frequency_from_media_entries(
 
     if deck_ids.is_empty() {
         return if resolve_errors.is_empty() {
+            let unmatched_summary = unmatched_media_summary(&unmatched);
             Err(format!(
-                "{} No Jiten occurrence-count decks matched the selected titles",
-                INVALID_INPUT_PREFIX
+                "{} No Jiten occurrence-count decks matched the selected titles{}",
+                INVALID_INPUT_PREFIX, unmatched_summary
             ))
         } else {
             Err(combine_service_errors(&resolve_errors))
@@ -2237,6 +2238,24 @@ async fn send_frequency_warning(
             .event("warning")
             .data(payload.to_string())))
         .await;
+}
+
+fn unmatched_media_summary(unmatched: &[FrequencyUnmatchedMedia]) -> String {
+    if unmatched.is_empty() {
+        return String::new();
+    }
+
+    let details = unmatched
+        .iter()
+        .take(5)
+        .map(|item| format!("{}:{} ({})", item.media.source, item.media.id, item.reason))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if unmatched.len() > 5 {
+        format!("; unmatched: {}, and {} more", details, unmatched.len() - 5)
+    } else {
+        format!("; unmatched: {}", details)
+    }
 }
 
 fn entry_display_title(entry: &UserMediaEntry) -> &str {
@@ -3592,7 +3611,11 @@ async fn generate_anilist_dict(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{extract::Path, routing::post, Json};
+    use std::io::{Cursor, Read, Write};
     use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+    use zip::{ZipArchive, ZipWriter};
 
     fn make_test_state() -> (AppState, TempDir) {
         let dir = tempfile::tempdir().unwrap();
@@ -3620,6 +3643,93 @@ mod tests {
             },
             dir,
         )
+    }
+
+    fn make_test_state_with_jiten_base_url(base_url: String) -> (AppState, TempDir) {
+        let (mut state, dir) = make_test_state();
+        state.jiten_client = JitenClient::with_base_url(state.http_client.clone(), base_url);
+        (state, dir)
+    }
+
+    fn make_frequency_fixture_zip(entries: &str) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut zip = ZipWriter::new(cursor);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("index.json", options).unwrap();
+        zip.write_all(br#"{"title":"fixture"}"#).unwrap();
+        zip.start_file("term_meta_bank_1.json", options).unwrap();
+        zip.write_all(entries.as_bytes()).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    async fn spawn_jiten_frequency_fixture_server() -> String {
+        spawn_jiten_frequency_fixture_server_with_anilist_deck(false).await
+    }
+
+    async fn spawn_jiten_frequency_fixture_server_with_anilist_deck(
+        include_anilist_deck: bool,
+    ) -> String {
+        let vndb_zip = make_frequency_fixture_zip(
+            r#"[["岡部","freq",{"reading":"おかべ","frequency":{"value":10,"displayValue":"10"}}]]"#,
+        );
+        let anilist_zip = make_frequency_fixture_zip(
+            r#"[["牧瀬","freq",{"reading":"まきせ","frequency":{"value":7,"displayValue":"7"}}]]"#,
+        );
+        let app = Router::new()
+            .route(
+                "/api/media-deck/by-link-id/:link_type/:id",
+                get(
+                    move |Path((link_type, id)): Path<(i32, String)>| async move {
+                        let ids = match (link_type, id.as_str()) {
+                            (2, "v17") => vec![101],
+                            (4, "9253") if include_anilist_deck => vec![102],
+                            (4, "9253") => Vec::new(),
+                            _ => Vec::new(),
+                        };
+                        Json(ids)
+                    },
+                ),
+            )
+            .route(
+                "/api/media-deck/:deck_id/download",
+                post(move |Path(deck_id): Path<i32>| {
+                    let zip = match deck_id {
+                        101 => vndb_zip.clone(),
+                        102 => anilist_zip.clone(),
+                        _ => Vec::new(),
+                    };
+                    async move {
+                        if zip.is_empty() {
+                            (
+                                StatusCode::NOT_FOUND,
+                                [("content-type", "application/zip")],
+                                zip,
+                            )
+                        } else {
+                            (StatusCode::OK, [("content-type", "application/zip")], zip)
+                        }
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{}", addr)
+    }
+
+    fn term_meta_entries(zip_bytes: &[u8]) -> Vec<serde_json::Value> {
+        let cursor = Cursor::new(zip_bytes.to_vec());
+        let mut archive = ZipArchive::new(cursor).unwrap();
+        let mut raw = String::new();
+        archive
+            .by_name("term_meta_bank_1.json")
+            .unwrap()
+            .read_to_string(&mut raw)
+            .unwrap();
+        serde_json::from_str(&raw).unwrap()
     }
 
     fn make_cached_character_data() -> models::CharacterData {
@@ -3946,6 +4056,112 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("/api/yomitan-frequency-index"));
+    }
+
+    #[tokio::test]
+    async fn test_frequency_generation_uses_normalized_manual_entries_for_jiten_lookup() {
+        let base_url = spawn_jiten_frequency_fixture_server().await;
+        let (state, _dir) = make_test_state_with_jiten_base_url(base_url);
+        let entries = parse_frequency_entries_json(
+            r#"[{"source":"vndb","id":"https://vndb.org/v17"},{"source":"anilist","id":"https://anilist.co/anime/9253/SteinsGate","media_type":"ANIME"}]"#,
+        )
+        .unwrap();
+
+        let result = generate_frequency_from_media_entries(
+            "test-request",
+            entries,
+            &FrequencyQuery::default(),
+            None,
+            None,
+            &state,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.matched_count, 1);
+        assert_eq!(result.unmatched.len(), 1);
+        assert_eq!(result.unmatched[0].media.source, "anilist");
+        assert_eq!(result.unmatched[0].media.id, "9253");
+        assert_eq!(
+            result.unmatched[0].reason,
+            "No matching Jiten frequency deck found"
+        );
+        let entries = term_meta_entries(&result.zip_bytes);
+        assert_eq!(entries[0][0], "岡部");
+        assert_eq!(entries[0][2]["frequency"]["value"], 10);
+    }
+
+    #[tokio::test]
+    async fn test_frequency_generation_uses_media_list_entries_for_jiten_lookup() {
+        let base_url = spawn_jiten_frequency_fixture_server_with_anilist_deck(true).await;
+        let (state, _dir) = make_test_state_with_jiten_base_url(base_url);
+        let entries = vec![
+            UserMediaEntry {
+                id: "v17".to_string(),
+                title: "Steins;Gate".to_string(),
+                title_romaji: "Steins;Gate".to_string(),
+                source: "vndb".to_string(),
+                media_type: "vn".to_string(),
+                status: "playing".to_string(),
+            },
+            UserMediaEntry {
+                id: "9253".to_string(),
+                title: "STEINS;GATE".to_string(),
+                title_romaji: "Steins;Gate".to_string(),
+                source: "anilist".to_string(),
+                media_type: "anime".to_string(),
+                status: "current".to_string(),
+            },
+        ];
+
+        let result = generate_frequency_from_media_entries(
+            "test-request",
+            entries,
+            &FrequencyQuery::default(),
+            None,
+            None,
+            &state,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.matched_count, 2);
+        assert!(result.unmatched.is_empty());
+        let entries = term_meta_entries(&result.zip_bytes);
+        assert!(entries.iter().any(|entry| entry[0] == "岡部"));
+        assert!(entries.iter().any(|entry| entry[0] == "牧瀬"));
+    }
+
+    #[tokio::test]
+    async fn test_frequency_generation_names_unmatched_media_when_no_decks_match() {
+        let base_url = spawn_jiten_frequency_fixture_server().await;
+        let (state, _dir) = make_test_state_with_jiten_base_url(base_url);
+        let entries = parse_frequency_entries_json(
+            r#"[{"source":"anilist","id":"https://anilist.co/anime/9253/SteinsGate","media_type":"ANIME"}]"#,
+        )
+        .unwrap();
+
+        let error = match generate_frequency_from_media_entries(
+            "test-request",
+            entries,
+            &FrequencyQuery::default(),
+            None,
+            None,
+            &state,
+            None,
+        )
+        .await
+        {
+            Ok(_) => panic!("expected frequency generation to fail when no decks match"),
+            Err(error) => error,
+        };
+
+        let public = public_error_message(&error);
+        assert!(public.contains("No Jiten occurrence-count decks matched"));
+        assert!(public.contains("9253"));
+        assert!(public.contains("No matching Jiten frequency deck found"));
     }
 
     #[test]
