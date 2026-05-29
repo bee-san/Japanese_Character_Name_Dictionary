@@ -322,7 +322,7 @@ impl FrequencyDictBuilder {
                 let rate = self.frequency_rate(aggregate, combine_mode) * 1_000_000.0;
                 format!(
                     "{} / 1M ({})",
-                    format_decimal(rate),
+                    format_whole_number(rate),
                     combine_mode.display_label()
                 )
             }
@@ -403,6 +403,10 @@ impl FrequencyCombineMode {
             Self::Sum => "sum",
         }
     }
+}
+
+fn format_whole_number(value: f64) -> String {
+    format!("{:.0}", value)
 }
 
 fn format_decimal(value: f64) -> String {
@@ -741,10 +745,21 @@ mod tests {
             FrequencyCombineMode::Average,
         );
 
-        assert_eq!(
-            display_value_for(&entries, "target"),
-            "116666.67 / 1M (avg)"
+        assert_eq!(display_value_for(&entries, "target"), "116667 / 1M (avg)");
+    }
+
+    #[test]
+    fn per_million_display_rounds_to_whole_number() {
+        let mut builder = FrequencyDictBuilder::new(None, None);
+        builder.add_entries_for_deck(1, &[entry("target", None, 1), entry("filler", None, 749)]);
+
+        let entries = exported_term_meta(
+            &builder,
+            FrequencyDisplayMode::PerMillion,
+            FrequencyCombineMode::Average,
         );
+
+        assert_eq!(display_value_for(&entries, "target"), "1333 / 1M (avg)");
     }
 
     #[test]
@@ -760,7 +775,7 @@ mod tests {
             FrequencyCombineMode::Sum,
         );
 
-        assert_eq!(display_value_for(&entries, "target"), "29166.67 / 1M (sum)");
+        assert_eq!(display_value_for(&entries, "target"), "29167 / 1M (sum)");
     }
 
     #[test]

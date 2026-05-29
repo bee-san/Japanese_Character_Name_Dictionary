@@ -604,7 +604,7 @@ function updateFrequencyPreview() {
     if (displayMode === 'occurrence') {
         valueEl.textContent = `${SAMPLE_TOTAL_OCCURRENCES}`;
     } else if (displayMode === 'per_million') {
-        valueEl.textContent = `${formatPreviewNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
+        valueEl.textContent = `${formatPreviewWholeNumber(selectedRate * 1000000)} / 1M (${combineModeLabel(combineMode)})`;
     } else if (displayMode === 'percent') {
         valueEl.textContent = `${formatPreviewNumber(selectedRate * 100)}% (${combineModeLabel(combineMode)})`;
     } else {
@@ -615,6 +615,10 @@ function updateFrequencyPreview() {
 
 function combineModeLabel(mode) {
     return mode === 'average' ? 'per title' : 'total';
+}
+
+function formatPreviewWholeNumber(value) {
+    return value.toFixed(0);
 }
 
 function formatPreviewNumber(value) {
