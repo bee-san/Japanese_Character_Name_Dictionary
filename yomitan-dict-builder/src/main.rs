@@ -294,13 +294,12 @@ impl MediaGenerationFailure {
         }
     }
 
-    fn preview_label(&self) -> String {
-        let title = if self.title.trim().is_empty() {
-            "<untitled>"
-        } else {
-            self.title.trim()
-        };
-        format!("{}:{}:{}", self.source, self.id, title)
+    fn redacted_preview_label(&self) -> String {
+        // Media IDs and titles can reveal a user's private watch/play list when
+        // generation is driven from VNDB/AniList usernames. Keep only the source
+        // dimension in aggregate logs; per-request details remain in the
+        // user-facing error path without writing personal list contents to logs.
+        format!("{}:<redacted>", self.source)
     }
 }
 
@@ -726,7 +725,7 @@ fn failed_media_preview(media_failures: &[MediaGenerationFailure]) -> Vec<String
     media_failures
         .iter()
         .take(5)
-        .map(MediaGenerationFailure::preview_label)
+        .map(MediaGenerationFailure::redacted_preview_label)
         .collect()
 }
 
@@ -4024,8 +4023,10 @@ mod tests {
         assert_eq!(request_id, "req-123");
         assert_eq!(failed_media_count, 6);
         assert_eq!(preview.len(), 5);
-        assert_eq!(preview[0], "vndb:v0:Title 0");
-        assert_eq!(preview[4], "vndb:v4:Title 4");
+        assert_eq!(preview[0], "vndb:<redacted>");
+        assert_eq!(preview[4], "vndb:<redacted>");
+        assert!(!preview.iter().any(|item| item.contains("Title")));
+        assert!(!preview.iter().any(|item| item.contains("v0")));
     }
 
     #[test]

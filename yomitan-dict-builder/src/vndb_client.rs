@@ -432,8 +432,6 @@ impl VndbClient {
                 Ok(id) => id,
                 Err(error) => {
                     warn!(
-                        raw_id = raw_id,
-                        title = %title,
                         error = %error,
                         "Skipping VNDB list entry with invalid media ID"
                     );
