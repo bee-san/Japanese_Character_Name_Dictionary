@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tracing::warn;
 
+use crate::kana::contains_japanese;
 use crate::models::*;
 
 /// Maximum number of retries on HTTP 429 (rate limited).
@@ -811,8 +812,8 @@ impl VndbClient {
 
         // If the original name is empty or romanized, prefer a Japanese alias when available.
         let mut name_original = data["original"].as_str().unwrap_or("").to_string();
-        if !is_japanese(&name_original) {
-            if let Some(jp_alias) = aliases.iter().find(|a| is_japanese(a)) {
+        if !contains_japanese(&name_original) {
+            if let Some(jp_alias) = aliases.iter().find(|a| contains_japanese(a)) {
                 name_original = jp_alias.clone();
             }
         }
@@ -1041,8 +1042,48 @@ mod tests {
         let data = serde_json::json!({"items": []});
 
         let error = VndbClient::parse_vn_search_results(&data).unwrap_err();
-
         assert!(error.contains("Invalid VNDB VN search response"));
+    }
+
+    #[test]
+    fn test_process_character_uses_japanese_alias_when_original_is_romanized() {
+        let client = VndbClient::with_client(Client::new());
+        let data = serde_json::json!({
+            "id": "c1",
+            "name": "Shizune Hakamichi",
+            "original": "Shizune Hakamichi",
+            "aliases": ["Hakamichi Shizune", "羽加道 静音"],
+            "vns": [{"id": "v945", "role": "main"}],
+            "sex": ["f"],
+            "traits": [],
+            "image": {"url": "https://example.invalid/shizune.jpg"}
+        });
+
+        let character = client.process_character(&data, "v945").unwrap();
+
+        assert_eq!(character.name_original, "羽加道 静音");
+        assert_eq!(character.aliases, vec!["Hakamichi Shizune", "羽加道 静音"]);
+        assert_eq!(character.role, "main");
+    }
+
+    #[test]
+    fn test_process_character_alias_detection_matches_kana_japanese_ranges() {
+        let client = VndbClient::with_client(Client::new());
+        let data = serde_json::json!({
+            "id": "c2",
+            "name": "Extension Name",
+            "original": "Extension Name",
+            "aliases": ["Latin Alias", "㐀々"],
+            "vns": [{"id": "v945", "role": "primary"}],
+            "sex": [],
+            "traits": [],
+            "image": {"url": null}
+        });
+
+        let character = client.process_character(&data, "v945").unwrap();
+
+        assert_eq!(character.name_original, "㐀々");
+        assert_eq!(character.role, "primary");
     }
 
     // Helper to assert parse_user_input results
@@ -1174,13 +1215,4 @@ mod tests {
     fn test_normalize_id_zero() {
         assert_eq!(VndbClient::normalize_id("0"), "v0");
     }
-}
-
-fn is_japanese(text: &str) -> bool {
-    text.chars().any(|c| {
-        let cp = c as u32;
-        (0x3040..=0x309F).contains(&cp)
-            || (0x30A0..=0x30FF).contains(&cp)
-            || (0x4E00..=0x9FFF).contains(&cp)
-    })
 }
