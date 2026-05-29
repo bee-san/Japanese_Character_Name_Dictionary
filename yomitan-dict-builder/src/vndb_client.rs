@@ -798,21 +798,31 @@ impl VndbClient {
             }
         });
 
-        // Aliases: array of strings
-        let aliases = data["aliases"]
+        // Añadimos ": Vec<String>" aquí para que Rust sepa el tipo de dato exacto
+        let aliases: Vec<String> = data["aliases"]
             .as_array()
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                     .filter(|s| !s.is_empty())
-                    .collect()
+                    .collect() // <-- Aquí es donde Rust se confundía
             })
             .unwrap_or_default();
+
+        // --- INICIO DEL PARCHE ---
+        // Si el nombre original viene vacío o en alfabeto latino, buscamos un alias japonés
+        let mut name_original = data["original"].as_str().unwrap_or("").to_string();
+        if !is_japanese(&name_original) {
+            if let Some(jp_alias) = aliases.iter().find(|a| is_japanese(a)) {
+                name_original = jp_alias.clone();
+            }
+        }
+        // --- FIN DEL PARCHE ---
 
         Some(Character {
             id: data["id"].as_str().unwrap_or("").to_string(),
             name: data["name"].as_str().unwrap_or("").to_string(),
-            name_original: data["original"].as_str().unwrap_or("").to_string(),
+            name_original, // <-- Reemplazado para usar nuestra variable parcheada
             role,
             source: "vndb".to_string(),
             sex,
@@ -1166,4 +1176,11 @@ mod tests {
     fn test_normalize_id_zero() {
         assert_eq!(VndbClient::normalize_id("0"), "v0");
     }
+}
+
+fn is_japanese(text: &str) -> bool {
+    text.chars().any(|c| {
+        let cp = c as u32;
+        (0x3040..=0x309F).contains(&cp) || (0x30A0..=0x30FF).contains(&cp) || (0x4E00..=0x9FFF).contains(&cp)
+    })
 }
