@@ -144,10 +144,7 @@ impl AppState {
                     let mut store = dl.lock().await;
                     let now = std::time::Instant::now();
                     let before = store.len();
-                    store.retain(|_, artifact| {
-                        now.duration_since(artifact.created_at).as_secs()
-                            < DOWNLOAD_TOKEN_MAX_AGE_SECS
-                    });
+                    store.retain(|_, artifact| !is_download_artifact_expired(artifact, now));
                     let removed = before - store.len();
                     if removed > 0 {
                         info!(
@@ -1603,6 +1600,16 @@ async fn download_zip(
     let mut store = state.downloads.lock().await;
 
     if let Some(artifact) = store.remove(&params.token) {
+        if is_download_artifact_expired(&artifact, std::time::Instant::now()) {
+            warn!(
+                boot_id = %state.boot_id,
+                request_id = %request_id,
+                token = %params.token,
+                "Download token expired"
+            );
+            return (StatusCode::NOT_FOUND, "Download token not found or expired").into_response();
+        }
+
         let zip_size_bytes = artifact.bytes.len();
         let disposition = format!("attachment; filename={}", artifact.filename);
         debug!(
@@ -1628,6 +1635,10 @@ async fn download_zip(
         );
         (StatusCode::NOT_FOUND, "Download token not found or expired").into_response()
     }
+}
+
+fn is_download_artifact_expired(artifact: &DownloadArtifact, now: std::time::Instant) -> bool {
+    now.duration_since(artifact.created_at).as_secs() >= DOWNLOAD_TOKEN_MAX_AGE_SECS
 }
 
 fn download_headers(content_type: &'static str, disposition: &str) -> HeaderMap {
@@ -1690,9 +1701,7 @@ async fn store_download_artifact(state: &AppState, artifact: DownloadArtifact) -
     let token = uuid::Uuid::new_v4().to_string();
     let mut store = state.downloads.lock().await;
     let now = std::time::Instant::now();
-    store.retain(|_, artifact| {
-        now.duration_since(artifact.created_at).as_secs() < DOWNLOAD_TOKEN_MAX_AGE_SECS
-    });
+    store.retain(|_, artifact| !is_download_artifact_expired(artifact, now));
     store.insert(token.clone(), artifact);
     token
 }
@@ -3632,6 +3641,265 @@ mod tests {
             ..models::Character::default()
         });
         data
+    }
+
+    fn dict_query_with_required_defaults() -> DictQuery {
+        DictQuery {
+            source: None,
+            id: None,
+            entries: None,
+            media_type: default_media_type(),
+            vndb_user: None,
+            anilist_user: None,
+            vndb_status: None,
+            anilist_status: None,
+            honorifics: true,
+            image: true,
+            tag: true,
+            description: true,
+            traits: true,
+            spoilers: true,
+            seiyuu: true,
+        }
+    }
+
+    async fn response_body_string(response: axum::response::Response) -> String {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(body.to_vec()).unwrap()
+    }
+
+    async fn response_body_bytes(response: axum::response::Response) -> Vec<u8> {
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec()
+    }
+
+    #[tokio::test]
+    async fn test_yomitan_index_username_urls_preserve_all_dictionary_settings() {
+        let (state, _dir) = make_test_state();
+        let mut params = dict_query_with_required_defaults();
+        params.vndb_user = Some("https://vndb.org/u306797".to_string());
+        params.anilist_user = Some("Bee User".to_string());
+        params.vndb_status = Some("playing,finished,wishlist".to_string());
+        params.anilist_status = Some("current,completed,planning,paused,dropped".to_string());
+        params.honorifics = false;
+        params.image = false;
+        params.tag = false;
+        params.description = false;
+        params.traits = false;
+        params.spoilers = false;
+        params.seiyuu = false;
+
+        let response = generate_index(Query(params), State(state))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_str(&response_body_string(response).await).unwrap();
+
+        for url_key in ["downloadUrl", "indexUrl"] {
+            let url = body[url_key].as_str().unwrap();
+            assert!(url.contains("vndb_user=u306797"), "{url_key}: {url}");
+            assert!(url.contains("anilist_user=Bee%20User"), "{url_key}: {url}");
+            assert!(
+                url.contains("vndb_status=playing%2Cfinished%2Cwishlist"),
+                "{url_key}: {url}"
+            );
+            assert!(
+                url.contains("anilist_status=current%2Ccompleted%2Cplanning%2Cpaused%2Cdropped"),
+                "{url_key}: {url}"
+            );
+            assert!(url.contains("honorifics=false"), "{url_key}: {url}");
+            assert!(url.contains("image=false"), "{url_key}: {url}");
+            assert!(url.contains("tag=false"), "{url_key}: {url}");
+            assert!(url.contains("description=false"), "{url_key}: {url}");
+            assert!(url.contains("traits=false"), "{url_key}: {url}");
+            assert!(url.contains("spoilers=false"), "{url_key}: {url}");
+            assert!(url.contains("seiyuu=false"), "{url_key}: {url}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_yomitan_index_manual_entries_urls_preserve_normalized_entries_and_settings() {
+        let (state, _dir) = make_test_state();
+        let mut params = dict_query_with_required_defaults();
+        params.entries = Some(
+            r#"[{"source":"vndb","id":"17"},{"source":"anilist","id":"https://anilist.co/manga/30002","media_type":"MANGA"}]"#
+                .to_string(),
+        );
+        params.image = false;
+        params.seiyuu = false;
+
+        let response = generate_index(Query(params), State(state))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_str(&response_body_string(response).await).unwrap();
+
+        for url_key in ["downloadUrl", "indexUrl"] {
+            let url = body[url_key].as_str().unwrap();
+            assert!(url.contains("entries="), "{url_key}: {url}");
+            assert!(
+                url.contains("%22source%22%3A%22vndb%22"),
+                "{url_key}: {url}"
+            );
+            assert!(url.contains("%22id%22%3A%22v17%22"), "{url_key}: {url}");
+            assert!(
+                url.contains("%22source%22%3A%22anilist%22"),
+                "{url_key}: {url}"
+            );
+            assert!(url.contains("%22id%22%3A%2230002%22"), "{url_key}: {url}");
+            assert!(
+                url.contains("%22media_type%22%3A%22MANGA%22"),
+                "{url_key}: {url}"
+            );
+            assert!(url.contains("image=false"), "{url_key}: {url}");
+            assert!(url.contains("seiyuu=false"), "{url_key}: {url}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_dict_returns_bad_request_for_missing_and_invalid_inputs() {
+        let (state, _dir) = make_test_state();
+
+        let missing_response = generate_dict(
+            Query(dict_query_with_required_defaults()),
+            State(state.clone()),
+        )
+        .await
+        .into_response();
+        assert_eq!(missing_response.status(), StatusCode::BAD_REQUEST);
+        assert!(response_body_string(missing_response)
+            .await
+            .contains("Either provide source+id, entries JSON, or vndb_user/anilist_user"));
+
+        let mut invalid_entries = dict_query_with_required_defaults();
+        invalid_entries.entries = Some("not json".to_string());
+        let invalid_response = generate_dict(Query(invalid_entries), State(state))
+            .await
+            .into_response();
+        assert_eq!(invalid_response.status(), StatusCode::BAD_REQUEST);
+        assert!(response_body_string(invalid_response)
+            .await
+            .contains("Invalid entries JSON"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_dict_uses_cached_fixture_data_for_valid_zip_shape() {
+        let (state, _dir) = make_test_state();
+        state
+            .media_cache
+            .put("vndb:v17", "Steins;Gate", &make_cached_character_data());
+        let mut params = dict_query_with_required_defaults();
+        params.source = Some("vndb".to_string());
+        params.id = Some("v17".to_string());
+        params.image = false;
+        params.seiyuu = false;
+
+        let response = generate_dict(Query(params), State(state))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/zip"
+        );
+        let bytes = response_body_bytes(response).await;
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        assert!(archive.by_name("index.json").is_ok());
+        assert!(archive.by_name("term_bank_1.json").is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_send_stream_result_complete_event_stores_single_use_token() {
+        let (state, _dir) = make_test_state();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+
+        send_stream_result("req-stream", &state, &tx, Ok(vec![1, 2, 3])).await;
+        drop(tx);
+
+        let event = rx.recv().await.unwrap().unwrap();
+        let rendered = format!("{:?}", event);
+        assert!(rendered.contains("event: complete"));
+        let token = state.downloads.lock().await.keys().next().cloned().unwrap();
+        assert!(rendered.contains(&token));
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_download_consumes_token_and_rejects_reuse_or_expiry() {
+        let (state, _dir) = make_test_state();
+        let token =
+            store_download_artifact(&state, DownloadArtifact::character_zip(vec![80, 75, 1, 2]))
+                .await;
+
+        let first = download_zip(
+            Query(DownloadQuery {
+                token: token.clone(),
+            }),
+            State(state.clone()),
+        )
+        .await
+        .into_response();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(response_body_bytes(first).await, vec![80, 75, 1, 2]);
+
+        let reuse = download_zip(
+            Query(DownloadQuery {
+                token: token.clone(),
+            }),
+            State(state.clone()),
+        )
+        .await
+        .into_response();
+        assert_eq!(reuse.status(), StatusCode::NOT_FOUND);
+
+        state.downloads.lock().await.insert(
+            "expired".to_string(),
+            DownloadArtifact {
+                bytes: vec![80, 75, 3, 4],
+                filename: "expired.zip".to_string(),
+                content_type: "application/zip",
+                created_at: std::time::Instant::now()
+                    - std::time::Duration::from_secs(DOWNLOAD_TOKEN_MAX_AGE_SECS + 1),
+            },
+        );
+        let expired = download_zip(
+            Query(DownloadQuery {
+                token: "expired".to_string(),
+            }),
+            State(state.clone()),
+        )
+        .await
+        .into_response();
+        assert_eq!(expired.status(), StatusCode::NOT_FOUND);
+        assert!(state.downloads.lock().await.get("expired").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_user_lists_rejects_missing_usernames_without_upstream_calls() {
+        let (state, _dir) = make_test_state();
+
+        let response = fetch_user_lists(
+            Query(UserListQuery {
+                vndb_user: None,
+                anilist_user: None,
+                vndb_status: None,
+                anilist_status: None,
+            }),
+            State(state),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(response_body_string(response)
+            .await
+            .contains("At least one username"));
     }
 
     #[test]
