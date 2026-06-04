@@ -11,10 +11,6 @@ const STATUS_LABELS = {
     current: 'Current',
     finished: 'Completed',
     completed: 'Completed',
-    wishlist: 'Wishlist',
-    planning: 'Planning',
-    paused: 'Paused',
-    dropped: 'Dropped',
 };
 const SAMPLE_TOTAL_OCCURRENCES = 35;
 const SAMPLE_AVERAGE_RATE = (30 / 10000 + 5 / 5000 + 0 / 8000) / 3;

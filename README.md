@@ -258,7 +258,7 @@ yomitan-dict-builder/
 | `spoiler_level` | No | `0`, `1`, `2` | Spoiler filtering (default: `0`) |
 | `media_type` | No | `ANIME`, `MANGA` | AniList media type (default: `ANIME`) |
 
-Frequency endpoints use `vndb_user` and/or `anilist_user`. By default they include current media only: VNDB `Playing`, and AniList `CURRENT` / `REPEATING`. Pass `vndb_status=playing,finished,wishlist` and/or `anilist_status=current,completed,planning,paused,dropped` to include other shelves. Jiten matches are resolved through `https://api.jiten.moe`; VNDB IDs keep their `v` prefix.
+Frequency endpoints use `vndb_user` and/or `anilist_user`. By default they include current media only: VNDB `Playing`, and AniList `CURRENT` / `REPEATING`. To include consumed/completed media too, pass `vndb_status=playing,finished` and/or `anilist_status=current,completed`. Non-consumed shelves such as wishlist, planning, paused, and dropped are intentionally not accepted for frequency dictionaries. Jiten matches are resolved through `https://api.jiten.moe`; VNDB IDs keep their `v` prefix.
 
 ## Spoiler Levels
 

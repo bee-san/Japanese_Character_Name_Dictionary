@@ -495,11 +495,7 @@ fn normalize_manual_status(status: &str) -> String {
     match status.trim().to_ascii_lowercase().as_str() {
         "playing" => "playing".to_string(),
         "finished" => "finished".to_string(),
-        "wishlist" => "wishlist".to_string(),
         "completed" => "completed".to_string(),
-        "planning" => "planning".to_string(),
-        "paused" => "paused".to_string(),
-        "dropped" => "dropped".to_string(),
         _ => "current".to_string(),
     }
 }
@@ -3780,8 +3776,8 @@ mod tests {
         let params = FrequencyQuery {
             vndb_user: Some("https://vndb.org/u306797".to_string()),
             anilist_user: Some("Bee User".to_string()),
-            vndb_status: Some("playing,finished,wishlist".to_string()),
-            anilist_status: Some("current,completed,planning,paused,dropped".to_string()),
+            vndb_status: Some("playing,finished".to_string()),
+            anilist_status: Some("current,completed".to_string()),
             entries: None,
             min_occurrences: Some(5),
             max_terms: Some(1000),
@@ -3794,9 +3790,8 @@ mod tests {
         assert!(index_url.contains("/api/yomitan-frequency-index?"));
         assert!(download_url.contains("vndb_user=u306797"));
         assert!(download_url.contains("anilist_user=Bee%20User"));
-        assert!(download_url.contains("vndb_status=playing%2Cfinished%2Cwishlist"));
-        assert!(download_url
-            .contains("anilist_status=current%2Ccompleted%2Cplanning%2Cpaused%2Cdropped"));
+        assert!(download_url.contains("vndb_status=playing%2Cfinished"));
+        assert!(download_url.contains("anilist_status=current%2Ccompleted"));
         assert!(download_url.contains("min_occurrences=5"));
         assert!(download_url.contains("max_terms=1000"));
         assert!(download_url.contains("display_mode=occurrence"));
@@ -3882,6 +3877,17 @@ mod tests {
 
         assert_eq!(vndb_statuses, vec![VndbShelfStatus::Playing]);
         assert_eq!(anilist_statuses, vec![AnilistShelfStatus::Current]);
+    }
+
+    #[test]
+    fn test_parse_shelf_status_params_rejects_non_consumed_shelves() {
+        let vndb_error = parse_shelf_status_params(Some("wishlist"), None).unwrap_err();
+        assert!(vndb_error.contains("vndb_status contains unsupported value"));
+
+        for raw in ["planning", "paused", "dropped"] {
+            let anilist_error = parse_shelf_status_params(None, Some(raw)).unwrap_err();
+            assert!(anilist_error.contains("anilist_status contains unsupported value"));
+        }
     }
 
     #[test]
@@ -4480,7 +4486,7 @@ mod tests {
                 title_romaji: "A".to_string(),
                 source: "vndb".to_string(),
                 media_type: "vn".to_string(),
-                status: "wishlist".to_string(),
+                status: "playing".to_string(),
             },
         ];
         let mut seen = HashSet::new();

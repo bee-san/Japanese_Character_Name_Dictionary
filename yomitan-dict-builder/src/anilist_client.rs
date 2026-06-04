@@ -202,9 +202,6 @@ pub struct AnilistClient {
 pub enum AnilistShelfStatus {
     Current,
     Completed,
-    Planning,
-    Paused,
-    Dropped,
 }
 
 impl AnilistShelfStatus {
@@ -226,12 +223,9 @@ impl AnilistShelfStatus {
             let status = match token.to_ascii_lowercase().as_str() {
                 "current" | "watching" | "reading" | "repeating" => Self::Current,
                 "completed" => Self::Completed,
-                "planning" | "planned" => Self::Planning,
-                "paused" => Self::Paused,
-                "dropped" => Self::Dropped,
                 other => {
                     return Err(format!(
-                        "anilist_status contains unsupported value '{}'",
+                        "anilist_status contains unsupported value '{}' (allowed: current, completed)",
                         other
                     ));
                 }
@@ -256,9 +250,6 @@ impl AnilistShelfStatus {
         match self {
             Self::Current => "current",
             Self::Completed => "completed",
-            Self::Planning => "planning",
-            Self::Paused => "paused",
-            Self::Dropped => "dropped",
         }
     }
 
@@ -276,9 +267,6 @@ impl AnilistShelfStatus {
                     api_statuses.push("REPEATING");
                 }
                 Self::Completed => api_statuses.push("COMPLETED"),
-                Self::Planning => api_statuses.push("PLANNING"),
-                Self::Paused => api_statuses.push("PAUSED"),
-                Self::Dropped => api_statuses.push("DROPPED"),
             }
         }
         api_statuses
@@ -288,9 +276,6 @@ impl AnilistShelfStatus {
         match status {
             "CURRENT" | "REPEATING" => Some(Self::Current),
             "COMPLETED" => Some(Self::Completed),
-            "PLANNING" => Some(Self::Planning),
-            "PAUSED" => Some(Self::Paused),
-            "DROPPED" => Some(Self::Dropped),
             _ => None,
         }
     }
@@ -1597,27 +1582,20 @@ mod tests {
 
     #[test]
     fn test_anilist_shelf_status_parsing_and_api_mapping() {
-        let statuses =
-            AnilistShelfStatus::parse_list(Some("current,completed,planning,paused,dropped"))
-                .unwrap();
+        let statuses = AnilistShelfStatus::parse_list(Some("current,completed")).unwrap();
         let query_values: Vec<&str> = statuses.iter().map(|status| status.query_value()).collect();
         let api_statuses = AnilistShelfStatus::api_statuses(&statuses);
 
-        assert_eq!(
-            query_values,
-            vec!["current", "completed", "planning", "paused", "dropped"]
-        );
-        assert_eq!(
-            api_statuses,
-            vec![
-                "CURRENT",
-                "REPEATING",
-                "COMPLETED",
-                "PLANNING",
-                "PAUSED",
-                "DROPPED"
-            ]
-        );
+        assert_eq!(query_values, vec!["current", "completed"]);
+        assert_eq!(api_statuses, vec!["CURRENT", "REPEATING", "COMPLETED"]);
+    }
+
+    #[test]
+    fn test_anilist_shelf_status_rejects_non_consumed_shelves() {
+        for raw in ["planning", "planned", "paused", "dropped"] {
+            let error = AnilistShelfStatus::parse_list(Some(raw)).unwrap_err();
+            assert!(error.contains("unsupported value"));
+        }
     }
 
     #[test]

@@ -131,7 +131,6 @@ pub struct VndbClient {
 pub enum VndbShelfStatus {
     Playing,
     Finished,
-    Wishlist,
 }
 
 impl VndbShelfStatus {
@@ -153,10 +152,9 @@ impl VndbShelfStatus {
             let status = match token.to_ascii_lowercase().as_str() {
                 "playing" | "current" => Self::Playing,
                 "finished" | "completed" => Self::Finished,
-                "wishlist" | "planning" | "planned" => Self::Wishlist,
                 other => {
                     return Err(format!(
-                        "vndb_status contains unsupported value '{}'",
+                        "vndb_status contains unsupported value '{}' (allowed: playing, finished)",
                         other
                     ));
                 }
@@ -181,7 +179,6 @@ impl VndbShelfStatus {
         match self {
             Self::Playing => "playing",
             Self::Finished => "finished",
-            Self::Wishlist => "wishlist",
         }
     }
 
@@ -189,7 +186,6 @@ impl VndbShelfStatus {
         match self {
             Self::Playing => 1,
             Self::Finished => 2,
-            Self::Wishlist => 5,
         }
     }
 }
@@ -931,12 +927,20 @@ mod tests {
 
     #[test]
     fn test_vndb_shelf_status_parsing_and_label_mapping() {
-        let statuses = VndbShelfStatus::parse_list(Some("playing,finished,wishlist")).unwrap();
+        let statuses = VndbShelfStatus::parse_list(Some("playing,finished")).unwrap();
         let labels: Vec<u8> = statuses.iter().map(|status| status.label_id()).collect();
         let query_values: Vec<&str> = statuses.iter().map(|status| status.query_value()).collect();
 
-        assert_eq!(labels, vec![1, 2, 5]);
-        assert_eq!(query_values, vec!["playing", "finished", "wishlist"]);
+        assert_eq!(labels, vec![1, 2]);
+        assert_eq!(query_values, vec!["playing", "finished"]);
+    }
+
+    #[test]
+    fn test_vndb_shelf_status_rejects_non_consumed_shelves() {
+        for raw in ["wishlist", "planning", "planned"] {
+            let error = VndbShelfStatus::parse_list(Some(raw)).unwrap_err();
+            assert!(error.contains("unsupported value"));
+        }
     }
 
     #[test]
