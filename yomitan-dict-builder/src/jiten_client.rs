@@ -31,7 +31,7 @@ impl JitenClient {
     }
 
     #[cfg(test)]
-    fn with_base_url(client: Client, base_url: String) -> Self {
+    pub(crate) fn with_base_url(client: Client, base_url: String) -> Self {
         Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
