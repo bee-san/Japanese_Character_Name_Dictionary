@@ -31,5 +31,8 @@ jobs:
       - name: Test media autocomplete helpers
         run: node scripts/test_anilist_media_autocomplete.js
 
+      - name: Test custom dictionary export and import
+        run: node scripts/test_custom_dict.js
+
       - name: Run tests
         run: cargo test

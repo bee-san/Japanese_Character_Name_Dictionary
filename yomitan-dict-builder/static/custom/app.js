@@ -122,18 +122,17 @@ async function buildZip(dictName, entries) {
     const chunk     = entries.slice(i, i + TERM_LIMIT);
     const bankIndex = Math.floor(i / TERM_LIMIT) + 1;
     const bank      = chunk.map(({ term, reading, definition }) => {
-      let defEntry;
-      if (definition.includes("\n")) {
-        const parts   = definition.split("\n");
-        const content = [];
-        parts.forEach((part, i) => {
-          if (i > 0) content.push({ tag: "br" });
-          content.push(part);
-        });
-        defEntry = [{ type: "structured-content", content }];
-      } else {
-        defEntry = [definition];
-      }
+      const parts = definition.split(/(\n|https?:\/\/[^\s<>"'。、！？「」『』]*[^\s<>"'。、！？「」『』.,!?;:)\]}])/gi);
+      const content = parts.filter(Boolean).map(part => {
+        if (part === "\n") return { tag: "br" };
+        if (/^https?:\/\//i.test(part)) {
+          return { tag: "a", href: part.replace(/^https?/i, s => s.toLowerCase()), content: part };
+        }
+        return part;
+      });
+      const defEntry = parts.length > 1
+        ? [{ type: "structured-content", content }]
+        : [definition];
       return [term, reading, TAG_NAME, "", 0, defEntry, 0, ""];
     });
     zip.file(`term_bank_${bankIndex}.json`, JSON.stringify(bank));
@@ -196,6 +195,7 @@ async function parseZip(file) {
               return d.content.map(p => {
                 if (typeof p === "string") return p;
                 if (p && p.tag === "br") return "\\n";
+                if (p && p.tag === "a" && typeof p.content === "string") return p.content;
                 return "";
               }).join("");
             }
