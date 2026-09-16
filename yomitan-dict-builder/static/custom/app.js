@@ -122,7 +122,7 @@ async function buildZip(dictName, entries) {
     const chunk     = entries.slice(i, i + TERM_LIMIT);
     const bankIndex = Math.floor(i / TERM_LIMIT) + 1;
     const bank      = chunk.map(({ term, reading, definition }) => {
-      const parts = definition.split(/(\n|https?:\/\/[^\s<>"']+)/gi);
+      const parts = definition.split(/(\n|https?:\/\/[^\s<>"'。、！？「」『』]*[^\s<>"'。、！？「」『』.,!?;:)\]}])/gi);
       const content = parts.filter(Boolean).map(part => {
         if (part === "\n") return { tag: "br" };
         if (/^https?:\/\//i.test(part)) {

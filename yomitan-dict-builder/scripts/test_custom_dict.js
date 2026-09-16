@@ -33,6 +33,15 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/custom/app.js'),
     if (!definition.includes('\\n') && !expectedLinks.length) assert.deepEqual(bank[0][5], [definition]);
     assert.equal((await app.parseZip(bytes)).rawText, `語, ご, ${definition}`);
   }
+  for (const definition of ['See https://example.com.', '(https://example.com)', 'https://example.com。次へ']) {
+    const blob = await app.buildZip('Links', app.parseEntries(`語, ご, ${definition}`));
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    const zip = await JSZip.loadAsync(bytes);
+    const bank = JSON.parse(await zip.file('term_bank_1.json').async('string'));
+    assert.deepEqual(bank[0][5][0].content.filter(p => p.tag === 'a'),
+      [{ tag: 'a', href: 'https://example.com', content: 'https://example.com' }]);
+    assert.equal((await app.parseZip(bytes)).rawText, `語, ご, ${definition}`);
+  }
   console.log('custom dictionary tests passed');
 })().catch(error => {
   console.error(error);
