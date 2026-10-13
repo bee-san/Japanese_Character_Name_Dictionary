@@ -3,7 +3,7 @@ name: Refresh AniList Media Index
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 4 * * 1"
+    - cron: "17 4 1 * *" # monthly, 1st at 04:17 UTC (was weekly)
 
 concurrency:
   group: refresh-anilist-media-index
