@@ -7,8 +7,8 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    - cron: '33 3 * * 1'
+  # The weekly schedule was removed (GitHub Actions cost audit, 2026-10-13); push and
+  # pull_request still analyse every change.
 
 permissions:
   actions: read
